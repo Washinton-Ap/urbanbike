@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Reportes — Mantenimiento{% endblock %}
+{% block page_title %}Reportes de Mantenimiento{% endblock %}
+
+{% block content %}
+
+<div class="kpi-grid" style="margin-bottom:8px;">
+  <div class="kpi-card">
+    <div class="kpi-label">Total de órdenes</div>
+    <div class="kpi-value">{{ total_ordenes | num }}</div>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;">
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Órdenes por Estado</span>
+    </div>
+    <div style="position:relative;height:280px;">
+      <canvas id="chartEstado"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Órdenes por Tipo</span>
+    </div>
+    <div style="position:relative;height:280px;">
+      <canvas id="chartTipo"></canvas>
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const estadoLabels = {{ estado_labels | safe }};
+const estadoValues = {{ estado_values | safe }};
+const tipoLabels   = {{ tipo_labels | safe }};
+const tipoValues   = {{ tipo_values | safe }};
+
+new Chart(document.getElementById('chartEstado'), {
+  type: 'doughnut',
+  data: {
+    labels: estadoLabels,
+    datasets: [{ data: estadoValues, backgroundColor: ['#F59E0B', '#1E86BD', '#10B981', '#6B7280'], borderWidth: 0, hoverOffset: 6 }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false, cutout: '62%',
+    plugins: {
+      legend: { position: 'bottom', labels: { font: { family: 'IBM Plex Sans', size: 11 }, boxWidth: 10, padding: 10 } },
+      tooltip: { callbacks: { label: (ctx) => ` ${ctx.label}: ${ctx.raw.toLocaleString('es')}` } }
+    }
+  }
+});
+
+new Chart(document.getElementById('chartTipo'), {
+  type: 'bar',
+  data: {
+    labels: tipoLabels,
+    datasets: [{ data: tipoValues, backgroundColor: ['#6366F1', '#EF4444'], borderRadius: 6, borderSkipped: false }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: (ctx) => ' ' + ctx.raw.toLocaleString('es') } }
+    },
+    scales: {
+      y: { beginAtZero: true, ticks: { stepSize: 1, callback: v => v.toLocaleString('es'), font: { family: 'IBM Plex Sans', size: 10 } }, grid: { color: 'rgba(0,0,0,0.05)' } },
+      x: { grid: { display: false }, ticks: { font: { family: 'IBM Plex Sans', size: 10 } } }
+    }
+  }
+});
+</script>
+{% endblock %}

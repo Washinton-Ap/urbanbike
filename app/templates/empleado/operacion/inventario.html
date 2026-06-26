@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Inventario de Bicicletas{% endblock %}
+{% block page_title %}Inventario de Bicicletas{% endblock %}
+
+{% block content %}
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Flota completa</span>
+    <span style="font-size:0.8rem;color:var(--text-muted);">{{ bicicletas | length }} bicicletas</span>
+  </div>
+
+  {% if bicicletas %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Código</th>
+          <th>Tipo</th>
+          <th>Estado</th>
+          <th>Estación</th>
+          <th>Notas</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in bicicletas %}
+        <tr>
+          <td style="font-weight:600;font-family:monospace;color:var(--text);">{{ b.codigo }}</td>
+          <td>
+            {% if b.tipo == 'electric_bike' %}
+              <span class="badge badge-green">Eléctrica</span>
+            {% else %}
+              <span class="badge badge-blue">Clásica</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if b.estado == 'disponible' %}
+              <span class="badge badge-green">Disponible</span>
+            {% elif b.estado == 'en_uso' %}
+              <span class="badge badge-blue">En uso</span>
+            {% elif b.estado == 'mantenimiento' %}
+              <span class="badge badge-yellow">Mantenimiento</span>
+            {% else %}
+              <span class="badge badge-gray">Retirada</span>
+            {% endif %}
+          </td>
+          <td style="color:var(--text-muted);font-size:0.85rem;">{{ b.estacion or '—' }}</td>
+          <td style="color:var(--text-muted);font-size:0.82rem;">{{ b.notas or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:48px 24px;color:var(--text-muted);">
+    <div style="display:flex;justify-content:center;margin-bottom:12px;opacity:0.4;">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 0 0 0-2h-3l-1 5.5M5.5 17.5 9 8l3 5h6"/></svg>
+    </div>
+    <div style="font-size:0.9rem;">Sin bicicletas registradas</div>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

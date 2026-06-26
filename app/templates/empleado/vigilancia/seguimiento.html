@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Seguimiento de Viajes Activos{% endblock %}
+{% block page_title %}Seguimiento de Viajes Activos{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+{% endblock %}
+
+{% block content %}
+
+<div class="card" style="padding:0;overflow:hidden;margin-bottom:20px;">
+  <div class="card-header" style="border-bottom:1px solid var(--border);">
+    <span class="card-title">Mapa de viajes activos</span>
+    <span style="font-size:0.8rem;color:var(--text-muted);">{{ viajes | length }} en curso</span>
+  </div>
+  <div id="map-seguimiento" style="height:380px;width:100%;"></div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Viajes activos <span class="text-muted text-sm">({{ viajes | length }})</span></span>
+  </div>
+
+  {% if viajes %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Bicicleta</th>
+          <th>Ciclista</th>
+          <th>Estación de inicio</th>
+          <th>Inicio</th>
+          <th style="text-align:right;">Tiempo transcurrido</th>
+          <th>Alerta</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in viajes %}
+        <tr>
+          <td style="font-weight:600;color:var(--text);font-family:monospace;">{{ v.bicicleta_codigo }}</td>
+          <td>{{ v.ciclista_nombre or "—" }}</td>
+          <td>{{ v.estacion_inicio_nombre or "—" }}</td>
+          <td class="text-muted text-sm">{{ v.fecha_inicio | replace("T", " ") | replace("Z", "") }}</td>
+          <td style="text-align:right;font-weight:600;" class="tiempo-transcurrido" data-inicio="{{ v.fecha_inicio }}">—</td>
+          <td class="celda-alerta" data-inicio="{{ v.fecha_inicio }}">—</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:48px 24px;color:var(--text-muted);">
+    <div style="display:flex;justify-content:center;margin-bottom:12px;opacity:0.4;">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+    </div>
+    <div style="font-size:0.9rem;">No hay viajes activos en este momento</div>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const VIAJES = {{ viajes_json | safe }};
+
+const map = L.map('map-seguimiento').setView([-1.5, -78.5], 6.4);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap contributors',
+  maxZoom: 18,
+}).addTo(map);
+
+function icono(color) {
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:18px;height:18px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 0 0 2px ${color};"></div>`,
+    iconSize: [18, 18],
+    iconAnchor: [9, 9],
+  });
+}
+
+VIAJES.forEach(v => {
+  const lat = v.latitud_actual || v.latitud_inicio;
+  const lng = v.longitud_actual || v.longitud_inicio;
+  if (!lat || !lng) return;
+  const mins = Math.max(0, Math.floor((Date.now() - new Date(v.fecha_inicio)) / 60000));
+  const color = mins > 120 ? '#EF4444' : '#1E86BD';
+  L.marker([lat, lng], { icon: icono(color) })
+    .addTo(map)
+    .bindPopup(`<strong>${v.bicicleta_codigo}</strong><br>${v.ciclista_nombre || '—'}<br>Desde: ${v.estacion_inicio_nombre || '—'}<br>Tiempo: ${mins} min`);
+});
+
+function actualizarTiempos() {
+  document.querySelectorAll('.tiempo-transcurrido').forEach(el => {
+    const inicio = new Date(el.dataset.inicio);
+    let mins = Math.max(0, Math.floor((Date.now() - inicio) / 60000));
+    const horas = Math.floor(mins / 60);
+    const resto = mins % 60;
+    el.textContent = horas > 0 ? `${horas} h ${resto} min` : `${mins} min`;
+    el.style.color = mins > 120 ? '#EF4444' : 'var(--text)';
+  });
+  document.querySelectorAll('.celda-alerta').forEach(el => {
+    const inicio = new Date(el.dataset.inicio);
+    const mins = Math.max(0, Math.floor((Date.now() - inicio) / 60000));
+    el.innerHTML = mins > 120
+      ? '<span class="badge badge-red">Supera 120 min</span>'
+      : '<span class="badge badge-gray">Normal</span>';
+  });
+}
+actualizarTiempos();
+setInterval(actualizarTiempos, 30000);
+</script>
+{% endblock %}

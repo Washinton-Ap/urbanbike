@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}Pagar Viaje{% endblock %}
+{% block page_title %}Pagar Viaje{% endblock %}
+
+{% block content %}
+
+<div class="card" style="max-width:560px;margin:0 auto 20px;">
+  <div class="card-header">
+    <span class="card-title">Resumen del viaje</span>
+    {% if estado_pago == "pendiente_efectivo" %}<span class="badge badge-yellow">Pendiente de pago en efectivo</span>
+    {% elif estado_pago == "verificacion_pendiente" %}<span class="badge badge-blue">Transferencia en verificación</span>
+    {% elif estado_pago == "rechazado" %}<span class="badge badge-red">Pago rechazado</span>
+    {% else %}<span class="badge badge-yellow">Pago pendiente</span>{% endif %}
+  </div>
+  <div style="display:flex;flex-direction:column;gap:14px;padding:20px;">
+    <div style="display:flex;justify-content:space-between;">
+      <span style="color:var(--text-muted);font-size:0.85rem;">Duración exacta</span>
+      <span style="font-family:'Sora',sans-serif;font-weight:700;color:var(--text);">{{ duracion_hms }}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;">
+      <span style="color:var(--text-muted);font-size:0.85rem;">Tipo de bicicleta</span>
+      <span>
+        {% if pago.tipo_bicicleta == "electric_bike" %}<span class="badge badge-green">Eléctrica</span>
+        {% else %}<span class="badge badge-blue">Clásica</span>{% endif %}
+      </span>
+    </div>
+    <div style="display:flex;justify-content:space-between;">
+      <span style="color:var(--text-muted);font-size:0.85rem;">Tarifa aplicada</span>
+      <span style="font-weight:600;color:var(--text);">${{ "%.2f" | format(pago.precio_hora | float) }} / hora</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border);padding-top:14px;">
+      <span style="font-family:'Sora',sans-serif;font-weight:600;color:var(--text);">Monto total</span>
+      <span style="font-family:'Sora',sans-serif;font-weight:800;font-size:1.4rem;color:var(--primary);">${{ "%.2f" | format(pago.monto_total | float) }}</span>
+    </div>
+  </div>
+</div>
+
+{% if estado_pago == "pendiente_efectivo" %}
+<div class="card" style="max-width:560px;margin:0 auto;">
+  <div class="card-header"><span class="card-title">Pago en efectivo</span></div>
+  <div style="padding:20px;display:flex;flex-direction:column;gap:14px;align-items:center;text-align:center;">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="1.6"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <div style="font-size:0.92rem;color:var(--text);line-height:1.6;">
+      Dirígete al empleado de operación más cercano con el código de pago
+      <div style="font-family:'Sora',sans-serif;font-weight:800;font-size:1.2rem;color:var(--primary);margin:8px 0;">{{ pago.comprobante_numero }}</div>
+      para completar el pago.
+    </div>
+    <div style="font-size:0.8rem;color:var(--text-muted);">No podrás iniciar un nuevo viaje hasta completar este pago.</div>
+  </div>
+</div>
+
+{% elif estado_pago == "verificacion_pendiente" %}
+<div class="card" style="max-width:560px;margin:0 auto;">
+  <div class="card-header"><span class="card-title">Transferencia en verificación</span></div>
+  <div style="padding:20px;display:flex;flex-direction:column;gap:14px;align-items:center;text-align:center;">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="1.6"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+    <div style="font-size:0.92rem;color:var(--text);line-height:1.6;">
+      Tu pago está en verificación. El empleado de operación lo confirmará en breve.
+    </div>
+    <div style="font-size:0.8rem;color:var(--text-muted);">
+      Código de pago: <strong style="color:var(--text);">{{ pago.comprobante_numero }}</strong>
+      &middot; Cuenta de origen: {{ pago.numero_cuenta_origen or "—" }}
+    </div>
+  </div>
+</div>
+
+{% else %}
+{% if estado_pago == "rechazado" %}
+<div class="flash error" style="max-width:560px;margin:0 auto 16px;">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  Tu transferencia fue rechazada{% if pago.observaciones_pago %}: {{ pago.observaciones_pago }}{% endif %}. Vuelve a intentarlo con un comprobante válido.
+</div>
+{% endif %}
+
+<div class="card" style="max-width:560px;margin:0 auto;">
+  <div class="card-header">
+    <span class="card-title">Método de pago</span>
+  </div>
+  <form method="post" action="/ciclista/confirmar-pago" enctype="multipart/form-data" style="padding:20px;">
+    <input type="hidden" name="pago_id" value="{{ pago.id }}">
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px;">
+      <label class="card metodo-opt" data-metodo="efectivo" style="cursor:pointer;text-align:center;padding:16px 8px;border:2px solid var(--border);">
+        <input type="radio" name="metodo_pago" value="efectivo" required style="margin-bottom:8px;" onchange="mostrarMetodo('efectivo')">
+        <div style="font-size:0.85rem;font-weight:600;color:var(--text);">Efectivo</div>
+      </label>
+      <label class="card metodo-opt" data-metodo="tarjeta" style="cursor:pointer;text-align:center;padding:16px 8px;border:2px solid var(--border);">
+        <input type="radio" name="metodo_pago" value="tarjeta" required style="margin-bottom:8px;" onchange="mostrarMetodo('tarjeta')">
+        <div style="font-size:0.85rem;font-weight:600;color:var(--text);">Tarjeta</div>
+      </label>
+      <label class="card metodo-opt" data-metodo="transferencia" style="cursor:pointer;text-align:center;padding:16px 8px;border:2px solid var(--border);">
+        <input type="radio" name="metodo_pago" value="transferencia" required style="margin-bottom:8px;" onchange="mostrarMetodo('transferencia')">
+        <div style="font-size:0.85rem;font-weight:600;color:var(--text);">Transferencia</div>
+      </label>
+    </div>
+
+    <div id="panel-efectivo" class="metodo-panel" style="display:none;margin-bottom:18px;font-size:0.85rem;color:var(--text-muted);line-height:1.6;">
+      Al confirmar, se generará un código de pago. Deberás acercarte a un empleado de operación para entregar el efectivo y completar el pago. No podrás reservar otro viaje hasta entonces.
+    </div>
+
+    <div id="panel-tarjeta" class="metodo-panel" style="display:none;margin-bottom:18px;">
+      <div class="form-group">
+        <label class="form-label">Número de tarjeta</label>
+        <input class="form-input" type="text" name="numero_tarjeta" maxlength="19" placeholder="•••• •••• •••• 1234" inputmode="numeric">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Nombre del titular</label>
+        <input class="form-input" type="text" name="nombre_titular" placeholder="Como aparece en la tarjeta">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group"><label class="form-label">Mes de expiración</label>
+          <select class="form-input" name="mes_expiracion">
+            <option value="">MM</option>
+            {% for m in range(1, 13) %}<option value="{{ '%02d' | format(m) }}">{{ '%02d' | format(m) }}</option>{% endfor %}
+          </select></div>
+        <div class="form-group"><label class="form-label">Año de expiración</label>
+          <select class="form-input" name="anio_expiracion">
+            <option value="">AAAA</option>
+            {% for y in range(2026, 2036) %}<option value="{{ y }}">{{ y }}</option>{% endfor %}
+          </select></div>
+      </div>
+      <div style="font-size:0.78rem;color:var(--text-muted);">Simulación con fines académicos: solo se almacenan los últimos 4 dígitos.</div>
+    </div>
+
+    <div id="panel-transferencia" class="metodo-panel" style="display:none;margin-bottom:18px;">
+      <div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:10px;">Realiza la transferencia a una de estas cuentas:</div>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;">
+        {% for c in cuentas %}
+        <div style="border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:0.82rem;">
+          <div style="font-weight:700;color:var(--text);font-family:'Sora',sans-serif;">{{ c.banco }} &middot; {{ c.tipo_cuenta }}</div>
+          <div style="color:var(--text-muted);">Nº cuenta: <strong style="color:var(--text);">{{ c.numero_cuenta }}</strong> &middot; Titular: {{ c.titular }}</div>
+        </div>
+        {% else %}
+        <div style="font-size:0.82rem;color:var(--text-muted);">No hay cuentas bancarias disponibles por el momento.</div>
+        {% endfor %}
+      </div>
+      <div class="form-group">
+        <label class="form-label">Número de cuenta de origen</label>
+        <input class="form-input" type="text" name="numero_cuenta_origen" placeholder="Tu número de cuenta">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Comprobante de la transferencia (JPG, PNG o PDF, máx. 5MB)</label>
+        <input class="form-input" type="file" name="comprobante_imagen" accept="image/jpeg,image/png,application/pdf">
+      </div>
+    </div>
+
+    <button type="submit" class="btn btn-primary" style="width:100%;">Confirmar Pago</button>
+  </form>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function mostrarMetodo(m) {
+  document.querySelectorAll('.metodo-panel').forEach(p => p.style.display = 'none');
+  document.querySelectorAll('.metodo-opt').forEach(o => o.style.borderColor = 'var(--border)');
+  const panel = document.getElementById('panel-' + m);
+  if (panel) panel.style.display = 'block';
+  const opt = document.querySelector(`.metodo-opt[data-metodo="${m}"]`);
+  if (opt) opt.style.borderColor = 'var(--primary)';
+}
+</script>
+{% endblock %}

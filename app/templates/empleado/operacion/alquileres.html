@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% block title %}Alquileres{% endblock %}
+{% block page_title %}Gestión de Alquileres{% endblock %}
+
+{% block content %}
+
+<!-- Bicicletas por estación -->
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header">
+    <span class="card-title">Bicicletas por estación</span>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;padding:20px;">
+    {% for estacion, bicis in por_estacion.items() %}
+    <div style="border:1px solid var(--border);border-radius:10px;padding:14px;">
+      <div style="font-weight:600;color:var(--text);margin-bottom:8px;font-size:0.9rem;">{{ estacion }}</div>
+      <div class="flex gap-2" style="flex-wrap:wrap;">
+        {% for b in bicis %}
+        <span class="badge {% if b.estado == 'disponible' %}badge-green{% elif b.estado == 'en_uso' %}badge-blue{% elif b.estado == 'mantenimiento' %}badge-gray{% else %}badge-red{% endif %}"
+          title="{{ b.estado }}">{{ b.codigo }}</span>
+        {% endfor %}
+      </div>
+      <div style="font-size:0.75rem;color:var(--text-muted);margin-top:8px;">{{ bicis | length }} bicicleta{{ 's' if bicis | length != 1 }}</div>
+    </div>
+    {% else %}
+    <div style="grid-column:1/-1;text-align:center;padding:24px;color:var(--text-muted);font-size:0.88rem;">No hay bicicletas registradas.</div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Tabla de viajes -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Viajes <span class="text-muted text-sm">({{ viajes | length }})</span></span>
+    <div class="flex gap-2" style="align-items:center;">
+      <select class="form-input" style="width:auto;font-size:0.8rem;padding:6px 10px;" onchange="location.href = this.value ? '?estado=' + this.value : location.pathname">
+        <option value="" {% if not filtro %}selected{% endif %}>Todos los estados</option>
+        <option value="activo"     {% if filtro == 'activo' %}selected{% endif %}>Activo</option>
+        <option value="completado" {% if filtro == 'completado' %}selected{% endif %}>Completado</option>
+        <option value="cancelado"  {% if filtro == 'cancelado' %}selected{% endif %}>Cancelado</option>
+      </select>
+      <button class="btn btn-primary" onclick="document.getElementById('modal-crear').showModal()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Alquiler manual
+      </button>
+    </div>
+  </div>
+
+  {% if viajes %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Bicicleta</th>
+          <th>Ciclista</th>
+          <th>Estación inicio</th>
+          <th>Estación fin</th>
+          <th>Inicio</th>
+          <th style="text-align:right;">Duración</th>
+          <th>Estado</th>
+          <th style="width:190px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in viajes %}
+        <tr>
+          <td style="font-weight:600;color:var(--text);font-family:monospace;">{{ v.bicicleta_codigo }}</td>
+          <td>{{ v.ciclista_nombre or "—" }}</td>
+          <td>{{ v.estacion_inicio_nombre or "—" }}</td>
+          <td>{{ estaciones_nombres.get(v.estacion_fin_id, v.estacion_fin_id) if v.estacion_fin_id else "—" }}</td>
+          <td class="text-muted text-sm">{{ v.fecha_inicio | replace("T", " ") | replace("Z", "") }}</td>
+          <td style="text-align:right;color:var(--text-muted);">
+            {% if v.duracion_minutos %}{{ v.duracion_minutos }} min{% else %}—{% endif %}
+          </td>
+          <td>
+            {% if v.estado == 'activo' %}<span class="badge badge-blue">Activo</span>
+            {% elif v.estado == 'completado' %}<span class="badge badge-green">Completado</span>
+            {% else %}<span class="badge badge-gray">Cancelado</span>{% endif %}
+          </td>
+          <td>
+            {% if v.estado == 'activo' %}
+            <div class="flex gap-2">
+              <button class="btn btn-ghost" style="padding:4px 10px;font-size:0.75rem;"
+                data-id="{{ v.id }}" data-bicicleta="{{ v.bicicleta_codigo }}"
+                onclick="openCompletar(this)">Completar</button>
+              <button class="btn btn-ghost" style="padding:4px 10px;font-size:0.75rem;color:#EF4444;border-color:rgba(239,68,68,0.35);"
+                onclick="if(confirm('¿Cancelar este alquiler?')) document.getElementById('form-cancelar-{{ v.id }}').submit();">Cancelar</button>
+              <form id="form-cancelar-{{ v.id }}" method="post" action="/empleado/operacion/alquileres/{{ v.id }}/cancelar" style="display:none;"></form>
+            </div>
+            {% else %}
+            <span class="text-muted text-sm">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:64px 24px;">
+    <div style="display:flex;justify-content:center;margin-bottom:20px;opacity:0.3;">
+      <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 5v3h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+    </div>
+    <div style="font-family:'Sora',sans-serif;font-weight:700;font-size:1.1rem;color:var(--text);margin-bottom:8px;">
+      Sin alquileres registrados
+    </div>
+    <div style="font-size:0.88rem;color:var(--text-muted);max-width:360px;margin:0 auto;line-height:1.6;">
+      No hay viajes{% if filtro %} con el estado seleccionado{% endif %}. Registra un alquiler manual para empezar.
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Modal: crear alquiler manual -->
+<dialog id="modal-crear">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title">Registrar alquiler manual</span>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-crear').close()">✕</button></div>
+    <form method="post" action="/empleado/operacion/alquileres/crear">
+      <div class="form-group">
+        <label class="form-label">Bicicleta disponible *</label>
+        <select class="form-input" name="bicicleta_id" id="crear-bicicleta" required onchange="syncBici(this)">
+          <option value="" disabled selected>Selecciona una bicicleta...</option>
+          {% for b in bicicletas %}
+          <option value="{{ b.id }}" data-codigo="{{ b.codigo }}">{{ b.codigo }} — {{ b.estacion or 'Sin estación' }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <input type="hidden" name="bicicleta_codigo" id="crear-bicicleta-codigo">
+      <div class="form-group">
+        <label class="form-label">Estación de inicio *</label>
+        <select class="form-input" name="estacion_inicio_id" id="crear-estacion" required onchange="syncEstacion(this)">
+          <option value="" disabled selected>Selecciona una estación...</option>
+          {% for e in estaciones %}
+          <option value="{{ e.id }}" data-nombre="{{ e.nombre }}">{{ e.nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <input type="hidden" name="estacion_inicio_nombre" id="crear-estacion-nombre">
+      <div class="form-group">
+        <label class="form-label">Nombre del ciclista</label>
+        <input class="form-input" type="text" name="ciclista_nombre" placeholder="Registro presencial">
+      </div>
+      <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-crear').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Registrar alquiler</button></div>
+    </form>
+  </div>
+</dialog>
+
+<!-- Modal: completar viaje -->
+<dialog id="modal-completar">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title">Completar viaje — <span id="comp-bicicleta"></span></span>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-completar').close()">✕</button></div>
+    <form method="post" id="form-completar">
+      <div class="form-group">
+        <label class="form-label">Estación de devolución *</label>
+        <select class="form-input" name="estacion_fin_id" id="comp-estacion" required onchange="syncCompletar(this)">
+          <option value="" disabled selected>Selecciona una estación...</option>
+          {% for e in estaciones %}
+          <option value="{{ e.id }}" data-nombre="{{ e.nombre }}">{{ e.nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <input type="hidden" name="estacion_fin_nombre" id="comp-estacion-nombre">
+      <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-completar').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Completar viaje</button></div>
+    </form>
+  </div>
+</dialog>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function syncBici(sel) {
+  const opt = sel.options[sel.selectedIndex];
+  document.getElementById('crear-bicicleta-codigo').value = opt.dataset.codigo || '';
+}
+function syncEstacion(sel) {
+  const opt = sel.options[sel.selectedIndex];
+  document.getElementById('crear-estacion-nombre').value = opt.dataset.nombre || '';
+}
+function syncCompletar(sel) {
+  const opt = sel.options[sel.selectedIndex];
+  document.getElementById('comp-estacion-nombre').value = opt.dataset.nombre || '';
+}
+function openCompletar(btn) {
+  const d = btn.dataset;
+  document.getElementById('form-completar').action = '/empleado/operacion/alquileres/' + d.id + '/completar';
+  document.getElementById('comp-bicicleta').textContent = d.bicicleta;
+  document.getElementById('comp-estacion').value = '';
+  document.getElementById('comp-estacion-nombre').value = '';
+  document.getElementById('modal-completar').showModal();
+}
+document.querySelectorAll('dialog').forEach(d => d.addEventListener('click', e => { if (e.target === d) d.close(); }));
+</script>
+{% endblock %}

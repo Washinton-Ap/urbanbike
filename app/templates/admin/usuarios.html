@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block title %}Usuarios{% endblock %}
+{% block page_title %}Gestión de Usuarios{% endblock %}
+
+{% block content %}
+{% if error %}
+<div class="flash error" style="margin-bottom:20px;">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  PocketBase no disponible: {{ error }}
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Usuarios registrados <span class="text-muted text-sm">({{ items | length }})</span></span>
+    <div class="flex gap-2" style="align-items:center;">
+      <input type="search" class="form-input" placeholder="Buscar..." style="width:auto;font-size:0.8rem;padding:6px 10px;" oninput="filtrarTabla(this, 'tabla-usuarios')">
+    <button class="btn btn-primary" onclick="document.getElementById('modal-crear').showModal()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Nuevo usuario
+    </button>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table id="tabla-usuarios">
+      <thead>
+        <tr>
+          <th>Nombre</th>
+          <th>Email</th>
+          <th>Rol</th>
+          <th>Verificado</th>
+          <th>Creado</th>
+          <th style="width:130px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in items %}
+        {% set rol_obj = u.expand.rol if u.get("expand") and u.get("expand", {}).get("rol") else {} %}
+        <tr>
+          <td class="font-semibold">{{ u.name or "—" }}</td>
+          <td class="text-muted">{{ u.email }}</td>
+          <td>
+            {% if rol_obj %}
+              <span class="badge badge-blue">{{ rol_obj.nombre or rol_obj.slug or "—" }}</span>
+            {% else %}
+              <span class="badge badge-gray">Sin rol</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if u.verified %}
+              <span class="badge badge-green">Verificado</span>
+            {% else %}
+              <span class="badge badge-yellow">Pendiente</span>
+            {% endif %}
+          </td>
+          <td class="text-muted text-xs">{{ u.created[:10] if u.created else "—" }}</td>
+          <td>
+            <div class="flex gap-2">
+              <button class="btn btn-ghost"
+                style="padding:4px 10px;font-size:0.75rem;"
+                data-id="{{ u.id }}"
+                data-name="{{ u.name | default('') | e }}"
+                data-rol="{{ rol_obj.id | default('') | e }}"
+                onclick="openEdit(this)">Editar</button>
+              <button class="btn btn-ghost"
+                style="padding:4px 10px;font-size:0.75rem;color:#EF4444;border-color:rgba(239,68,68,0.35);"
+                data-id="{{ u.id }}"
+                data-label="{{ u.email | e }}"
+                onclick="openDel(this)">Eliminar</button>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="6" style="text-align:center;padding:48px;color:var(--text-muted);">
+            No hay usuarios registrados aún.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── Modal: Crear ──────────────────────────────────────────────────────── -->
+<dialog id="modal-crear">
+  <div class="modal-card">
+    <div class="modal-header">
+      <span class="card-title">Nuevo usuario</span>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-crear').close()">✕</button>
+    </div>
+    <form method="post" action="/admin/usuarios/crear">
+      <div class="form-group">
+        <label class="form-label">Nombre</label>
+        <input class="form-input" type="text" name="name" placeholder="Ej. María García">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email *</label>
+        <input class="form-input" type="email" name="email" required placeholder="usuario@ejemplo.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Contraseña * (mín. 8 caracteres)</label>
+        <input class="form-input" type="password" name="password" required minlength="8" placeholder="••••••••">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Rol</label>
+        <select class="form-input" name="rol">
+          <option value="">Sin rol</option>
+          {% for r in roles %}
+          <option value="{{ r.id }}">{{ r.nombre or r.slug or r.id }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-crear').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Crear</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+<!-- ── Modal: Editar ──────────────────────────────────────────────────────── -->
+<dialog id="modal-editar">
+  <div class="modal-card">
+    <div class="modal-header">
+      <span class="card-title">Editar usuario</span>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-editar').close()">✕</button>
+    </div>
+    <form method="post" id="form-editar">
+      <div class="form-group">
+        <label class="form-label">Nombre</label>
+        <input class="form-input" type="text" name="name" id="edit-name">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Rol</label>
+        <select class="form-input" name="rol" id="edit-rol">
+          <option value="">Sin rol</option>
+          {% for r in roles %}
+          <option value="{{ r.id }}">{{ r.nombre or r.slug or r.id }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-editar').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar cambios</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+<!-- ── Modal: Eliminar ────────────────────────────────────────────────────── -->
+<dialog id="modal-eliminar">
+  <div class="modal-card">
+    <div class="modal-header">
+      <span class="card-title" style="color:#EF4444;">Eliminar usuario</span>
+    </div>
+    <p style="color:var(--text-muted);margin-bottom:20px;">
+      ¿Confirmar la eliminación de <strong id="del-label" style="color:var(--text);"></strong>?<br>
+      Esta acción no se puede deshacer.
+    </p>
+    <form method="post" id="form-eliminar">
+      <div class="flex gap-2" style="justify-content:flex-end;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-eliminar').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary" style="background:#EF4444;border-color:#EF4444;">Eliminar</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openEdit(btn) {
+  const d = btn.dataset;
+  document.getElementById('form-editar').action = '/admin/usuarios/' + d.id + '/editar';
+  document.getElementById('edit-name').value = d.name;
+  document.getElementById('edit-rol').value = d.rol;
+  document.getElementById('modal-editar').showModal();
+}
+function openDel(btn) {
+  const d = btn.dataset;
+  document.getElementById('form-eliminar').action = '/admin/usuarios/' + d.id + '/eliminar';
+  document.getElementById('del-label').textContent = d.label;
+  document.getElementById('modal-eliminar').showModal();
+}
+document.querySelectorAll('dialog').forEach(d => {
+  d.addEventListener('click', e => { if (e.target === d) d.close(); });
+});
+</script>
+{% endblock %}

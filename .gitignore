@@ -1,0 +1,30 @@
+# Datos crudos y procesados
+data/raw/*.csv
+data/parquet/*.parquet
+
+# Variables de entorno
+.env
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# PocketBase datos
+pocketbase/pb_data/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

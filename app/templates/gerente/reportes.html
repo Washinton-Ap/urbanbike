@@ -1,0 +1,299 @@
+{% extends "base.html" %}
+{% block title %}Reportes — Gerente{% endblock %}
+{% block page_title %}Reportes Analíticos{% endblock %}
+
+{% block content %}
+
+{% if not ch_ok %}
+<div class="flash error" style="margin-bottom:20px;">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  ClickHouse no disponible — no se pueden cargar los reportes.
+</div>
+{% endif %}
+
+<!-- Filtros -->
+<div class="card no-print" style="margin-bottom:20px;">
+  <div class="card-header">
+    <span class="card-title">Filtros</span>
+  </div>
+  <form method="get" action="/gerente/reportes" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;align-items:end;">
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label">Fecha inicio</label>
+      <input class="form-input" type="date" name="fecha_inicio" value="{{ fecha_inicio }}">
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label">Fecha fin</label>
+      <input class="form-input" type="date" name="fecha_fin" value="{{ fecha_fin }}">
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label">Membresía</label>
+      <select class="form-input" name="membresia">
+        <option value="all"    {% if membresia == 'all'    %}selected{% endif %}>Todos</option>
+        <option value="member" {% if membresia == 'member' %}selected{% endif %}>Miembros</option>
+        <option value="casual" {% if membresia == 'casual' %}selected{% endif %}>Casuales</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label">Tipo de bicicleta</label>
+      <select class="form-input" name="tipo_bici">
+        <option value="all"          {% if tipo_bici == 'all'          %}selected{% endif %}>Todos</option>
+        <option value="classic_bike" {% if tipo_bici == 'classic_bike' %}selected{% endif %}>Clásica</option>
+        <option value="electric_bike"{% if tipo_bici == 'electric_bike'%}selected{% endif %}>Eléctrica</option>
+      </select>
+    </div>
+    <input type="hidden" name="pagina" value="1">
+    <div style="display:flex;gap:8px;align-items:flex-end;">
+      <button type="submit" class="btn btn-primary" style="flex:1;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        Filtrar
+      </button>
+      <a href="/gerente/reportes" class="btn btn-ghost">Limpiar</a>
+    </div>
+  </form>
+</div>
+
+<!-- Resumen resultados + botones export -->
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
+  <div style="font-size:0.85rem;color:var(--text-muted);">
+    <strong style="color:var(--text);">{{ total_viajes | num }}</strong> viajes ·
+    <strong style="color:var(--text);">{{ total_filas | num }}</strong> estaciones
+    {% if membresia != 'all' or tipo_bici != 'all' %} · filtros activos{% endif %}
+  </div>
+  <div class="no-print" style="display:flex;gap:8px;">
+    <a href="/gerente/reportes/excel?fecha_inicio={{ fecha_inicio }}&fecha_fin={{ fecha_fin }}&membresia={{ membresia }}&tipo_bici={{ tipo_bici }}"
+       class="btn btn-ghost" style="font-size:0.82rem;">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      Exportar Excel
+    </a>
+    <button onclick="window.print()" class="btn btn-ghost" style="font-size:0.82rem;">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+      Imprimir PDF
+    </button>
+  </div>
+</div>
+
+<!-- Print header (solo visible al imprimir) -->
+<div class="print-only" style="display:none;margin-bottom:20px;">
+  <div style="font-family:'Sora',sans-serif;font-size:1.4rem;font-weight:800;color:#1E86BD;">UrbanBike</div>
+  <div style="font-size:0.9rem;color:#334155;margin-top:4px;">
+    Reporte Estaciones — Período: {{ fecha_inicio }} → {{ fecha_fin }}
+  </div>
+</div>
+
+<!-- Gráficas -->
+<div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:16px;" class="charts-section">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Top 10 Estaciones</span>
+    </div>
+    <div style="position:relative;height:260px;">
+      <canvas id="chartEstaciones"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Viajes por Día de la Semana</span>
+    </div>
+    <div style="position:relative;height:260px;">
+      <canvas id="chartDow"></canvas>
+    </div>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 2fr;gap:16px;margin-bottom:20px;" class="charts-section">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Duración Promedio por Tipo de Bicicleta</span>
+    </div>
+    <div style="position:relative;height:240px;">
+      <canvas id="chartTipo"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Tendencia Mensual de Viajes</span>
+    </div>
+    <div style="position:relative;height:240px;">
+      <canvas id="chartTendencia"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Tabla paginada -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Estaciones por Viajes Iniciados</span>
+    <span style="font-size:0.78rem;color:var(--text-muted);">Página {{ pagina }} de {{ total_paginas }}</span>
+  </div>
+
+  {% if estaciones %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th style="width:36px;">#</th>
+          <th>Estación</th>
+          <th style="text-align:right;">Viajes</th>
+          <th style="text-align:right;">Dur. Prom.</th>
+          <th style="text-align:right;">Dist. Prom.</th>
+          <th class="no-print">Proporción</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set max_v = estaciones[0].viajes if estaciones else 1 %}
+        {% set offset_n = (pagina - 1) * 25 %}
+        {% for est in estaciones %}
+        <tr>
+          <td style="color:var(--text-muted);font-size:0.8rem;">{{ offset_n + loop.index }}</td>
+          <td style="font-weight:500;font-size:0.88rem;color:var(--text);">{{ est.nombre or "—" }}</td>
+          <td style="text-align:right;font-weight:600;font-size:0.9rem;">{{ est.viajes | num }}</td>
+          <td style="text-align:right;color:var(--text-muted);font-size:0.85rem;">{{ est.dur_prom }} min</td>
+          <td style="text-align:right;color:var(--text-muted);font-size:0.85rem;">{{ est.dist_prom }} km</td>
+          <td class="no-print" style="min-width:100px;">
+            <div style="height:6px;border-radius:3px;background:var(--border);overflow:hidden;">
+              <div style="height:100%;border-radius:3px;background:#1E86BD;width:{{ ((est.viajes / max_v) * 100) | round(1) }}%;"></div>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Paginación -->
+  {% if total_paginas > 1 %}
+  <div class="no-print" style="display:flex;align-items:center;justify-content:space-between;padding:14px 0 0;border-top:1px solid var(--border);margin-top:8px;">
+    <div style="font-size:0.82rem;color:var(--text-muted);">
+      Mostrando {{ ((pagina-1)*25)+1 }}–{{ [pagina*25, total_filas] | min }} de {{ total_filas | num }}
+    </div>
+    <div style="display:flex;gap:6px;">
+      {% if pagina > 1 %}
+      <a href="?fecha_inicio={{ fecha_inicio }}&fecha_fin={{ fecha_fin }}&membresia={{ membresia }}&tipo_bici={{ tipo_bici }}&pagina={{ pagina - 1 }}"
+         class="btn btn-ghost" style="padding:6px 12px;font-size:0.8rem;">← Anterior</a>
+      {% endif %}
+      {% for p in range([1, pagina-2]|max, [total_paginas+1, pagina+3]|min) %}
+        {% if p == pagina %}
+        <span class="btn btn-primary" style="padding:6px 12px;font-size:0.8rem;cursor:default;">{{ p }}</span>
+        {% else %}
+        <a href="?fecha_inicio={{ fecha_inicio }}&fecha_fin={{ fecha_fin }}&membresia={{ membresia }}&tipo_bici={{ tipo_bici }}&pagina={{ p }}"
+           class="btn btn-ghost" style="padding:6px 12px;font-size:0.8rem;">{{ p }}</a>
+        {% endif %}
+      {% endfor %}
+      {% if pagina < total_paginas %}
+      <a href="?fecha_inicio={{ fecha_inicio }}&fecha_fin={{ fecha_fin }}&membresia={{ membresia }}&tipo_bici={{ tipo_bici }}&pagina={{ pagina + 1 }}"
+         class="btn btn-ghost" style="padding:6px 12px;font-size:0.8rem;">Siguiente →</a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% else %}
+  <div style="text-align:center;padding:48px 24px;color:var(--text-muted);">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom:12px;opacity:0.4;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    <div style="font-size:0.9rem;">Sin datos para los filtros seleccionados</div>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const estLabels  = {{ chart_est_labels | safe }};
+const estValues  = {{ chart_est_values | safe }};
+const dowLabels  = {{ chart_dow_labels | safe }};
+const dowValues  = {{ chart_dow_values | safe }};
+const tipoLabels = {{ chart_tipo_labels | safe }};
+const tipoValues = {{ chart_tipo_values | safe }};
+const tendLabels = {{ chart_tendencia_labels | safe }};
+const tendValues = {{ chart_tendencia_values | safe }};
+
+if (estLabels.length) {
+  new Chart(document.getElementById('chartEstaciones'), {
+    type: 'bar',
+    data: {
+      labels: estLabels,
+      datasets: [{ data: estValues, backgroundColor: '#1E86BD', borderRadius: 4, borderSkipped: false }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (ctx) => ' ' + ctx.raw.toLocaleString('es') } }
+      },
+      scales: {
+        x: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { callback: v => v.toLocaleString('es'), font: { family: 'IBM Plex Sans', size: 9 } } },
+        y: { grid: { display: false }, ticks: { font: { family: 'IBM Plex Sans', size: 9 } } }
+      }
+    }
+  });
+}
+
+new Chart(document.getElementById('chartDow'), {
+  type: 'bar',
+  data: {
+    labels: dowLabels,
+    datasets: [{ label: 'Viajes', data: dowValues, backgroundColor: '#6366F1', borderRadius: 5, borderSkipped: false }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: (ctx) => ' ' + ctx.raw.toLocaleString('es') } }
+    },
+    scales: {
+      y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { callback: v => (v/1000).toFixed(0)+'K', font: { family: 'IBM Plex Sans', size: 9 } }, beginAtZero: true },
+      x: { grid: { display: false }, ticks: { font: { family: 'IBM Plex Sans', size: 9 } } }
+    }
+  }
+});
+
+new Chart(document.getElementById('chartTipo'), {
+  type: 'bar',
+  data: {
+    labels: tipoLabels,
+    datasets: [{ label: 'Duración prom. (min)', data: tipoValues, backgroundColor: ['#1E86BD', '#10B981'], borderRadius: 6, borderSkipped: false }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: (ctx) => ' ' + ctx.raw.toLocaleString('es') + ' min' } }
+    },
+    scales: {
+      y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { callback: v => v + ' min', font: { family: 'IBM Plex Sans', size: 9 } }, beginAtZero: true },
+      x: { grid: { display: false }, ticks: { font: { family: 'IBM Plex Sans', size: 9 } } }
+    }
+  }
+});
+
+new Chart(document.getElementById('chartTendencia'), {
+  type: 'line',
+  data: {
+    labels: tendLabels,
+    datasets: [{
+      label: 'Viajes', data: tendValues,
+      borderColor: '#1E86BD', backgroundColor: 'rgba(30,134,189,0.12)',
+      fill: true, tension: 0.3, pointRadius: 2,
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: (ctx) => ' ' + ctx.raw.toLocaleString('es') } }
+    },
+    scales: {
+      y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { callback: v => v.toLocaleString('es'), font: { family: 'IBM Plex Sans', size: 9 } }, beginAtZero: true },
+      x: { grid: { display: false }, ticks: { font: { family: 'IBM Plex Sans', size: 9 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 } }
+    }
+  }
+});
+</script>
+{% endblock %}

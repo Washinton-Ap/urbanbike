@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block title %}Estaciones{% endblock %}
+{% block page_title %}Gestión de Estaciones{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+{% endblock %}
+
+{% block content %}
+{% if error %}<div class="flash error" style="margin-bottom:20px;">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  Error PocketBase: {{ error }}</div>{% endif %}
+
+<div class="card" style="padding:0;overflow:hidden;margin-bottom:20px;">
+  <div class="card-header" style="border-bottom:1px solid var(--border);">
+    <span class="card-title">Mapa de estaciones</span>
+    <span style="font-size:0.8rem;color:var(--text-muted);">{{ items | length }} estaciones en Ecuador</span>
+  </div>
+  <div id="map-estaciones" style="height:380px;width:100%;"></div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Red de estaciones <span class="text-muted text-sm">({{ items | length }})</span></span>
+    <div class="flex gap-2" style="align-items:center;">
+      <input type="search" class="form-input" placeholder="Buscar..." style="width:auto;font-size:0.8rem;padding:6px 10px;" oninput="filtrarTabla(this, 'tabla-estaciones')">
+    <button class="btn btn-primary" onclick="document.getElementById('modal-crear').showModal()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Nueva estación
+    </button>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table id="tabla-estaciones">
+      <thead><tr><th>Nombre</th><th>Código</th><th>Capacidad</th><th>Coordenadas</th><th>Estado</th><th style="width:130px;"></th></tr></thead>
+      <tbody>
+        {% for s in items %}
+        <tr>
+          <td class="font-semibold">{{ s.nombre or "—" }}</td>
+          <td class="text-muted text-sm">{{ s.codigo or "—" }}</td>
+          <td class="text-sm">{{ s.capacidad if s.capacidad else "—" }}</td>
+          <td class="text-muted text-xs">
+            {% if s.latitud and s.longitud %}{{ "%.4f" | format(s.latitud | float) }}, {{ "%.4f" | format(s.longitud | float) }}
+            {% else %}—{% endif %}
+          </td>
+          <td>{% if s.activa %}<span class="badge badge-green">Activa</span>{% else %}<span class="badge badge-red">Inactiva</span>{% endif %}</td>
+          <td>
+            <div class="flex gap-2">
+              <button class="btn btn-ghost" style="padding:4px 10px;font-size:0.75rem;"
+                data-id="{{ s.id }}"
+                data-nombre="{{ s.nombre | default('') | e }}"
+                data-codigo="{{ s.codigo | default('') | e }}"
+                data-capacidad="{{ s.capacidad | default('') }}"
+                data-latitud="{{ s.latitud | default('') }}"
+                data-longitud="{{ s.longitud | default('') }}"
+                data-activa="{{ 'true' if s.activa else 'false' }}"
+                onclick="openEdit(this)">Editar</button>
+              <button class="btn btn-ghost" style="padding:4px 10px;font-size:0.75rem;color:#EF4444;border-color:rgba(239,68,68,0.35);"
+                data-id="{{ s.id }}" data-label="{{ s.nombre | default(s.id) | e }}"
+                onclick="openDel(this)">Eliminar</button>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" style="text-align:center;padding:48px;color:var(--text-muted);">No hay estaciones registradas.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<dialog id="modal-crear">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title">Nueva estación</span>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-crear').close()">✕</button></div>
+    <form method="post" action="/admin/estaciones/crear">
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;">
+        <div class="form-group"><label class="form-label">Nombre *</label>
+          <input class="form-input" type="text" name="nombre" required placeholder="Ej. Central Park W & 72 St"></div>
+        <div class="form-group"><label class="form-label">Código</label>
+          <input class="form-input" type="text" name="codigo" placeholder="Ej. 6140.01"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Capacidad (anclajes)</label>
+        <input class="form-input" type="number" name="capacidad" min="0" placeholder="0"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group"><label class="form-label">Latitud</label>
+          <input class="form-input" type="text" name="latitud" placeholder="40.7750"></div>
+        <div class="form-group"><label class="form-label">Longitud</label>
+          <input class="form-input" type="text" name="longitud" placeholder="-73.9772"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Estado</label>
+        <select class="form-input" name="activa">
+          <option value="true">Activa</option><option value="false">Inactiva</option></select></div>
+      <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-crear').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Crear</button></div>
+    </form>
+  </div>
+</dialog>
+
+<dialog id="modal-editar">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title">Editar estación</span>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-editar').close()">✕</button></div>
+    <form method="post" id="form-editar">
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;">
+        <div class="form-group"><label class="form-label">Nombre</label>
+          <input class="form-input" type="text" name="nombre" id="edit-nombre"></div>
+        <div class="form-group"><label class="form-label">Código</label>
+          <input class="form-input" type="text" name="codigo" id="edit-codigo"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Capacidad (anclajes)</label>
+        <input class="form-input" type="number" name="capacidad" id="edit-capacidad" min="0"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group"><label class="form-label">Latitud</label>
+          <input class="form-input" type="text" name="latitud" id="edit-latitud"></div>
+        <div class="form-group"><label class="form-label">Longitud</label>
+          <input class="form-input" type="text" name="longitud" id="edit-longitud"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Estado</label>
+        <select class="form-input" name="activa" id="edit-activa">
+          <option value="true">Activa</option><option value="false">Inactiva</option></select></div>
+      <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-editar').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar cambios</button></div>
+    </form>
+  </div>
+</dialog>
+
+<dialog id="modal-eliminar">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title" style="color:#EF4444;">Eliminar estación</span></div>
+    <p style="color:var(--text-muted);margin-bottom:20px;">¿Eliminar la estación <strong id="del-label" style="color:var(--text);"></strong>? Esta acción no se puede deshacer.</p>
+    <form method="post" id="form-eliminar">
+      <div class="flex gap-2" style="justify-content:flex-end;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-eliminar').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary" style="background:#EF4444;border-color:#EF4444;">Eliminar</button></div>
+    </form>
+  </div>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const ESTACIONES = {{ estaciones_json | safe }};
+
+const map = L.map('map-estaciones').setView([-1.5, -78.5], 6.4);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap contributors',
+  maxZoom: 18,
+}).addTo(map);
+
+const azulIcon = L.divIcon({
+  className: '',
+  html: '<div style="width:16px;height:16px;border-radius:50%;background:#1E86BD;border:2px solid #fff;box-shadow:0 0 0 2px #1E86BD;"></div>',
+  iconSize: [16, 16],
+  iconAnchor: [8, 8],
+});
+
+ESTACIONES.forEach(est => {
+  if (!est.latitud || !est.longitud) return;
+  L.marker([est.latitud, est.longitud], { icon: azulIcon })
+    .addTo(map)
+    .bindPopup(`<strong>${est.nombre || 'Estación'}</strong><br>Capacidad: ${est.capacidad ?? '—'}<br>${est.activa ? 'Activa' : 'Inactiva'}`);
+});
+</script>
+<script>
+function openEdit(btn) {
+  const d = btn.dataset;
+  document.getElementById('form-editar').action    = '/admin/estaciones/' + d.id + '/editar';
+  document.getElementById('edit-nombre').value     = d.nombre;
+  document.getElementById('edit-codigo').value     = d.codigo;
+  document.getElementById('edit-capacidad').value  = d.capacidad;
+  document.getElementById('edit-latitud').value    = d.latitud;
+  document.getElementById('edit-longitud').value   = d.longitud;
+  document.getElementById('edit-activa').value     = d.activa;
+  document.getElementById('modal-editar').showModal();
+}
+function openDel(btn) {
+  document.getElementById('form-eliminar').action  = '/admin/estaciones/' + btn.dataset.id + '/eliminar';
+  document.getElementById('del-label').textContent = btn.dataset.label;
+  document.getElementById('modal-eliminar').showModal();
+}
+document.querySelectorAll('dialog').forEach(d => d.addEventListener('click', e => { if (e.target === d) d.close(); }));
+</script>
+{% endblock %}

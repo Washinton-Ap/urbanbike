@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Comprobante de Pago{% endblock %}
+{% block page_title %}Comprobante de Pago{% endblock %}
+
+{% block content %}
+
+<div class="card no-print" style="max-width:560px;margin:0 auto 16px;display:flex;gap:10px;justify-content:flex-end;padding:16px;">
+  <button onclick="window.print()" class="btn btn-ghost">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+    Imprimir
+  </button>
+  <a href="/ciclista/dashboard" class="btn btn-primary">Volver al inicio</a>
+</div>
+
+<div class="card" style="max-width:560px;margin:0 auto;padding:32px;">
+  <div style="text-align:center;margin-bottom:24px;border-bottom:1px solid var(--border);padding-bottom:20px;">
+    <div style="font-family:'Sora',sans-serif;font-size:1.6rem;font-weight:800;color:#1E86BD;">UrbanBike</div>
+    <div style="font-size:0.82rem;color:var(--text-muted);margin-top:4px;">Comprobante de Pago</div>
+    <div style="font-family:'Sora',sans-serif;font-weight:700;font-size:1.1rem;color:var(--text);margin-top:10px;">{{ pago.comprobante_numero }}</div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:20px;">
+    <div style="display:flex;justify-content:space-between;">
+      <span style="color:var(--text-muted);font-size:0.85rem;">Ciclista</span>
+      <span style="font-weight:600;color:var(--text);">{{ pago.ciclista_nombre }}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;">
+      <span style="color:var(--text-muted);font-size:0.85rem;">Bicicleta</span>
+      <span style="font-weight:600;color:var(--text);">{{ viaje.bicicleta_codigo or "—" }}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;">
+      <span style="color:var(--text-muted);font-size:0.85rem;">Estación de salida</span>
+      <span>{{ viaje.estacion_inicio_nombre or "—" }}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;">
+      <span style="color:var(--text-muted);font-size:0.85rem;">Duración</span>
+      <span>{{ duracion_hms }}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;">
+      <span style="color:var(--text-muted);font-size:0.85rem;">Tarifa aplicada</span>
+      <span>${{ "%.2f" | format(pago.precio_hora | float) }} / hora</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;">
+      <span style="color:var(--text-muted);font-size:0.85rem;">Método de pago</span>
+      <span style="text-transform:capitalize;">{{ pago.metodo_pago }}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;">
+      <span style="color:var(--text-muted);font-size:0.85rem;">Fecha de pago</span>
+      <span>{{ pago.fecha_pago[:19].replace("T", " ") if pago.fecha_pago else "—" }}</span>
+    </div>
+  </div>
+
+  <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border);padding-top:16px;">
+    <span style="font-family:'Sora',sans-serif;font-weight:700;color:var(--text);">Monto pagado</span>
+    <span style="font-family:'Sora',sans-serif;font-weight:800;font-size:1.5rem;color:#1E86BD;">${{ "%.2f" | format(pago.monto_total | float) }}</span>
+  </div>
+
+  <div style="text-align:center;margin-top:28px;font-size:0.78rem;color:var(--text-muted);">
+    Gracias por usar UrbanBike — movilidad urbana sostenible
+  </div>
+</div>
+
+{% endblock %}

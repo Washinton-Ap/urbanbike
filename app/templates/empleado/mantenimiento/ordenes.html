@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% block title %}Órdenes de Trabajo{% endblock %}
+{% block page_title %}Órdenes de Trabajo{% endblock %}
+
+{% block content %}
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Órdenes de mantenimiento <span class="text-muted text-sm">({{ ordenes | length }})</span></span>
+    <div class="flex gap-2" style="align-items:center;">
+      <select class="form-input" style="width:auto;font-size:0.8rem;padding:6px 10px;" onchange="location.href = this.value ? '?estado=' + this.value : location.pathname">
+        <option value="" {% if not filtro %}selected{% endif %}>Todos los estados</option>
+        <option value="pendiente"  {% if filtro == 'pendiente' %}selected{% endif %}>Pendiente</option>
+        <option value="en_proceso" {% if filtro == 'en_proceso' %}selected{% endif %}>En proceso</option>
+        <option value="completado" {% if filtro == 'completado' %}selected{% endif %}>Completado</option>
+      </select>
+      <button class="btn btn-primary" onclick="openCrear()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Nueva orden
+      </button>
+    </div>
+  </div>
+
+  {% if ordenes %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Bicicleta</th>
+          <th>Tipo</th>
+          <th>Descripción</th>
+          <th>Técnico</th>
+          <th>Apertura</th>
+          <th>Estado</th>
+          <th style="width:160px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for o in ordenes %}
+        <tr>
+          <td style="font-weight:600;color:var(--text);font-family:monospace;">{{ o.bicicleta_codigo }}</td>
+          <td>
+            {% if o.tipo == 'urgente' %}<span class="badge badge-red">Urgente</span>
+            {% elif o.tipo == 'correctivo' %}<span class="badge badge-blue">Correctivo</span>
+            {% else %}<span class="badge badge-gray">Preventivo</span>{% endif %}
+          </td>
+          <td class="text-sm" style="max-width:280px;">{{ o.descripcion }}</td>
+          <td class="text-muted text-sm">{{ o.tecnico_nombre or "—" }}</td>
+          <td class="text-muted text-sm">{{ o.fecha_apertura | replace("T", " ") | replace("Z", "") }}</td>
+          <td>
+            {% if o.estado == 'pendiente' %}<span class="badge badge-gray">Pendiente</span>
+            {% elif o.estado == 'en_proceso' %}<span class="badge badge-blue">En proceso</span>
+            {% else %}<span class="badge badge-green">Completado</span>{% endif %}
+          </td>
+          <td>
+            <div class="flex gap-2">
+              <button class="btn btn-ghost" style="padding:4px 10px;font-size:0.75rem;"
+                data-id="{{ o.id }}"
+                data-tipo="{{ o.tipo }}"
+                data-descripcion="{{ o.descripcion | e }}"
+                data-estado="{{ o.estado }}"
+                data-tecnico="{{ o.tecnico_nombre | default('') | e }}"
+                onclick="openEdit(this)">Editar</button>
+              <button class="btn btn-ghost" style="padding:4px 10px;font-size:0.75rem;color:#EF4444;border-color:rgba(239,68,68,0.35);"
+                data-id="{{ o.id }}" data-label="orden de {{ o.bicicleta_codigo }}"
+                onclick="openDel(this)">Eliminar</button>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:64px 24px;">
+    <div style="display:flex;justify-content:center;margin-bottom:20px;opacity:0.3;">
+      <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+    </div>
+    <div style="font-family:'Sora',sans-serif;font-weight:700;font-size:1.1rem;color:var(--text);margin-bottom:8px;">
+      Sin órdenes de trabajo
+    </div>
+    <div style="font-size:0.88rem;color:var(--text-muted);max-width:360px;margin:0 auto;line-height:1.6;">
+      No hay órdenes registradas{% if filtro %} con el estado seleccionado{% endif %}. Crea una nueva orden para empezar.
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<dialog id="modal-crear">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title">Nueva orden de trabajo</span>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-crear').close()">✕</button></div>
+    <form method="post" action="/empleado/mantenimiento/ordenes/crear">
+      <div class="form-group">
+        <label class="form-label">Bicicleta *</label>
+        <select class="form-input" name="bicicleta_id" id="crear-bicicleta" required onchange="syncCodigo(this)">
+          <option value="" disabled selected>Selecciona una bicicleta...</option>
+          {% for b in bicicletas %}
+          <option value="{{ b.id }}" data-codigo="{{ b.codigo }}">{{ b.codigo }} — {{ b.estacion or 'Sin estación' }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <input type="hidden" name="bicicleta_codigo" id="crear-bicicleta-codigo">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group"><label class="form-label">Tipo</label>
+          <select class="form-input" name="tipo">
+            <option value="preventivo">Preventivo</option>
+            <option value="correctivo" selected>Correctivo</option>
+            <option value="urgente">Urgente</option>
+          </select></div>
+        <div class="form-group"><label class="form-label">Técnico asignado</label>
+          <input class="form-input" type="text" name="tecnico_nombre" placeholder="Nombre del técnico"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Descripción *</label>
+        <textarea class="form-input" name="descripcion" rows="3" required placeholder="Detalle de la incidencia o trabajo a realizar..."></textarea></div>
+      <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-crear').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Crear orden</button></div>
+    </form>
+  </div>
+</dialog>
+
+<dialog id="modal-editar">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title">Editar orden de trabajo</span>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-editar').close()">✕</button></div>
+    <form method="post" id="form-editar">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group"><label class="form-label">Tipo</label>
+          <select class="form-input" name="tipo" id="edit-tipo">
+            <option value="preventivo">Preventivo</option>
+            <option value="correctivo">Correctivo</option>
+            <option value="urgente">Urgente</option>
+          </select></div>
+        <div class="form-group"><label class="form-label">Estado</label>
+          <select class="form-input" name="estado" id="edit-estado">
+            <option value="pendiente">Pendiente</option>
+            <option value="en_proceso">En proceso</option>
+            <option value="completado">Completado</option>
+          </select></div>
+      </div>
+      <div class="form-group"><label class="form-label">Técnico asignado</label>
+        <input class="form-input" type="text" name="tecnico_nombre" id="edit-tecnico"></div>
+      <div class="form-group"><label class="form-label">Descripción</label>
+        <textarea class="form-input" name="descripcion" id="edit-descripcion" rows="3"></textarea></div>
+      <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-editar').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar cambios</button></div>
+    </form>
+  </div>
+</dialog>
+
+<dialog id="modal-eliminar">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title" style="color:#EF4444;">Eliminar orden</span></div>
+    <p style="color:var(--text-muted);margin-bottom:20px;">¿Eliminar la <strong id="del-label" style="color:var(--text);"></strong>? Esta acción no se puede deshacer.</p>
+    <form method="post" id="form-eliminar">
+      <div class="flex gap-2" style="justify-content:flex-end;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-eliminar').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary" style="background:#EF4444;border-color:#EF4444;">Eliminar</button></div>
+    </form>
+  </div>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openCrear() {
+  document.getElementById('crear-bicicleta').value = '';
+  document.getElementById('crear-bicicleta-codigo').value = '';
+  document.getElementById('modal-crear').showModal();
+}
+function syncCodigo(sel) {
+  const opt = sel.options[sel.selectedIndex];
+  document.getElementById('crear-bicicleta-codigo').value = opt.dataset.codigo || '';
+}
+function openEdit(btn) {
+  const d = btn.dataset;
+  document.getElementById('form-editar').action      = '/empleado/mantenimiento/ordenes/' + d.id + '/editar';
+  document.getElementById('edit-tipo').value         = d.tipo;
+  document.getElementById('edit-estado').value       = d.estado;
+  document.getElementById('edit-tecnico').value      = d.tecnico;
+  document.getElementById('edit-descripcion').value  = d.descripcion;
+  document.getElementById('modal-editar').showModal();
+}
+function openDel(btn) {
+  document.getElementById('form-eliminar').action  = '/empleado/mantenimiento/ordenes/' + btn.dataset.id + '/eliminar';
+  document.getElementById('del-label').textContent = btn.dataset.label;
+  document.getElementById('modal-eliminar').showModal();
+}
+document.querySelectorAll('dialog').forEach(d => d.addEventListener('click', e => { if (e.target === d) d.close(); }));
+</script>
+{% endblock %}

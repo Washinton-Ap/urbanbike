@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Empleados{% endblock %}
+{% block page_title %}Empleados de UrbanBike{% endblock %}
+
+{% block content %}
+
+{% if not pb_ok %}
+<div class="flash error" style="margin-bottom:16px;">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  No se pudo conectar con PocketBase.
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Empleados registrados <span class="text-muted text-sm">({{ empleados | length }})</span></span>
+    <div class="flex gap-2" style="align-items:center;">
+      <input type="search" class="form-input" placeholder="Buscar..." style="width:auto;font-size:0.8rem;padding:6px 10px;" oninput="filtrarTabla(this, 'tabla-empleados')">
+      <a href="/gerente/empleados/excel" class="btn btn-primary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Exportar Excel
+      </a>
+    </div>
+  </div>
+
+  {% if empleados %}
+  <div class="table-wrap">
+    <table id="tabla-empleados">
+      <thead>
+        <tr><th>Nombre</th><th>Tipo de empleado</th><th>Correo electrónico</th><th>Estado de cuenta</th><th>Fecha de registro</th></tr>
+      </thead>
+      <tbody>
+        {% for e in empleados %}
+        <tr>
+          <td>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div style="width:32px;height:32px;border-radius:50%;background:var(--primary-light);display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700;color:#1E86BD;flex-shrink:0;">
+                {{ e.nombre[:2] | upper }}
+              </div>
+              <span style="font-weight:600;color:var(--text);font-size:0.88rem;">{{ e.nombre }}</span>
+            </div>
+          </td>
+          <td><span class="badge badge-blue">{{ e.rol }}</span></td>
+          <td class="text-muted">{{ e.email }}</td>
+          <td>
+            {% if e.verificado %}<span class="badge badge-green">Verificado</span>
+            {% else %}<span class="badge badge-yellow">Pendiente</span>{% endif %}
+          </td>
+          <td class="text-muted text-sm">{{ e.fecha_registro or "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:64px 24px;">
+    <div style="display:flex;justify-content:center;margin-bottom:20px;opacity:0.3;">
+      <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    </div>
+    <div style="font-family:'Sora',sans-serif;font-weight:700;font-size:1.1rem;color:var(--text);margin-bottom:8px;">
+      Sin empleados registrados
+    </div>
+    <div style="font-size:0.88rem;color:var(--text-muted);max-width:360px;margin:0 auto;line-height:1.6;">
+      No se encontraron usuarios con un rol de empleado.
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

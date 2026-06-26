@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Gerente{% endblock %}
+{% block page_title %}Dashboard — Gerente{% endblock %}
+
+{% block content %}
+
+{% if not ch_ok %}
+<div class="flash error" style="margin-bottom:20px;">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  ClickHouse no disponible — no se pueden cargar los KPIs.
+</div>
+{% endif %}
+
+<div style="margin-bottom:24px;">
+  <p style="color:var(--text-muted);font-size:0.9rem;">
+    Datos analíticos del dataset Citibike NYC — Octubre 2023
+  </p>
+</div>
+
+<!-- KPI Grid principal -->
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+      <div style="width:32px;height:32px;border-radius:8px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      </div>
+      <div class="kpi-label">Total Viajes</div>
+    </div>
+    <div class="kpi-value">{{ kpis.get('total_viajes', 0) | num }}</div>
+    <div class="kpi-delta">registros en ClickHouse</div>
+  </div>
+
+  <div class="kpi-card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+      <div style="width:32px;height:32px;border-radius:8px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+      </div>
+      <div class="kpi-label">Estaciones Únicas</div>
+    </div>
+    <div class="kpi-value">{{ kpis.get('total_estaciones', 0) | num }}</div>
+    <div class="kpi-delta">estaciones de origen distintas</div>
+  </div>
+
+  <div class="kpi-card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+      <div style="width:32px;height:32px;border-radius:8px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      </div>
+      <div class="kpi-label">Duración Promedio</div>
+    </div>
+    <div class="kpi-value">{{ kpis.get('dur_prom_min', 0) }} min</div>
+    <div class="kpi-delta">tiempo promedio por viaje</div>
+  </div>
+
+  <div class="kpi-card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+      <div style="width:32px;height:32px;border-radius:8px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </div>
+      <div class="kpi-label">Distancia Promedio</div>
+    </div>
+    <div class="kpi-value">{{ kpis.get('dist_prom_km', 0) }} km</div>
+    <div class="kpi-delta">distancia promedio por viaje</div>
+  </div>
+</div>
+
+<!-- Gráficas: DOW + Membresía -->
+<div style="display:grid;grid-template-columns:3fr 2fr;gap:16px;margin-bottom:24px;">
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Viajes por Día de la Semana</span>
+      <span style="font-size:0.78rem;color:var(--text-muted);">Total periodo</span>
+    </div>
+    <div style="position:relative;height:200px;">
+      <canvas id="chartDow"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Membresía</span>
+    </div>
+    <div style="position:relative;height:200px;display:flex;align-items:center;justify-content:center;">
+      <canvas id="chartMembresia"></canvas>
+    </div>
+  </div>
+
+</div>
+
+<!-- Top 10 estaciones (horizontal bar) -->
+<div class="card" style="margin-bottom:24px;">
+  <div class="card-header">
+    <span class="card-title">Top 10 Estaciones por Viajes</span>
+    <a href="/gerente/reportes" style="font-size:0.8rem;color:#1E86BD;text-decoration:none;">Ver reporte completo</a>
+  </div>
+  <div style="position:relative;height:280px;">
+    <canvas id="chartTop10"></canvas>
+  </div>
+</div>
+
+<!-- Navegación -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+  <a href="/gerente/reportes" style="text-decoration:none;">
+    <div class="card" style="cursor:pointer;transition:box-shadow 0.15s,transform 0.15s;" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 16px rgba(30,134,189,0.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div style="width:40px;height:40px;border-radius:10px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        </div>
+        <div>
+          <div style="font-family:'Sora',sans-serif;font-weight:600;font-size:0.95rem;color:var(--text);">Reportes</div>
+          <div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px;">Filtros, tablas y exportar</div>
+        </div>
+      </div>
+    </div>
+  </a>
+  <a href="/gerente/empleados" style="text-decoration:none;">
+    <div class="card" style="cursor:pointer;transition:box-shadow 0.15s,transform 0.15s;" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 16px rgba(30,134,189,0.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div style="width:40px;height:40px;border-radius:10px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </div>
+        <div>
+          <div style="font-family:'Sora',sans-serif;font-weight:600;font-size:0.95rem;color:var(--text);">Usuarios del Sistema</div>
+          <div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px;">Cuentas y roles registrados</div>
+        </div>
+      </div>
+    </div>
+  </a>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const dowLabels = {{ dow_labels | safe }};
+const dowValues = {{ dow_values | safe }};
+const topLabels = {{ top_labels | safe }};
+const topValues = {{ top_values | safe }};
+const memberVal = {{ kpis.get('viajes_member', 0) }};
+const casualVal = {{ kpis.get('viajes_casual', 0) }};
+
+// Viajes por día de la semana
+new Chart(document.getElementById('chartDow'), {
+  type: 'bar',
+  data: {
+    labels: dowLabels,
+    datasets: [{
+      label: 'Viajes',
+      data: dowValues,
+      backgroundColor: '#1E86BD',
+      borderRadius: 6,
+      borderSkipped: false,
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: (ctx) => ' ' + ctx.raw.toLocaleString('es') } }
+    },
+    scales: {
+      y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { callback: v => (v/1000).toFixed(0)+'K', font: { family: 'IBM Plex Sans', size: 10 } }, beginAtZero: true },
+      x: { grid: { display: false }, ticks: { font: { family: 'IBM Plex Sans', size: 10 } } }
+    }
+  }
+});
+
+// Membresía dona
+new Chart(document.getElementById('chartMembresia'), {
+  type: 'doughnut',
+  data: {
+    labels: ['Miembros', 'Casuales'],
+    datasets: [{
+      data: [memberVal, casualVal],
+      backgroundColor: ['#1E86BD', '#6366F1'],
+      borderWidth: 0,
+      hoverOffset: 6,
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    cutout: '62%',
+    plugins: {
+      legend: { position: 'bottom', labels: { font: { family: 'IBM Plex Sans', size: 11 }, boxWidth: 10, padding: 10 } },
+      tooltip: { callbacks: { label: (ctx) => ' ' + ctx.raw.toLocaleString('es') } }
+    }
+  }
+});
+
+// Top 10 estaciones horizontal bar
+new Chart(document.getElementById('chartTop10'), {
+  type: 'bar',
+  data: {
+    labels: topLabels,
+    datasets: [{
+      data: topValues,
+      backgroundColor: '#1E86BD',
+      borderRadius: 4,
+      borderSkipped: false,
+    }]
+  },
+  options: {
+    indexAxis: 'y',
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: (ctx) => ' ' + ctx.raw.toLocaleString('es') } }
+    },
+    scales: {
+      x: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { callback: v => v.toLocaleString('es'), font: { family: 'IBM Plex Sans', size: 10 } } },
+      y: { grid: { display: false }, ticks: { font: { family: 'IBM Plex Sans', size: 10 } } }
+    }
+  }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Mis Reportes{% endblock %}
+{% block page_title %}Mis Reportes{% endblock %}
+
+{% block content %}
+
+<!-- KPIs -->
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-label">Viajes realizados</div>
+    <div class="kpi-value">{{ total_viajes | num }}</div>
+    <div class="kpi-delta">{{ completados | num }} completados</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Tiempo total en ruta</div>
+    <div class="kpi-value">{{ tiempo_total | num }} min</div>
+    <div class="kpi-delta">acumulado en viajes completados</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Duración promedio</div>
+    <div class="kpi-value">{{ duracion_prom }} min</div>
+    <div class="kpi-delta">por viaje completado</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Viajes por Mes</span>
+  </div>
+  {% if mes_labels != '[]' %}
+  <div style="position:relative;height:300px;">
+    <canvas id="chartMeses"></canvas>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:48px 24px;color:var(--text-muted);">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom:12px;opacity:0.4;"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+    <div style="font-size:0.9rem;">Aún no tienes viajes registrados.</div>
+  </div>
+  {% endif %}
+</div>
+
+<p class="text-sm text-muted mt-4">
+  Nota: la distancia recorrida no se registra para reservas individuales; este reporte se basa en
+  la duración de tus viajes.
+</p>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const mesLabels = {{ mes_labels | safe }};
+const mesValues = {{ mes_values | safe }};
+
+if (mesLabels.length) {
+  new Chart(document.getElementById('chartMeses'), {
+    type: 'bar',
+    data: {
+      labels: mesLabels,
+      datasets: [{ label: 'Viajes', data: mesValues, backgroundColor: '#1E86BD', borderRadius: 6, borderSkipped: false }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (ctx) => ' ' + ctx.raw.toLocaleString('es') + ' viajes' } }
+      },
+      scales: {
+        y: { beginAtZero: true, ticks: { stepSize: 1, callback: v => v.toLocaleString('es'), font: { family: 'IBM Plex Sans', size: 10 } }, grid: { color: 'rgba(0,0,0,0.05)' } },
+        x: { grid: { display: false }, ticks: { font: { family: 'IBM Plex Sans', size: 10 } } }
+      }
+    }
+  });
+}
+</script>
+{% endblock %}

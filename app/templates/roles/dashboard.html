@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block page_title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div style="margin-bottom:28px;">
+  <h2 style="font-family:'Sora',sans-serif;font-size:1.4rem;font-weight:700;color:var(--text);margin-bottom:6px;">
+    Bienvenido, {{ user.name or user.email }}
+  </h2>
+  <p style="color:var(--text-muted);font-size:0.9rem;">
+    Módulo <strong style="color:var(--primary);">{{ rol_titulo }}</strong> — En construcción.
+    Los módulos funcionales estarán disponibles próximamente.
+  </p>
+</div>
+
+<div class="kpi-grid">
+  {% for m in modulos %}
+  <a href="{{ m.href }}" style="text-decoration:none;">
+    <div class="kpi-card" style="cursor:pointer;transition:box-shadow 0.15s,transform 0.15s;" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 16px rgba(30,134,189,0.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+        <div style="width:36px;height:36px;border-radius:8px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          {% if m.icono == "chart" %}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+          {% elif m.icono == "map" %}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          {% elif m.icono == "activity" %}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          {% elif m.icono == "bike" %}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 0 0 0-2h-3l-1 5.5M5.5 17.5 9 8l3 5h6"/></svg>
+          {% elif m.icono == "user" %}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          {% elif m.icono == "tool" %}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+          {% elif m.icono == "eye" %}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          {% elif m.icono == "bell" %}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          {% else %}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+          {% endif %}
+        </div>
+        <span style="font-family:'Sora',sans-serif;font-size:0.9rem;font-weight:600;color:var(--text);">{{ m.nombre }}</span>
+      </div>
+      <p style="font-size:0.8rem;color:var(--text-muted);line-height:1.4;">{{ m.desc }}</p>
+      <div style="margin-top:12px;font-size:0.75rem;color:var(--primary);font-weight:500;">
+        {% if m.href == "#" %}Próximamente →{% else %}Acceder →{% endif %}
+      </div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+
+<div class="card" style="margin-top:8px;background:var(--primary-light);border-color:rgba(30,134,189,0.2);">
+  <div style="display:flex;align-items:center;gap:12px;">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <div>
+      <div style="font-size:0.85rem;font-weight:600;color:#1E86BD;">Módulo en construcción</div>
+      <div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px;">
+        Las funcionalidades específicas del rol <strong>{{ rol_titulo }}</strong> están siendo desarrolladas.
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Auditoría{% endblock %}
+{% block page_title %}Auditoría{% endblock %}
+
+{% block content %}
+
+{% if error %}
+<div class="flash error" style="margin-bottom:16px;">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  {{ error }}
+</div>
+{% endif %}
+
+{% set _badges = {
+  "crear":    "badge-green",
+  "editar":   "badge-yellow",
+  "eliminar": "badge-red",
+  "login":    "badge-blue",
+  "logout":   "badge-blue",
+} %}
+
+<div class="card">
+  <div class="card-header" style="flex-wrap:wrap;gap:10px;">
+    <span class="card-title">Registro de auditoría <span class="text-muted text-sm">({{ items | length }})</span></span>
+    <a href="/admin/auditoria/excel?accion={{ f_accion }}&modulo={{ f_modulo }}&usuario={{ f_usuario }}" class="btn btn-ghost" style="font-size:0.8rem;padding:7px 14px;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
+      Exportar Excel
+    </a>
+  </div>
+
+  <form method="get" action="/admin/auditoria" style="display:flex;flex-wrap:wrap;gap:10px;padding:16px 20px;border-bottom:1px solid var(--border);">
+    <select name="accion" class="form-input" style="width:auto;font-size:0.82rem;">
+      <option value="">Todas las acciones</option>
+      {% for op in ["crear", "editar", "eliminar", "login", "logout"] %}
+      <option value="{{ op }}" {% if f_accion == op %}selected{% endif %}>{{ op | capitalize }}</option>
+      {% endfor %}
+    </select>
+    <select name="modulo" class="form-input" style="width:auto;font-size:0.82rem;">
+      <option value="">Todos los módulos</option>
+      {% for mod in ["usuarios", "bicicletas", "estaciones", "tarifas", "viajes", "sistema"] %}
+      <option value="{{ mod }}" {% if f_modulo == mod %}selected{% endif %}>{{ mod | capitalize }}</option>
+      {% endfor %}
+    </select>
+    <input type="text" name="usuario" class="form-input" style="width:auto;font-size:0.82rem;" placeholder="Buscar por usuario..." value="{{ f_usuario }}">
+    <button type="submit" class="btn btn-primary" style="font-size:0.82rem;padding:8px 16px;">Filtrar</button>
+    {% if f_accion or f_modulo or f_usuario %}
+    <a href="/admin/auditoria" class="btn btn-ghost" style="font-size:0.82rem;padding:8px 16px;">Limpiar</a>
+    {% endif %}
+  </form>
+
+  {% if items %}
+  <div class="table-wrap">
+    <table id="tabla-auditoria">
+      <thead>
+        <tr><th>Fecha/Hora</th><th>Usuario</th><th>Rol</th><th>Acción</th><th>Módulo</th><th>Detalle</th></tr>
+      </thead>
+      <tbody>
+        {% for r in items %}
+        <tr>
+          <td class="text-muted text-sm" style="white-space:nowrap;">{{ r.fecha | replace("T", " ") | replace("Z", "") }}</td>
+          <td>
+            <div style="font-weight:600;color:var(--text);">{{ r.usuario_nombre or "—" }}</div>
+            <div class="text-muted text-sm">{{ r.usuario_email or "" }}</div>
+          </td>
+          <td class="text-muted text-sm">{{ r.usuario_rol or "—" }}</td>
+          <td><span class="badge {{ _badges.get(r.accion, 'badge-blue') }}">{{ r.accion }}</span></td>
+          <td class="text-muted text-sm">{{ r.modulo or "—" }}</td>
+          <td class="text-muted">{{ r.detalle or "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:64px 24px;">
+    <div style="display:flex;justify-content:center;margin-bottom:20px;opacity:0.3;">
+      <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+    </div>
+    <div style="font-family:'Sora',sans-serif;font-weight:700;font-size:1.1rem;color:var(--text);margin-bottom:8px;">
+      Sin registros de auditoría
+    </div>
+    <div style="font-size:0.88rem;color:var(--text-muted);max-width:360px;margin:0 auto;line-height:1.6;">
+      Los inicios de sesión, cierres de sesión y operaciones de creación, edición y eliminación aparecerán aquí.
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

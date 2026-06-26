@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Bicicletas en Mantenimiento{% endblock %}
+{% block page_title %}Bicicletas en Mantenimiento{% endblock %}
+
+{% block content %}
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Bicicletas en revisión</span>
+    <span style="font-size:0.8rem;color:var(--text-muted);">{{ bicicletas | length }} bicicletas</span>
+  </div>
+
+  {% if bicicletas %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Código</th>
+          <th>Tipo</th>
+          <th>Estación</th>
+          <th>Notas</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in bicicletas %}
+        <tr>
+          <td style="font-weight:600;font-family:monospace;color:var(--text);">{{ b.codigo }}</td>
+          <td>
+            {% if b.tipo == 'electric_bike' %}
+              <span class="badge badge-green">Eléctrica</span>
+            {% else %}
+              <span class="badge badge-blue">Clásica</span>
+            {% endif %}
+          </td>
+          <td style="color:var(--text-muted);font-size:0.85rem;">{{ b.estacion or '—' }}</td>
+          <td style="color:var(--text-muted);font-size:0.82rem;">{{ b.notas or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:48px 24px;color:var(--text-muted);">
+    <div style="display:flex;justify-content:center;margin-bottom:12px;opacity:0.4;">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+    </div>
+    <div style="font-size:0.9rem;">Ninguna bicicleta en mantenimiento</div>
+    <div style="font-size:0.82rem;margin-top:4px;">Todas las bicicletas están operativas.</div>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

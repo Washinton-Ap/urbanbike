@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block title %}Reservar Bicicleta{% endblock %}
+{% block page_title %}Reservar Bicicleta{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+{% endblock %}
+
+{% block content %}
+
+<div class="card" style="padding:0;overflow:hidden;margin-bottom:20px;">
+  <div class="card-header" style="border-bottom:1px solid var(--border);">
+    <span class="card-title">Estaciones disponibles</span>
+    <span style="font-size:0.8rem;color:var(--text-muted);">Toca una estación en el mapa para ver sus bicicletas</span>
+  </div>
+  <div id="map-alquilar" style="height:380px;width:100%;"></div>
+</div>
+
+<div class="card" id="panel-estacion" style="display:none;">
+  <div class="card-header">
+    <span class="card-title" id="panel-estacion-nombre">—</span>
+    <span style="font-size:0.8rem;color:var(--text-muted);" id="panel-estacion-meta"></span>
+  </div>
+  <div id="panel-bicicletas" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;padding:20px;"></div>
+</div>
+
+<div class="card" id="panel-vacio" style="text-align:center;padding:56px 24px;">
+  <div style="display:flex;justify-content:center;margin-bottom:16px;opacity:0.35;">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+  </div>
+  <div style="font-family:'Sora',sans-serif;font-weight:600;font-size:1rem;color:var(--text);margin-bottom:6px;">Selecciona una estación</div>
+  <div style="font-size:0.85rem;color:var(--text-muted);">Haz clic en un marcador del mapa para ver las bicicletas disponibles en esa estación.</div>
+</div>
+
+<form id="form-reservar" method="post" action="/ciclista/reservar" style="display:none;">
+  <input type="hidden" name="bicicleta_id" id="rv-bicicleta-id">
+  <input type="hidden" name="bicicleta_codigo" id="rv-bicicleta-codigo">
+  <input type="hidden" name="estacion_inicio_id" id="rv-estacion-id">
+  <input type="hidden" name="estacion_inicio_nombre" id="rv-estacion-nombre">
+  <input type="hidden" name="latitud" id="rv-lat">
+  <input type="hidden" name="longitud" id="rv-lng">
+</form>
+
+<dialog id="modal-resumen" style="max-width:420px;width:100%;border:none;border-radius:14px;padding:0;">
+  <div style="padding:22px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+      <span style="font-family:'Sora',sans-serif;font-weight:700;font-size:1.05rem;color:var(--text);">Resumen de la reserva</span>
+      <button type="button" class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-resumen').close()">✕</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:20px;">
+      <div style="display:flex;justify-content:space-between;">
+        <span style="color:var(--text-muted);font-size:0.85rem;">Bicicleta</span>
+        <span style="font-weight:600;color:var(--text);" id="rs-bici">—</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;">
+        <span style="color:var(--text-muted);font-size:0.85rem;">Tipo</span>
+        <span id="rs-tipo">—</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;">
+        <span style="color:var(--text-muted);font-size:0.85rem;">Estación de salida</span>
+        <span style="font-weight:600;color:var(--text);" id="rs-estacion">—</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;">
+        <span style="color:var(--text-muted);font-size:0.85rem;">Tarifa por hora</span>
+        <span style="font-family:'Sora',sans-serif;font-weight:700;color:var(--primary);" id="rs-tarifa">—</span>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;">
+      <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-resumen').close()">Cancelar</button>
+      <button type="button" class="btn btn-primary" id="btn-confirmar-reserva">Confirmar</button>
+    </div>
+  </div>
+</dialog>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const ESTACIONES  = {{ estaciones_json | safe }};
+const BICICLETAS  = {{ bicicletas_json | safe }};
+const TARIFAS     = {{ tarifas_json | safe }};
+const PB_URL      = {{ pb_url | tojson }};
+
+const ICONO_BICI_SVG = `
+  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4">
+    <circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/>
+    <path d="M15 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm-9.5 11.5L9 10l4 4 4-4 4 7.5M9 10l-1-3h-3"/>
+  </svg>`;
+
+function fotoBici(bici) {
+  if (bici.foto) {
+    const url = `${PB_URL}/api/files/bicicletas/${bici.id}/${bici.foto}?thumb=400x300`;
+    return `<img src="${url}" alt="${bici.codigo}" style="width:100%;height:150px;max-width:200px;object-fit:cover;border-radius:8px;display:block;">`;
+  }
+  return `<div style="width:100%;max-width:200px;height:150px;display:flex;align-items:center;justify-content:center;background:var(--bg-soft);border-radius:8px;color:var(--text-muted);opacity:0.5;">${ICONO_BICI_SVG}</div>`;
+}
+
+function tarifaPara(tipoBicicleta) {
+  const t = TARIFAS.find(x => x.tipo_bicicleta === tipoBicicleta && x.tipo_usuario === 'member');
+  return t ? Number(t.precio_hora) : 0;
+}
+
+const map = L.map('map-alquilar').setView([-1.5, -78.5], 6.4);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap contributors',
+  maxZoom: 18,
+}).addTo(map);
+
+const azulIcon = L.divIcon({
+  className: '',
+  html: '<div style="width:18px;height:18px;border-radius:50%;background:#1E86BD;border:2px solid #fff;box-shadow:0 0 0 2px #1E86BD;"></div>',
+  iconSize: [18, 18],
+  iconAnchor: [9, 9],
+});
+
+const panelEstacion = document.getElementById('panel-estacion');
+const panelVacio    = document.getElementById('panel-vacio');
+
+function bicicletaCard(bici, estacion) {
+  const tipoBadge = bici.tipo === 'electric_bike'
+    ? '<span class="badge badge-green">Eléctrica</span>'
+    : '<span class="badge badge-blue">Clásica</span>';
+  const estadoBadges = {
+    disponible: '<span class="badge badge-green">Disponible</span>',
+    en_uso: '<span class="badge badge-blue">En uso</span>',
+    mantenimiento: '<span class="badge badge-yellow">Mantenimiento</span>',
+    retirada: '<span class="badge badge-red">Retirada</span>',
+  };
+  const estadoBadge = estadoBadges[bici.estado] || `<span class="badge badge-gray">${bici.estado}</span>`;
+  const div = document.createElement('div');
+  div.className = 'card';
+  div.style.border = '1px solid var(--border)';
+  div.innerHTML = `
+    <div style="margin-bottom:14px;">${fotoBici(bici)}</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+      <span style="font-family:'Sora',sans-serif;font-weight:700;font-size:1rem;color:var(--text);">${bici.codigo}</span>
+      ${tipoBadge}
+    </div>
+    <div style="margin-bottom:14px;">${estadoBadge}</div>
+    <button class="btn btn-primary btn-reservar" style="width:100%;font-size:0.82rem;">Reservar</button>
+  `;
+  div.querySelector('.btn-reservar').addEventListener('click', () => reservar(bici, estacion));
+  return div;
+}
+
+function reservar(bici, estacion) {
+  document.getElementById('rv-bicicleta-id').value      = bici.id;
+  document.getElementById('rv-bicicleta-codigo').value  = bici.codigo;
+  document.getElementById('rv-estacion-id').value       = estacion.id;
+  document.getElementById('rv-estacion-nombre').value   = estacion.nombre;
+  document.getElementById('rv-lat').value               = estacion.latitud;
+  document.getElementById('rv-lng').value               = estacion.longitud;
+
+  const esElectrica = bici.tipo === 'electric_bike';
+  const precio = tarifaPara(bici.tipo);
+  document.getElementById('rs-bici').textContent     = bici.codigo;
+  document.getElementById('rs-tipo').innerHTML       = esElectrica
+    ? '<span class="badge badge-green">Eléctrica</span>'
+    : '<span class="badge badge-blue">Clásica</span>';
+  document.getElementById('rs-estacion').textContent = estacion.nombre;
+  document.getElementById('rs-tarifa').textContent   = `$${precio.toFixed(2)} / hora`;
+
+  document.getElementById('modal-resumen').showModal();
+}
+
+document.getElementById('btn-confirmar-reserva').addEventListener('click', () => {
+  document.getElementById('modal-resumen').close();
+  document.getElementById('form-reservar').submit();
+});
+document.getElementById('modal-resumen').addEventListener('click', e => {
+  if (e.target.id === 'modal-resumen') e.target.close();
+});
+
+function mostrarEstacion(estacion) {
+  panelVacio.style.display = 'none';
+  panelEstacion.style.display = 'block';
+  document.getElementById('panel-estacion-nombre').textContent = estacion.nombre;
+  document.getElementById('panel-estacion-meta').textContent   = `Capacidad: ${estacion.capacidad ?? '—'}`;
+
+  const cont = document.getElementById('panel-bicicletas');
+  cont.innerHTML = '';
+  const disponibles = BICICLETAS.filter(b => b.estacion === estacion.nombre && b.estado === 'disponible');
+  if (disponibles.length === 0) {
+    cont.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:32px;color:var(--text-muted);font-size:0.88rem;">
+      No hay bicicletas disponibles en esta estación por el momento.
+    </div>`;
+    return;
+  }
+  disponibles.forEach(b => cont.appendChild(bicicletaCard(b, estacion)));
+}
+
+ESTACIONES.forEach(est => {
+  if (!est.latitud || !est.longitud) return;
+  L.marker([est.latitud, est.longitud], { icon: azulIcon })
+    .addTo(map)
+    .bindTooltip(est.nombre)
+    .on('click', () => mostrarEstacion(est));
+});
+</script>
+{% endblock %}

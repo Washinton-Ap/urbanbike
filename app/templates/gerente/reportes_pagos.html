@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% block title %}Reportes de Pagos{% endblock %}
+{% block page_title %}Reportes de Pagos{% endblock %}
+
+{% block content %}
+
+{% if not pb_ok %}
+<div class="flash error" style="margin-bottom:20px;">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  No se pudo conectar con PocketBase.
+</div>
+{% endif %}
+
+<div class="kpi-grid" style="margin-bottom:16px;">
+  <div class="kpi-card">
+    <div class="kpi-label">Ingresos del día</div>
+    <div class="kpi-value" style="color:#10B981;">${{ "%.2f" | format(ingresos_dia) }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Ingresos del mes</div>
+    <div class="kpi-value" style="color:#1E86BD;">${{ "%.2f" | format(ingresos_mes) }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Ticket promedio por viaje</div>
+    <div class="kpi-value">${{ "%.2f" | format(ticket_promedio) }}</div>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:16px;margin-bottom:16px;">
+  <div class="card">
+    <div class="card-header"><span class="card-title">Ingresos por día (mes actual)</span></div>
+    <div style="position:relative;height:280px;">
+      <canvas id="chartIngresosDia"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><span class="card-title">Por método de pago</span></div>
+    <div style="position:relative;height:280px;">
+      <canvas id="chartMetodo"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><span class="card-title">Por estado</span></div>
+    <div style="position:relative;height:280px;">
+      <canvas id="chartEstado"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Filtros -->
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header"><span class="card-title">Filtros</span></div>
+  <form method="get" action="/gerente/reportes/pagos" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;align-items:end;padding:0;">
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label">Estado</label>
+      <select class="form-input" name="estado">
+        <option value="all" {% if estado == 'all' %}selected{% endif %}>Todos</option>
+        <option value="pagado" {% if estado == 'pagado' %}selected{% endif %}>Pagado</option>
+        <option value="pendiente" {% if estado == 'pendiente' %}selected{% endif %}>Pendiente</option>
+        <option value="verificacion_pendiente" {% if estado == 'verificacion_pendiente' %}selected{% endif %}>Verificación pendiente</option>
+        <option value="pendiente_efectivo" {% if estado == 'pendiente_efectivo' %}selected{% endif %}>Pendiente efectivo</option>
+        <option value="rechazado" {% if estado == 'rechazado' %}selected{% endif %}>Rechazado</option>
+        <option value="cancelado" {% if estado == 'cancelado' %}selected{% endif %}>Cancelado</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label">Método</label>
+      <select class="form-input" name="metodo">
+        <option value="all" {% if metodo == 'all' %}selected{% endif %}>Todos</option>
+        <option value="efectivo" {% if metodo == 'efectivo' %}selected{% endif %}>Efectivo</option>
+        <option value="tarjeta" {% if metodo == 'tarjeta' %}selected{% endif %}>Tarjeta</option>
+        <option value="transferencia" {% if metodo == 'transferencia' %}selected{% endif %}>Transferencia</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label">Fecha inicio</label>
+      <input class="form-input" type="date" name="fecha_inicio" value="{{ fecha_inicio }}">
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label">Fecha fin</label>
+      <input class="form-input" type="date" name="fecha_fin" value="{{ fecha_fin }}">
+    </div>
+    <div style="display:flex;gap:8px;align-items:flex-end;">
+      <button type="submit" class="btn btn-primary" style="flex:1;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        Filtrar
+      </button>
+      <a href="/gerente/reportes/pagos" class="btn btn-ghost">Limpiar</a>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Pagos <span class="text-muted text-sm">({{ pagos | length }})</span></span>
+    <a href="/gerente/reportes/pagos/excel?estado={{ estado }}&metodo={{ metodo }}&fecha_inicio={{ fecha_inicio }}&fecha_fin={{ fecha_fin }}" class="btn btn-ghost" style="font-size:0.82rem;">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Exportar Excel
+    </a>
+  </div>
+  {% if pagos %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Nº comprobante</th><th>Ciclista</th><th>Fecha viaje</th><th>Duración</th>
+          <th>Método</th><th>Monto</th><th>Estado</th><th>Confirmado por</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in pagos %}
+        <tr>
+          <td style="font-family:monospace;font-size:0.82rem;">{{ p.comprobante_numero or "—" }}</td>
+          <td style="font-weight:600;color:var(--text);">{{ p.ciclista_nombre }}</td>
+          <td class="text-muted text-sm">{{ (p.fecha_pago or "—")[:10] }}</td>
+          <td>{{ p.duracion_minutos | num }} min</td>
+          <td style="text-transform:capitalize;">{{ p.metodo_pago or "—" }}</td>
+          <td style="font-weight:600;color:var(--text);">${{ "%.2f" | format(p.monto_total | float) }}</td>
+          <td>
+            {% if p.estado == 'pagado' %}<span class="badge badge-green">Pagado</span>
+            {% elif p.estado == 'pendiente' %}<span class="badge badge-yellow">Pendiente</span>
+            {% elif p.estado == 'verificacion_pendiente' %}<span class="badge badge-blue">Verificación pendiente</span>
+            {% elif p.estado == 'pendiente_efectivo' %}<span class="badge badge-yellow">Pendiente efectivo</span>
+            {% elif p.estado == 'rechazado' %}<span class="badge badge-red">Rechazado</span>
+            {% else %}<span class="badge badge-gray">Cancelado</span>{% endif %}
+          </td>
+          <td class="text-muted text-sm">{{ p.confirmado_por_empleado_nombre or "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:48px 24px;color:var(--text-muted);">
+    <div style="font-size:0.9rem;">No hay pagos que coincidan con los filtros.</div>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const diasLabels   = {{ chart_dias_labels | safe }};
+const diasValues   = {{ chart_dias_values | safe }};
+const metodoLabels = {{ chart_metodo_labels | safe }};
+const metodoValues = {{ chart_metodo_values | safe }};
+const estadoLabels = {{ chart_estado_labels | safe }};
+const estadoValues = {{ chart_estado_values | safe }};
+
+new Chart(document.getElementById('chartIngresosDia'), {
+  type: 'bar',
+  data: {
+    labels: diasLabels,
+    datasets: [{ label: 'Ingresos', data: diasValues, backgroundColor: '#1E86BD', borderRadius: 5, borderSkipped: false }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: (ctx) => ' $' + ctx.raw.toFixed(2) } }
+    },
+    scales: {
+      y: { beginAtZero: true, ticks: { callback: v => '$' + v.toFixed(2), font: { family: 'IBM Plex Sans', size: 10 } }, grid: { color: 'rgba(0,0,0,0.05)' } },
+      x: { grid: { display: false }, ticks: { font: { family: 'IBM Plex Sans', size: 9 } } }
+    }
+  }
+});
+
+new Chart(document.getElementById('chartMetodo'), {
+  type: 'doughnut',
+  data: {
+    labels: metodoLabels,
+    datasets: [{ data: metodoValues, backgroundColor: ['#10B981', '#6366F1', '#1E86BD'], borderWidth: 0 }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { position: 'bottom', labels: { font: { family: 'IBM Plex Sans', size: 10 } } } }
+  }
+});
+
+new Chart(document.getElementById('chartEstado'), {
+  type: 'doughnut',
+  data: {
+    labels: estadoLabels,
+    datasets: [{ data: estadoValues, backgroundColor: ['#10B981', '#F59E0B', '#1E86BD', '#FBBF24', '#EF4444', '#94A3B8'], borderWidth: 0 }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { position: 'bottom', labels: { font: { family: 'IBM Plex Sans', size: 10 } } } }
+  }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Mis Viajes{% endblock %}
+{% block page_title %}Mis Viajes{% endblock %}
+
+{% block content %}
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Historial de viajes <span class="text-muted text-sm">({{ viajes | length }})</span></span>
+  </div>
+
+  {% if viajes %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Bicicleta</th>
+          <th>Estación de inicio</th>
+          <th>Estación de fin</th>
+          <th>Inicio</th>
+          <th>Fin</th>
+          <th style="text-align:right;">Duración</th>
+          <th>Estado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in viajes %}
+        <tr>
+          <td style="font-weight:600;color:var(--text);font-family:monospace;">{{ v.bicicleta_codigo }}</td>
+          <td>{{ v.estacion_inicio_nombre or "—" }}</td>
+          <td>{{ estaciones_nombres.get(v.estacion_fin_id, v.estacion_fin_id) if v.estacion_fin_id else "—" }}</td>
+          <td class="text-muted text-sm">{{ v.fecha_inicio | replace("T", " ") | replace("Z", "") }}</td>
+          <td class="text-muted text-sm">{{ (v.fecha_fin | replace("T", " ") | replace("Z", "")) if v.fecha_fin else "—" }}</td>
+          <td style="text-align:right;color:var(--text-muted);">
+            {% if v.duracion_minutos %}{{ v.duracion_minutos }} min{% else %}—{% endif %}
+          </td>
+          <td>
+            {% if v.estado == 'activo' %}
+              <span class="badge badge-blue">Activo</span>
+            {% elif v.estado == 'completado' %}
+              <span class="badge badge-green">Completado</span>
+            {% else %}
+              <span class="badge badge-gray">Cancelado</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:64px 24px;">
+    <div style="display:flex;justify-content:center;margin-bottom:20px;opacity:0.3;">
+      <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+    </div>
+    <div style="font-family:'Sora',sans-serif;font-weight:700;font-size:1.1rem;color:var(--text);margin-bottom:8px;">
+      Sin historial de viajes
+    </div>
+    <div style="font-size:0.88rem;color:var(--text-muted);max-width:360px;margin:0 auto;line-height:1.6;">
+      Aún no tienes viajes registrados. Cuando realices tu primer alquiler, aparecerá aquí.
+    </div>
+    <div style="margin-top:24px;">
+      <a href="/ciclista/alquilar" class="btn btn-primary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 0 0 0-2h-3l-1 5.5M5.5 17.5 9 8l3 5h6"/></svg>
+        Reservar una bicicleta
+      </a>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

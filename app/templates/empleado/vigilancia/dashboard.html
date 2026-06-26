@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Vigilancia{% endblock %}
+{% block page_title %}Dashboard — Vigilancia{% endblock %}
+
+{% block content %}
+
+<!-- KPIs de estaciones (PocketBase) -->
+<div class="kpi-grid" style="margin-bottom:24px;">
+  <div class="kpi-card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+      <div style="width:32px;height:32px;border-radius:8px;background:rgba(16,185,129,0.12);display:flex;align-items:center;justify-content:center;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      </div>
+      <div class="kpi-label">Estaciones Activas</div>
+    </div>
+    <div class="kpi-value" style="color:#10B981;">{{ activas }}</div>
+    <div class="kpi-delta">en operación normal</div>
+  </div>
+
+  <div class="kpi-card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+      <div style="width:32px;height:32px;border-radius:8px;background:rgba(239,68,68,0.12);display:flex;align-items:center;justify-content:center;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      </div>
+      <div class="kpi-label">Estaciones Inactivas</div>
+    </div>
+    <div class="kpi-value" style="color:#EF4444;">{{ inactivas }}</div>
+    <div class="kpi-delta">fuera de servicio</div>
+  </div>
+
+  <div class="kpi-card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+      <div style="width:32px;height:32px;border-radius:8px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      </div>
+      <div class="kpi-label">Viajes del Día</div>
+    </div>
+    <div class="kpi-value">{{ viajes_hoy | num }}</div>
+    <div class="kpi-delta">registros Oct 31 2023</div>
+  </div>
+
+  <div class="kpi-card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+      <div style="width:32px;height:32px;border-radius:8px;background:rgba(239,68,68,0.12);display:flex;align-items:center;justify-content:center;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      </div>
+      <div class="kpi-label">Alertas de Retraso</div>
+    </div>
+    <div class="kpi-value" style="color:#EF4444;">{{ retrasos_hoy | num }}</div>
+    <div class="kpi-delta">viajes &gt; 60 min</div>
+  </div>
+</div>
+
+<!-- Duración prom + gráfica top estaciones -->
+<div style="display:grid;grid-template-columns:1fr 2fr;gap:16px;margin-bottom:16px;">
+
+  <div class="card" style="display:flex;flex-direction:column;justify-content:center;">
+    {% if not ch_ok %}
+    <div style="color:var(--text-muted);font-size:0.85rem;text-align:center;">ClickHouse no disponible</div>
+    {% else %}
+    <div style="text-align:center;padding:16px 0;">
+      <div class="kpi-label" style="margin-bottom:8px;">Duración Promedio del Día</div>
+      <div style="font-family:'Sora',sans-serif;font-size:2.2rem;font-weight:700;color:#1E86BD;">
+        {{ dur_prom_hoy }}
+      </div>
+      <div style="font-size:0.85rem;color:var(--text-muted);margin-top:4px;">minutos por viaje</div>
+    </div>
+    <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:8px;">
+      <div style="display:flex;justify-content:space-between;font-size:0.83rem;margin-bottom:6px;">
+        <span style="color:var(--text-muted);">Normal (&lt;60 min)</span>
+        <span style="font-weight:600;color:#10B981;">{{ (viajes_hoy - retrasos_hoy) | num }}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:0.83rem;">
+        <span style="color:var(--text-muted);">Retraso (&gt;60 min)</span>
+        <span style="font-weight:600;color:#EF4444;">{{ retrasos_hoy | num }}</span>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Top 10 Estaciones — Oct 31</span>
+      <span style="font-size:0.78rem;color:var(--text-muted);">viajes iniciados vs. retrasos</span>
+    </div>
+    <div style="position:relative;height:220px;">
+      <canvas id="chartVig"></canvas>
+    </div>
+  </div>
+
+</div>
+
+<!-- Tabla top activas -->
+{% if top_activas %}
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Actividad por Estación</span>
+  </div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th style="width:30px;">#</th>
+          <th>Estación</th>
+          <th style="text-align:right;">Viajes</th>
+          <th style="text-align:right;">Retrasos</th>
+          <th style="text-align:right;">% Retraso</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for est in top_activas %}
+        <tr>
+          <td style="color:var(--text-muted);font-size:0.8rem;">{{ loop.index }}</td>
+          <td style="font-size:0.88rem;font-weight:500;color:var(--text);">{{ est.nombre or '—' }}</td>
+          <td style="text-align:right;font-weight:600;">{{ est.viajes | num }}</td>
+          <td style="text-align:right;color:#EF4444;">{{ est.retrasos | num }}</td>
+          <td style="text-align:right;font-size:0.82rem;color:var(--text-muted);">
+            {% if est.viajes > 0 %}{{ ((est.retrasos / est.viajes) * 100) | round(1) }}%{% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- Navegación -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;">
+  <a href="/empleado/vigilancia/seguimiento" style="text-decoration:none;">
+    <div class="card" style="cursor:pointer;transition:box-shadow 0.15s,transform 0.15s;" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 16px rgba(30,134,189,0.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
+      <div style="display:flex;align-items:center;gap:14px;">
+        <div style="width:40px;height:40px;border-radius:10px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </div>
+        <div>
+          <div style="font-family:'Sora',sans-serif;font-weight:600;font-size:0.95rem;color:var(--text);">Seguimiento</div>
+          <div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px;">Estado de estaciones</div>
+        </div>
+      </div>
+    </div>
+  </a>
+  <a href="/empleado/vigilancia/devoluciones" style="text-decoration:none;">
+    <div class="card" style="cursor:pointer;transition:box-shadow 0.15s,transform 0.15s;" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 16px rgba(30,134,189,0.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
+      <div style="display:flex;align-items:center;gap:14px;">
+        <div style="width:40px;height:40px;border-radius:10px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.43"/></svg>
+        </div>
+        <div>
+          <div style="font-family:'Sora',sans-serif;font-weight:600;font-size:0.95rem;color:var(--text);">Devoluciones</div>
+          <div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px;">Registro de retornos</div>
+        </div>
+      </div>
+    </div>
+  </a>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const vigLabels  = {{ chart_labels | safe }};
+const vigViajes  = {{ chart_viajes | safe }};
+const vigRetraso = {{ chart_retraso | safe }};
+
+if (vigLabels.length) {
+  new Chart(document.getElementById('chartVig'), {
+    type: 'bar',
+    data: {
+      labels: vigLabels,
+      datasets: [
+        { label: 'Viajes', data: vigViajes, backgroundColor: '#1E86BD', borderRadius: 4, borderSkipped: false },
+        { label: 'Retrasos', data: vigRetraso, backgroundColor: '#EF4444', borderRadius: 4, borderSkipped: false }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom', labels: { font: { family: 'IBM Plex Sans', size: 10 }, boxWidth: 10, padding: 10 } },
+        tooltip: { callbacks: { label: (ctx) => ' ' + ctx.raw.toLocaleString('es') } }
+      },
+      scales: {
+        y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { family: 'IBM Plex Sans', size: 9 } }, beginAtZero: true },
+        x: { grid: { display: false }, ticks: { font: { family: 'IBM Plex Sans', size: 8 }, maxRotation: 30 } }
+      }
+    }
+  });
+}
+</script>
+{% endblock %}

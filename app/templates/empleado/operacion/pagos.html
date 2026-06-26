@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+{% block title %}Pagos del Día{% endblock %}
+{% block page_title %}Pagos del Día{% endblock %}
+
+{% block content %}
+
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-label">Total cobrado</div>
+    <div class="kpi-value" style="color:#10B981;">${{ "%.2f" | format(total_pagado) }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Pendiente de cobro</div>
+    <div class="kpi-value" style="color:#F59E0B;">${{ "%.2f" | format(total_pendiente) }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Registros</div>
+    <div class="kpi-value">{{ pagos | length | num }}</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Transferencias por verificar <span class="text-muted text-sm">({{ transferencias | length }})</span></span>
+  </div>
+  {% if transferencias %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Comprobante</th>
+          <th>Ciclista</th>
+          <th>Monto</th>
+          <th>Cuenta origen</th>
+          <th>Imagen</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in transferencias %}
+        <tr>
+          <td style="font-family:monospace;font-size:0.82rem;">{{ p.comprobante_numero or "—" }}</td>
+          <td style="font-weight:600;color:var(--text);">{{ p.ciclista_nombre }}</td>
+          <td style="font-weight:600;color:var(--text);">${{ "%.2f" | format(p.monto_total | float) }}</td>
+          <td class="text-muted text-sm">{{ p.numero_cuenta_origen or "—" }}</td>
+          <td>
+            {% if p.comprobante_imagen %}
+            <img src="{{ file_url('pagos', p.id, p.comprobante_imagen, '80x60') }}" alt="Comprobante" class="thumb-comprobante" data-full="{{ file_url('pagos', p.id, p.comprobante_imagen) }}" style="width:60px;height:46px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer;">
+            {% else %}<span class="text-muted text-sm">—</span>{% endif %}
+          </td>
+          <td>
+            <div class="flex gap-2">
+              <button class="btn btn-ghost" style="padding:4px 10px;font-size:0.75rem;color:#10B981;border-color:rgba(16,185,129,0.35);"
+                data-id="{{ p.id }}" onclick="openAprobar(this)">Aprobar transferencia</button>
+              <button class="btn btn-ghost" style="padding:4px 10px;font-size:0.75rem;color:#EF4444;border-color:rgba(239,68,68,0.35);"
+                data-id="{{ p.id }}" onclick="openRechazar(this)">Rechazar</button>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:32px 24px;color:var(--text-muted);">
+    <div style="font-size:0.88rem;">No hay transferencias pendientes de verificación.</div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Pagos en efectivo pendientes <span class="text-muted text-sm">({{ efectivo_pendiente | length }})</span></span>
+  </div>
+  {% if efectivo_pendiente %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Código de pago</th>
+          <th>Ciclista</th>
+          <th>Duración</th>
+          <th>Monto</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in efectivo_pendiente %}
+        <tr>
+          <td style="font-family:monospace;font-weight:700;color:var(--primary);">{{ p.comprobante_numero or "—" }}</td>
+          <td style="font-weight:600;color:var(--text);">{{ p.ciclista_nombre }}</td>
+          <td>{{ p.duracion_minutos | num }} min</td>
+          <td style="font-weight:600;color:var(--text);">${{ "%.2f" | format(p.monto_total | float) }}</td>
+          <td>
+            <button class="btn btn-primary" style="padding:6px 12px;font-size:0.78rem;"
+              data-id="{{ p.id }}" data-monto="{{ '%.2f' | format(p.monto_total | float) }}" onclick="openEfectivo(this)">Confirmar recepción de efectivo</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:32px 24px;color:var(--text-muted);">
+    <div style="font-size:0.88rem;">No hay pagos en efectivo pendientes.</div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Pagos</span>
+  </div>
+
+  {% if pagos %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Ciclista</th>
+          <th>Bicicleta</th>
+          <th>Duración</th>
+          <th>Monto</th>
+          <th>Método</th>
+          <th>Estado</th>
+          <th>Comprobante</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in pagos %}
+        <tr>
+          <td style="font-weight:600;color:var(--text);">{{ p.ciclista_nombre }}</td>
+          <td style="color:var(--text-muted);">{{ p.tipo_bicicleta }}</td>
+          <td>{{ p.duracion_minutos | num }} min</td>
+          <td style="font-weight:600;color:var(--text);">${{ "%.2f" | format(p.monto_total | float) }}</td>
+          <td style="text-transform:capitalize;">{{ p.metodo_pago or "—" }}</td>
+          <td>
+            {% if p.estado == 'pagado' %}<span class="badge badge-green">Pagado</span>
+            {% elif p.estado == 'pendiente' %}<span class="badge badge-yellow">Pendiente</span>
+            {% else %}<span class="badge badge-gray">Cancelado</span>{% endif %}
+          </td>
+          <td style="font-family:monospace;font-size:0.82rem;color:var(--text-muted);">{{ p.comprobante_numero or "—" }}</td>
+          <td>
+            {% if p.estado == 'pendiente' %}
+            <form method="post" action="/empleado/operacion/pagos/{{ p.id }}/registrar" onsubmit="return confirm('¿Registrar este pago como cobrado en efectivo?');">
+              <button type="submit" class="btn btn-ghost" style="font-size:0.78rem;padding:6px 10px;">Registrar efectivo</button>
+            </form>
+            {% else %}
+            <span style="color:var(--text-muted);font-size:0.8rem;">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:48px 24px;color:var(--text-muted);">
+    <div style="font-size:0.9rem;">Sin pagos registrados hoy.</div>
+  </div>
+  {% endif %}
+</div>
+
+<dialog id="modal-imagen" style="max-width:640px;width:100%;border:none;border-radius:14px;padding:0;">
+  <div style="padding:18px;">
+    <div style="display:flex;justify-content:flex-end;margin-bottom:8px;">
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-imagen').close()">✕</button>
+    </div>
+    <img id="modal-imagen-img" src="" alt="Comprobante" style="width:100%;border-radius:8px;display:block;">
+  </div>
+</dialog>
+
+<dialog id="modal-aprobar">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title">Aprobar transferencia</span>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-aprobar').close()">✕</button></div>
+    <form method="post" id="form-aprobar">
+      <div class="form-group"><label class="form-label">Observaciones (opcional)</label>
+        <input class="form-input" type="text" name="observaciones" placeholder="Ej. Verificado contra estado de cuenta"></div>
+      <div class="flex gap-2" style="justify-content:flex-end;margin-top:20px;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-aprobar').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary" style="background:#10B981;border-color:#10B981;">Aprobar y marcar pagado</button></div>
+    </form>
+  </div>
+</dialog>
+
+<dialog id="modal-rechazar">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title" style="color:#EF4444;">Rechazar transferencia</span>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-rechazar').close()">✕</button></div>
+    <form method="post" id="form-rechazar">
+      <div class="form-group"><label class="form-label">Motivo del rechazo *</label>
+        <input class="form-input" type="text" name="motivo" required placeholder="Ej. El comprobante no coincide con el monto"></div>
+      <div class="flex gap-2" style="justify-content:flex-end;margin-top:20px;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-rechazar').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary" style="background:#EF4444;border-color:#EF4444;">Rechazar</button></div>
+    </form>
+  </div>
+</dialog>
+
+<dialog id="modal-efectivo">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title">Confirmar recepción de efectivo</span>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-efectivo').close()">✕</button></div>
+    <form method="post" id="form-efectivo">
+      <div class="form-group"><label class="form-label">Monto recibido (USD) *</label>
+        <input class="form-input" type="number" step="0.01" min="0" name="monto_recibido" id="ef-monto" required></div>
+      <div class="flex gap-2" style="justify-content:flex-end;margin-top:20px;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-efectivo').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Confirmar y marcar pagado</button></div>
+    </form>
+  </div>
+</dialog>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll('.thumb-comprobante').forEach(img => {
+  img.addEventListener('click', () => {
+    document.getElementById('modal-imagen-img').src = img.dataset.full;
+    document.getElementById('modal-imagen').showModal();
+  });
+});
+function openAprobar(btn) {
+  document.getElementById('form-aprobar').action = '/empleado/operacion/pagos/' + btn.dataset.id + '/aprobar-transferencia';
+  document.getElementById('modal-aprobar').showModal();
+}
+function openRechazar(btn) {
+  document.getElementById('form-rechazar').action = '/empleado/operacion/pagos/' + btn.dataset.id + '/rechazar-transferencia';
+  document.getElementById('modal-rechazar').showModal();
+}
+function openEfectivo(btn) {
+  document.getElementById('form-efectivo').action = '/empleado/operacion/pagos/' + btn.dataset.id + '/confirmar-efectivo';
+  document.getElementById('ef-monto').value = btn.dataset.monto;
+  document.getElementById('modal-efectivo').showModal();
+}
+document.querySelectorAll('dialog').forEach(d => d.addEventListener('click', e => { if (e.target === d) d.close(); }));
+</script>
+{% endblock %}

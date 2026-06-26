@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Viaje Activo{% endblock %}
+{% block page_title %}Viaje Activo{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+{% endblock %}
+
+{% block content %}
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header">
+    <span class="card-title">Detalles del viaje</span>
+    <span class="badge badge-blue">En curso</span>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:20px;padding:20px;">
+    <div>
+      <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:4px;">Bicicleta</div>
+      <div style="font-family:'Sora',sans-serif;font-weight:700;font-size:1rem;color:var(--text);">{{ viaje.bicicleta_codigo }}</div>
+    </div>
+    <div>
+      <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:4px;">Estación de inicio</div>
+      <div style="font-weight:600;color:var(--text);">{{ viaje.estacion_inicio_nombre }}</div>
+    </div>
+    <div>
+      <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:4px;">Inicio del viaje</div>
+      <div style="font-weight:600;color:var(--text);" id="hora-inicio" data-inicio="{{ viaje.fecha_inicio }}">{{ viaje.fecha_inicio }}</div>
+    </div>
+    <div>
+      <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:4px;">Tarifa</div>
+      <div style="font-weight:600;color:var(--text);">${{ "%.2f" | format(precio_hora) }} / hora</div>
+    </div>
+  </div>
+</div>
+
+<div class="kpi-grid" style="margin-bottom:20px;">
+  <div class="kpi-card">
+    <div class="kpi-label">Tiempo transcurrido</div>
+    <div class="kpi-value" id="tiempo-transcurrido" style="font-family:'Sora',sans-serif;">00:00:00</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Costo acumulado</div>
+    <div class="kpi-value" id="costo-acumulado" style="color:var(--primary);">$0.00</div>
+  </div>
+</div>
+
+<div class="card" style="padding:0;overflow:hidden;margin-bottom:20px;">
+  <div class="card-header" style="border-bottom:1px solid var(--border);">
+    <span class="card-title">Ubicación actual</span>
+  </div>
+  <div id="map-viaje" style="height:340px;width:100%;"></div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Finalizar viaje</span>
+  </div>
+  <form method="post" action="/ciclista/finalizar" style="padding:20px;">
+    <input type="hidden" name="viaje_id" value="{{ viaje.id }}">
+    <div class="form-group">
+      <label class="form-label">Estación de devolución</label>
+      <select class="form-input" name="estacion_fin_id" id="select-estacion-fin" required>
+        <option value="" disabled selected>Selecciona una estación...</option>
+        {% for est in estaciones %}
+        <option value="{{ est.id }}" data-nombre="{{ est.nombre }}">{{ est.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <input type="hidden" name="estacion_fin_nombre" id="input-estacion-fin-nombre">
+    <button type="submit" class="btn btn-primary" style="margin-top:8px;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+      Finalizar viaje
+    </button>
+  </form>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const VIAJE = {{ viaje | tojson }};
+
+const lat = VIAJE.latitud_actual || VIAJE.latitud_inicio || -1.5;
+const lng = VIAJE.longitud_actual || VIAJE.longitud_inicio || -78.5;
+
+const map = L.map('map-viaje').setView([lat, lng], 14);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap contributors',
+  maxZoom: 18,
+}).addTo(map);
+
+const biciIcon = L.divIcon({
+  className: '',
+  html: '<div style="width:20px;height:20px;border-radius:50%;background:#1E86BD;border:3px solid #fff;box-shadow:0 0 0 2px #1E86BD;"></div>',
+  iconSize: [20, 20],
+  iconAnchor: [10, 10],
+});
+
+L.marker([lat, lng], { icon: biciIcon })
+  .addTo(map)
+  .bindPopup(`<strong>${VIAJE.bicicleta_codigo}</strong><br>Estación de inicio: ${VIAJE.estacion_inicio_nombre}`)
+  .openPopup();
+
+// Sincronizar nombre de estación de devolución con el id seleccionado
+const selectFin = document.getElementById('select-estacion-fin');
+const inputFinNombre = document.getElementById('input-estacion-fin-nombre');
+selectFin.addEventListener('change', () => {
+  const opt = selectFin.options[selectFin.selectedIndex];
+  inputFinNombre.value = opt.dataset.nombre || '';
+});
+
+// Cronómetro y costo acumulado en tiempo real
+const PRECIO_HORA = {{ precio_hora }};
+const elTiempo = document.getElementById('tiempo-transcurrido');
+const elCosto  = document.getElementById('costo-acumulado');
+
+function actualizarTiempo() {
+  const inicio = new Date(VIAJE.fecha_inicio);
+  const ahora  = new Date();
+  const segs   = Math.max(0, Math.floor((ahora - inicio) / 1000));
+  const h = Math.floor(segs / 3600);
+  const m = Math.floor((segs % 3600) / 60);
+  const s = segs % 60;
+  elTiempo.textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  elTiempo.style.color = (segs / 60 > 120) ? '#EF4444' : '';
+
+  const costo = (segs / 3600) * PRECIO_HORA;
+  elCosto.textContent = `$${costo.toFixed(2)}`;
+}
+actualizarTiempo();
+setInterval(actualizarTiempo, 1000);
+</script>
+{% endblock %}

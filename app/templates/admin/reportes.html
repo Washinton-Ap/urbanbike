@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}Reportes — Admin{% endblock %}
+{% block page_title %}Reportes del Sistema{% endblock %}
+
+{% block content %}
+
+{% if error %}
+<div class="flash error" style="margin-bottom:20px;">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  No se pudo conectar con PocketBase — no se pueden cargar los reportes.
+</div>
+{% endif %}
+
+<!-- KPIs -->
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-label">Usuarios registrados</div>
+    <div class="kpi-value">{{ total_usuarios | num }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Bicicletas en flota</div>
+    <div class="kpi-value">{{ total_bicis | num }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Estaciones registradas</div>
+    <div class="kpi-value">{{ total_estaciones | num }}</div>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;">
+
+  <div class="card">
+    <div class="card-header"><span class="card-title">Usuarios por Rol</span></div>
+    <div style="position:relative;height:280px;">
+      <canvas id="chartRoles"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><span class="card-title">Bicicletas por Estado</span></div>
+    <div style="position:relative;height:280px;">
+      <canvas id="chartBicis"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Estaciones por Estado</span>
+    </div>
+    <p class="text-sm text-muted" style="margin-bottom:12px;">
+      El dataset cubre exclusivamente Nueva York; se muestra la distribución por estado operativo.
+    </p>
+    <div style="position:relative;height:280px;">
+      <canvas id="chartEstaciones"></canvas>
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const rolLabels  = {{ rol_labels | safe }};
+const rolValues  = {{ rol_values | safe }};
+const biciLabels = {{ bici_labels | safe }};
+const biciValues = {{ bici_values | safe }};
+const estLabels  = {{ est_labels | safe }};
+const estValues  = {{ est_values | safe }};
+
+new Chart(document.getElementById('chartRoles'), {
+  type: 'doughnut',
+  data: {
+    labels: rolLabels,
+    datasets: [{ data: rolValues, backgroundColor: ['#1E86BD', '#6366F1', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'], borderWidth: 0, hoverOffset: 6 }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false, cutout: '62%',
+    plugins: {
+      legend: { position: 'bottom', labels: { font: { family: 'IBM Plex Sans', size: 11 }, boxWidth: 10, padding: 10 } },
+      tooltip: { callbacks: { label: (ctx) => ` ${ctx.label}: ${ctx.raw.toLocaleString('es')}` } }
+    }
+  }
+});
+
+new Chart(document.getElementById('chartBicis'), {
+  type: 'bar',
+  data: {
+    labels: biciLabels,
+    datasets: [{ data: biciValues, backgroundColor: ['#10B981', '#1E86BD', '#F59E0B', '#6B7280'], borderRadius: 6, borderSkipped: false }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: (ctx) => ' ' + ctx.raw.toLocaleString('es') } }
+    },
+    scales: {
+      y: { beginAtZero: true, ticks: { callback: v => v.toLocaleString('es'), font: { family: 'IBM Plex Sans', size: 10 } }, grid: { color: 'rgba(0,0,0,0.05)' } },
+      x: { grid: { display: false }, ticks: { font: { family: 'IBM Plex Sans', size: 10 } } }
+    }
+  }
+});
+
+new Chart(document.getElementById('chartEstaciones'), {
+  type: 'doughnut',
+  data: {
+    labels: estLabels,
+    datasets: [{ data: estValues, backgroundColor: ['#1E86BD', '#CBD5E1'], borderWidth: 0, hoverOffset: 6 }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false, cutout: '62%',
+    plugins: {
+      legend: { position: 'bottom', labels: { font: { family: 'IBM Plex Sans', size: 11 }, boxWidth: 10, padding: 10 } },
+      tooltip: { callbacks: { label: (ctx) => ` ${ctx.label}: ${ctx.raw.toLocaleString('es')}` } }
+    }
+  }
+});
+</script>
+{% endblock %}

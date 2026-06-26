@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}Devoluciones{% endblock %}
+{% block page_title %}Registrar Devoluciones{% endblock %}
+
+{% block content %}
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Viajes activos <span class="text-muted text-sm">({{ viajes | length }})</span></span>
+  </div>
+
+  {% if viajes %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Bicicleta</th>
+          <th>Ciclista</th>
+          <th>Estación de inicio</th>
+          <th>Inicio</th>
+          <th style="text-align:right;">Tiempo</th>
+          <th style="width:200px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in viajes %}
+        <tr>
+          <td style="font-weight:600;color:var(--text);font-family:monospace;">{{ v.bicicleta_codigo }}</td>
+          <td>{{ v.ciclista_nombre or "—" }}</td>
+          <td>{{ v.estacion_inicio_nombre or "—" }}</td>
+          <td class="text-muted text-sm">{{ v.fecha_inicio | replace("T", " ") | replace("Z", "") }}</td>
+          <td style="text-align:right;font-weight:600;" class="tiempo-transcurrido" data-inicio="{{ v.fecha_inicio }}">—</td>
+          <td>
+            <button class="btn btn-primary btn-devolver" style="padding:6px 14px;font-size:0.78rem;"
+              data-viaje-id="{{ v.id }}"
+              data-bicicleta="{{ v.bicicleta_codigo }}"
+              data-inicio="{{ v.fecha_inicio }}"
+              onclick="openDevolver(this)">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.43"/></svg>
+              <span class="btn-devolver-label">Registrar devolución</span>
+            </button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:64px 24px;">
+    <div style="display:flex;justify-content:center;margin-bottom:20px;opacity:0.3;">
+      <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.43"/></svg>
+    </div>
+    <div style="font-family:'Sora',sans-serif;font-weight:700;font-size:1.1rem;color:var(--text);margin-bottom:8px;">
+      Sin viajes activos
+    </div>
+    <div style="font-size:0.88rem;color:var(--text-muted);max-width:360px;margin:0 auto;line-height:1.6;">
+      No hay viajes en curso en este momento. Las devoluciones pendientes aparecerán aquí.
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<dialog id="modal-devolver">
+  <div class="modal-card">
+    <div class="modal-header">
+      <span class="card-title">Registrar devolución — <span id="dev-bicicleta"></span></span>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-devolver').close()">✕</button>
+    </div>
+    <form method="post" id="form-devolver">
+      <div class="form-group">
+        <label class="form-label">Estación de destino</label>
+        <select class="form-input" name="estacion_fin_id" id="dev-estacion" required>
+          <option value="" disabled selected>Selecciona una estación...</option>
+          {% for est in estaciones %}
+          <option value="{{ est.id }}" data-nombre="{{ est.nombre }}">{{ est.nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <input type="hidden" name="estacion_fin_nombre" id="dev-estacion-nombre">
+
+      <div class="form-group">
+        <label class="form-label">Motivo</label>
+        <select class="form-input" name="motivo" id="dev-motivo" required>
+          <option value="voluntaria">Voluntaria</option>
+          <option value="forzada">Forzada</option>
+          <option value="emergencia">Emergencia</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Observaciones</label>
+        <textarea class="form-input" name="observaciones" rows="3" placeholder="Detalles del caso (opcional)"></textarea>
+      </div>
+
+      <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-devolver').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Confirmar devolución</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openDevolver(btn) {
+  const d = btn.dataset;
+  const mins = Math.max(0, Math.floor((Date.now() - new Date(d.inicio)) / 60000));
+  document.getElementById('form-devolver').action = '/empleado/vigilancia/devolver/' + d.viajeId;
+  document.getElementById('dev-bicicleta').textContent = d.bicicleta;
+  document.getElementById('dev-estacion').value = '';
+  document.getElementById('dev-estacion-nombre').value = '';
+  document.getElementById('dev-motivo').value = mins > 120 ? 'forzada' : 'voluntaria';
+  document.getElementById('modal-devolver').showModal();
+}
+const selectEst = document.getElementById('dev-estacion');
+selectEst.addEventListener('change', () => {
+  const opt = selectEst.options[selectEst.selectedIndex];
+  document.getElementById('dev-estacion-nombre').value = opt.dataset.nombre || '';
+});
+document.querySelectorAll('dialog').forEach(d => d.addEventListener('click', e => { if (e.target === d) d.close(); }));
+
+function actualizarTiemposYBotones() {
+  document.querySelectorAll('.tiempo-transcurrido').forEach(el => {
+    const inicio = new Date(el.dataset.inicio);
+    let mins = Math.max(0, Math.floor((Date.now() - inicio) / 60000));
+    const horas = Math.floor(mins / 60);
+    const resto = mins % 60;
+    el.textContent = horas > 0 ? `${horas} h ${resto} min` : `${mins} min`;
+    el.style.color = mins > 120 ? '#EF4444' : 'var(--text)';
+  });
+  document.querySelectorAll('.btn-devolver').forEach(btn => {
+    const mins = Math.max(0, Math.floor((Date.now() - new Date(btn.dataset.inicio)) / 60000));
+    btn.querySelector('.btn-devolver-label').textContent = mins > 120 ? 'Registrar devolución forzada' : 'Registrar devolución';
+  });
+}
+actualizarTiemposYBotones();
+setInterval(actualizarTiemposYBotones, 30000);
+</script>
+{% endblock %}

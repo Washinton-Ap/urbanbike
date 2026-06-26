@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Reportes — Operación{% endblock %}
+{% block page_title %}Reportes de Operación{% endblock %}
+
+{% block content %}
+
+<div class="kpi-grid" style="margin-bottom:8px;">
+  <div class="kpi-card">
+    <div class="kpi-label">Total de alquileres</div>
+    <div class="kpi-value">{{ total_alquileres | num }}</div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:16px;">
+  <div class="card-header">
+    <span class="card-title">Pagos confirmados hoy por mí <span class="text-muted text-sm">({{ pagos_turno | length }})</span></span>
+  </div>
+  <div class="kpi-grid" style="padding:20px;">
+    <div class="kpi-card">
+      <div class="kpi-label">Total efectivo recibido</div>
+      <div class="kpi-value" style="color:#10B981;">${{ "%.2f" | format(total_efectivo_turno) }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Total transferencias verificadas</div>
+      <div class="kpi-value" style="color:#1E86BD;">${{ "%.2f" | format(total_transferencia_turno) }}</div>
+    </div>
+  </div>
+  {% if pagos_turno %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr><th>Comprobante</th><th>Ciclista</th><th>Método</th><th>Monto</th><th>Confirmado</th></tr>
+      </thead>
+      <tbody>
+        {% for p in pagos_turno %}
+        <tr>
+          <td style="font-family:monospace;font-size:0.82rem;">{{ p.comprobante_numero or "—" }}</td>
+          <td style="font-weight:600;color:var(--text);">{{ p.ciclista_nombre }}</td>
+          <td style="text-transform:capitalize;">{{ p.metodo_pago or "—" }}</td>
+          <td style="font-weight:600;color:var(--text);">${{ "%.2f" | format(p.monto_total | float) }}</td>
+          <td class="text-muted text-sm">{{ p.fecha_confirmacion or "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:32px 24px;color:var(--text-muted);">
+    <div style="font-size:0.88rem;">Aún no has confirmado pagos hoy.</div>
+  </div>
+  {% endif %}
+</div>
+
+<div style="display:grid;grid-template-columns:3fr 2fr;gap:16px;">
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Alquileres por Día de la Semana</span>
+    </div>
+    <div style="position:relative;height:300px;">
+      <canvas id="chartDias"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Bicicletas Más Alquiladas</span>
+    </div>
+    {% if bici_labels != '[]' %}
+    <div style="position:relative;height:300px;">
+      <canvas id="chartBicis"></canvas>
+    </div>
+    {% else %}
+    <div style="text-align:center;padding:48px 24px;color:var(--text-muted);">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom:12px;opacity:0.4;"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 0 0 0-2h-3l-1 5.5M5.5 17.5 9 8l3 5h6"/></svg>
+      <div style="font-size:0.9rem;">Sin alquileres registrados.</div>
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const diaLabels  = {{ dia_labels | safe }};
+const diaValues  = {{ dia_values | safe }};
+const biciLabels = {{ bici_labels | safe }};
+const biciValues = {{ bici_values | safe }};
+
+new Chart(document.getElementById('chartDias'), {
+  type: 'bar',
+  data: {
+    labels: diaLabels,
+    datasets: [{ label: 'Alquileres', data: diaValues, backgroundColor: '#1E86BD', borderRadius: 6, borderSkipped: false }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: (ctx) => ' ' + ctx.raw.toLocaleString('es') } }
+    },
+    scales: {
+      y: { beginAtZero: true, ticks: { stepSize: 1, callback: v => v.toLocaleString('es'), font: { family: 'IBM Plex Sans', size: 10 } }, grid: { color: 'rgba(0,0,0,0.05)' } },
+      x: { grid: { display: false }, ticks: { font: { family: 'IBM Plex Sans', size: 10 } } }
+    }
+  }
+});
+
+if (biciLabels.length) {
+  new Chart(document.getElementById('chartBicis'), {
+    type: 'bar',
+    data: {
+      labels: biciLabels,
+      datasets: [{ label: 'Alquileres', data: biciValues, backgroundColor: '#6366F1', borderRadius: 6, borderSkipped: false }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (ctx) => ' ' + ctx.raw.toLocaleString('es') } }
+      },
+      scales: {
+        x: { beginAtZero: true, ticks: { stepSize: 1, callback: v => v.toLocaleString('es'), font: { family: 'IBM Plex Sans', size: 10 } }, grid: { color: 'rgba(0,0,0,0.05)' } },
+        y: { grid: { display: false }, ticks: { font: { family: 'IBM Plex Sans', size: 10 } } }
+      }
+    }
+  });
+}
+</script>
+{% endblock %}

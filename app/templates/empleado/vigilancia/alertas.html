@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Alertas de Viajes{% endblock %}
+{% block page_title %}Alertas de Viajes{% endblock %}
+
+{% block content %}
+
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-label">Viajes con alerta (&gt; {{ limite_min }} min)</div>
+    <div class="kpi-value" style="color:#EF4444;">{{ alertas | length | num }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Pendientes de atender</div>
+    <div class="kpi-value" style="color:#F59E0B;">{{ alertas | selectattr('atendida', 'equalto', false) | list | length | num }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Atendidas</div>
+    <div class="kpi-value" style="color:#10B981;">{{ alertas | selectattr('atendida') | list | length | num }}</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Viajes que superaron {{ limite_min }} minutos</span>
+  </div>
+
+  {% if alertas %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Ciclista</th>
+          <th>Contacto</th>
+          <th>Bicicleta</th>
+          <th style="text-align:right;">Tiempo total</th>
+          <th style="text-align:right;">Tiempo excedido</th>
+          <th>Acciones tomadas</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in alertas %}
+        <tr>
+          <td style="font-weight:600;color:var(--text);">{{ a.ciclista }}</td>
+          <td class="text-muted text-sm">{{ a.email }}</td>
+          <td style="font-family:monospace;">{{ a.bicicleta }}</td>
+          <td style="text-align:right;">{{ a.tiempo_total | num }} min</td>
+          <td style="text-align:right;font-weight:600;color:#EF4444;">+{{ a.tiempo_exceso | num }} min</td>
+          <td>
+            {% if a.atendida %}<span class="badge badge-green">Atendida</span>
+            {% else %}<span class="badge badge-yellow">Pendiente</span>{% endif %}
+          </td>
+          <td>
+            {% if not a.atendida %}
+            <form method="post" action="/empleado/vigilancia/alertas/{{ a.viaje_id }}/atender">
+              <button type="submit" class="btn btn-ghost" style="font-size:0.78rem;padding:6px 10px;">Marcar atendida</button>
+            </form>
+            {% else %}
+            <span style="color:var(--text-muted);font-size:0.8rem;">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:48px 24px;color:var(--text-muted);">
+    <div style="display:flex;justify-content:center;margin-bottom:12px;opacity:0.4;">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    </div>
+    <div style="font-size:0.9rem;">No hay viajes que superen {{ limite_min }} minutos en este momento.</div>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

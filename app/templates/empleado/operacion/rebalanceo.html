@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Rebalanceo de Bicicletas{% endblock %}
+{% block page_title %}Rebalanceo de Bicicletas{% endblock %}
+
+{% block content %}
+
+<div class="card" style="max-width:560px;">
+  <div class="card-header">
+    <span class="card-title">Registrar traslado entre estaciones</span>
+  </div>
+  <form method="post" action="/empleado/operacion/rebalanceo/trasladar" style="padding:20px;display:flex;flex-direction:column;gap:16px;">
+    <div class="form-group">
+      <label class="form-label">Bicicleta</label>
+      <select class="form-input" name="bicicleta_id" id="select-bici" required>
+        <option value="" disabled selected>Selecciona una bicicleta...</option>
+        {% for b in bicicletas %}
+        <option value="{{ b.id }}" data-codigo="{{ b.codigo }}" data-estacion="{{ b.estacion or '—' }}">
+          {{ b.codigo }} — {{ 'Eléctrica' if b.tipo == 'electric_bike' else 'Clásica' }} (actualmente en: {{ b.estacion or 'sin estación' }})
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+    <input type="hidden" name="bicicleta_codigo" id="input-bici-codigo">
+
+    <div class="form-group">
+      <label class="form-label">Estación de origen</label>
+      <input class="form-input" type="text" id="input-origen" disabled placeholder="Se completa al elegir la bicicleta">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Estación de destino</label>
+      <select class="form-input" name="estacion_destino_id" required>
+        <option value="" disabled selected>Selecciona la estación destino...</option>
+        {% for e in estaciones %}
+        <option value="{{ e.id }}">{{ e.nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Observaciones</label>
+      <textarea class="form-input" name="observaciones" rows="3" placeholder="Motivo del traslado, condiciones de la bicicleta, etc. (opcional)"></textarea>
+    </div>
+
+    <button type="submit" class="btn btn-primary" style="align-self:flex-start;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+      Registrar traslado
+    </button>
+  </form>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const selectBici = document.getElementById('select-bici');
+const inputCodigo = document.getElementById('input-bici-codigo');
+const inputOrigen = document.getElementById('input-origen');
+selectBici.addEventListener('change', () => {
+  const opt = selectBici.options[selectBici.selectedIndex];
+  inputCodigo.value = opt.dataset.codigo || '';
+  inputOrigen.value = opt.dataset.estacion || '';
+});
+</script>
+{% endblock %}

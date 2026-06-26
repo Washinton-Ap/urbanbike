@@ -1,0 +1,269 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}Dashboard — Administrador{% endblock %}
+
+{% block content %}
+
+{% if flash %}
+<div class="flash {{ flash.type }}" style="margin-bottom:20px;">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  {{ flash.msg }}
+</div>
+{% endif %}
+
+{% if not ch_ok %}
+<div class="flash error" style="margin-bottom:20px;">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  ClickHouse no disponible — mostrando datos parciales.
+</div>
+{% endif %}
+
+<!-- KPI row -->
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+      <div style="width:32px;height:32px;border-radius:8px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      </div>
+      <div class="kpi-label">Total Viajes</div>
+    </div>
+    <div class="kpi-value">{{ kpis.get('total_viajes', 0) | num }}</div>
+    <div class="kpi-delta">Citibike NYC — Octubre 2023</div>
+  </div>
+
+  <div class="kpi-card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+      <div style="width:32px;height:32px;border-radius:8px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+      </div>
+      <div class="kpi-label">Estaciones Únicas</div>
+    </div>
+    <div class="kpi-value">{{ kpis.get('total_estaciones', 0) | num }}</div>
+    <div class="kpi-delta">estaciones de inicio distintas</div>
+  </div>
+
+  <div class="kpi-card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+      <div style="width:32px;height:32px;border-radius:8px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      </div>
+      <div class="kpi-label">Duración Promedio</div>
+    </div>
+    <div class="kpi-value">{{ kpis.get('dur_prom_min', 0) }} min</div>
+    <div class="kpi-delta">por viaje</div>
+  </div>
+
+  <div class="kpi-card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+      <div style="width:32px;height:32px;border-radius:8px;background:rgba(16,185,129,0.12);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      </div>
+      <div class="kpi-label">Estado Sistema</div>
+    </div>
+    <div class="kpi-value" style="font-size:1.1rem;color:#10B981;">Operativo</div>
+    <div class="kpi-delta up">ClickHouse + PocketBase activos</div>
+  </div>
+</div>
+
+<!-- Gráficas: usuarios por rol + bicicletas por estado -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Usuarios por Rol</span>
+    </div>
+    <div style="position:relative;height:200px;display:flex;align-items:center;justify-content:center;">
+      <canvas id="chartRoles"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Bicicletas por Estado</span>
+    </div>
+    <div style="position:relative;height:200px;">
+      <canvas id="chartBikes"></canvas>
+    </div>
+  </div>
+
+</div>
+
+<!-- Estaciones activas vs inactivas + distribución citibike -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Estaciones del Sistema</span>
+    </div>
+    {% set total_est = est_activas + est_inactivas %}
+    <div style="margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-bottom:6px;">
+        <span style="color:var(--text);">Activas</span>
+        <span style="font-weight:600;color:#10B981;">{{ est_activas }}</span>
+      </div>
+      <div style="height:10px;border-radius:5px;background:var(--border);overflow:hidden;">
+        {% if total_est > 0 %}
+        <div style="height:100%;border-radius:5px;background:#10B981;width:{{ ((est_activas / total_est) * 100) | round(1) }}%;"></div>
+        {% endif %}
+      </div>
+    </div>
+    <div>
+      <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-bottom:6px;">
+        <span style="color:var(--text);">Inactivas</span>
+        <span style="font-weight:600;color:#EF4444;">{{ est_inactivas }}</span>
+      </div>
+      <div style="height:10px;border-radius:5px;background:var(--border);overflow:hidden;">
+        {% if total_est > 0 %}
+        <div style="height:100%;border-radius:5px;background:#EF4444;width:{{ ((est_inactivas / total_est) * 100) | round(1) }}%;"></div>
+        {% endif %}
+      </div>
+    </div>
+    <div style="margin-top:16px;font-size:0.8rem;color:var(--text-muted);">Total en sistema: <strong>{{ total_est }}</strong></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Dataset Citibike</span>
+    </div>
+    {% set total = kpis.get('total_viajes', 1) or 1 %}
+    <div style="margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;font-size:0.82rem;margin-bottom:4px;">
+        <span style="color:var(--text);">Miembros</span>
+        <span style="font-weight:600;color:var(--text);">{{ kpis.get('viajes_member', 0) | num }}</span>
+      </div>
+      <div style="height:8px;border-radius:4px;background:var(--border);overflow:hidden;">
+        <div style="height:100%;border-radius:4px;background:#1E86BD;width:{{ ((kpis.get('viajes_member', 0) / total) * 100) | round(1) }}%;"></div>
+      </div>
+    </div>
+    <div style="margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;font-size:0.82rem;margin-bottom:4px;">
+        <span style="color:var(--text);">Casuales</span>
+        <span style="font-weight:600;color:var(--text);">{{ kpis.get('viajes_casual', 0) | num }}</span>
+      </div>
+      <div style="height:8px;border-radius:4px;background:var(--border);overflow:hidden;">
+        <div style="height:100%;border-radius:4px;background:#6366F1;width:{{ ((kpis.get('viajes_casual', 0) / total) * 100) | round(1) }}%;"></div>
+      </div>
+    </div>
+    <div style="margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;font-size:0.82rem;margin-bottom:4px;">
+        <span style="color:var(--text);">Clásica</span>
+        <span style="font-weight:600;color:var(--text);">{{ kpis.get('viajes_clasica', 0) | num }}</span>
+      </div>
+      <div style="height:8px;border-radius:4px;background:var(--border);overflow:hidden;">
+        <div style="height:100%;border-radius:4px;background:#F59E0B;width:{{ ((kpis.get('viajes_clasica', 0) / total) * 100) | round(1) }}%;"></div>
+      </div>
+    </div>
+    <div>
+      <div style="display:flex;justify-content:space-between;font-size:0.82rem;margin-bottom:4px;">
+        <span style="color:var(--text);">Eléctrica</span>
+        <span style="font-weight:600;color:var(--text);">{{ kpis.get('viajes_electrica', 0) | num }}</span>
+      </div>
+      <div style="height:8px;border-radius:4px;background:var(--border);overflow:hidden;">
+        <div style="height:100%;border-radius:4px;background:#10B981;width:{{ ((kpis.get('viajes_electrica', 0) / total) * 100) | round(1) }}%;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Acceso rápido -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Acceso rápido</span>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;">
+    <a href="/admin/usuarios" class="card" style="text-align:center;padding:20px 12px;text-decoration:none;border:1px solid var(--border);">
+      <div style="display:flex;justify-content:center;margin-bottom:8px;">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      </div>
+      <div style="font-weight:600;font-size:0.85rem;color:var(--text);">Usuarios</div>
+      <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">Gestionar cuentas</div>
+    </a>
+    <a href="/admin/bicicletas" class="card" style="text-align:center;padding:20px 12px;text-decoration:none;border:1px solid var(--border);">
+      <div style="display:flex;justify-content:center;margin-bottom:8px;">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 0 0 0-2h-3l-1 5.5M5.5 17.5 9 8l3 5h6"/></svg>
+      </div>
+      <div style="font-weight:600;font-size:0.85rem;color:var(--text);">Bicicletas</div>
+      <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">Flota operativa</div>
+    </a>
+    <a href="/admin/estaciones" class="card" style="text-align:center;padding:20px 12px;text-decoration:none;border:1px solid var(--border);">
+      <div style="display:flex;justify-content:center;margin-bottom:8px;">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+      </div>
+      <div style="font-weight:600;font-size:0.85rem;color:var(--text);">Estaciones</div>
+      <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">Red de estaciones</div>
+    </a>
+    <a href="/gerente/dashboard" class="card" style="text-align:center;padding:20px 12px;text-decoration:none;border:1px solid var(--border);">
+      <div style="display:flex;justify-content:center;margin-bottom:8px;">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+      </div>
+      <div style="font-weight:600;font-size:0.85rem;color:var(--text);">KPIs</div>
+      <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">Analítica Citibike</div>
+    </a>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const rolLabels = {{ rol_labels | safe }};
+const rolValues = {{ rol_values | safe }};
+const bikeLabels = {{ bike_labels | safe }};
+const bikeValues = {{ bike_values | safe }};
+const bikeColors = {{ bike_colors | safe }};
+
+const donutColors = ['#1E86BD','#6366F1','#10B981','#F59E0B','#EF4444','#8B5CF6'];
+
+if (rolLabels.length) {
+  new Chart(document.getElementById('chartRoles'), {
+    type: 'doughnut',
+    data: {
+      labels: rolLabels,
+      datasets: [{
+        data: rolValues,
+        backgroundColor: donutColors.slice(0, rolLabels.length),
+        borderWidth: 0,
+        hoverOffset: 6,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '62%',
+      plugins: {
+        legend: { position: 'bottom', labels: { font: { family: 'IBM Plex Sans', size: 11 }, boxWidth: 10, padding: 10 } },
+        tooltip: { callbacks: { label: (ctx) => ' ' + ctx.raw } }
+      }
+    }
+  });
+}
+
+if (bikeValues.some(v => v > 0)) {
+  new Chart(document.getElementById('chartBikes'), {
+    type: 'bar',
+    data: {
+      labels: bikeLabels,
+      datasets: [{
+        data: bikeValues,
+        backgroundColor: bikeColors,
+        borderRadius: 6,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (ctx) => ' ' + ctx.raw } }
+      },
+      scales: {
+        y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { family: 'IBM Plex Sans', size: 10 } }, beginAtZero: true },
+        x: { grid: { display: false }, ticks: { font: { family: 'IBM Plex Sans', size: 10 } } }
+      }
+    }
+  });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Mi Espacio{% endblock %}
+{% block page_title %}Mi Espacio{% endblock %}
+
+{% block content %}
+
+<div style="margin-bottom:28px;">
+  <h2 style="font-family:'Sora',sans-serif;font-size:1.3rem;font-weight:700;color:var(--text);margin-bottom:6px;">
+    Hola, {{ user.name or user.email }}
+  </h2>
+  <p style="color:var(--text-muted);font-size:0.9rem;">
+    Aquí puedes reservar bicicletas y ver el historial de tus viajes.
+  </p>
+</div>
+
+<div class="kpi-grid" style="margin-bottom:24px;">
+  <div class="kpi-card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+      <div style="width:32px;height:32px;border-radius:8px;background:rgba(16,185,129,0.12);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 0 0 0-2h-3l-1 5.5M5.5 17.5 9 8l3 5h6"/></svg>
+      </div>
+      <div class="kpi-label">Bicicletas Disponibles</div>
+    </div>
+    <div class="kpi-value" style="color:#10B981;">{{ disponibles }}</div>
+    <div class="kpi-delta">listas para reservar</div>
+  </div>
+
+  <div class="kpi-card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+      <div style="width:32px;height:32px;border-radius:8px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+      </div>
+      <div class="kpi-label">Total en Flota</div>
+    </div>
+    <div class="kpi-value">{{ total_bicicletas }}</div>
+    <div class="kpi-delta">bicicletas en el sistema</div>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+  <a href="/ciclista/alquilar" style="text-decoration:none;">
+    <div class="card" style="cursor:pointer;transition:box-shadow 0.15s,transform 0.15s;border:1px solid rgba(30,134,189,0.2);" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 16px rgba(30,134,189,0.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
+      <div style="display:flex;align-items:center;gap:14px;">
+        <div style="width:44px;height:44px;border-radius:10px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 0 0 0-2h-3l-1 5.5M5.5 17.5 9 8l3 5h6"/></svg>
+        </div>
+        <div>
+          <div style="font-family:'Sora',sans-serif;font-weight:600;font-size:0.95rem;color:var(--text);">Reservar Bicicleta</div>
+          <div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px;">Ver bicicletas disponibles</div>
+        </div>
+      </div>
+    </div>
+  </a>
+
+  <a href="/ciclista/historial" style="text-decoration:none;">
+    <div class="card" style="cursor:pointer;transition:box-shadow 0.15s,transform 0.15s;" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 16px rgba(30,134,189,0.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
+      <div style="display:flex;align-items:center;gap:14px;">
+        <div style="width:44px;height:44px;border-radius:10px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        </div>
+        <div>
+          <div style="font-family:'Sora',sans-serif;font-weight:600;font-size:0.95rem;color:var(--text);">Mis Viajes</div>
+          <div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px;">Historial de alquileres</div>
+        </div>
+      </div>
+    </div>
+  </a>
+</div>
+
+{% endblock %}
