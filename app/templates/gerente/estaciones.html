@@ -14,7 +14,7 @@
 <div class="card" style="padding:0;overflow:hidden;margin-bottom:20px;">
   <div class="card-header" style="border-bottom:1px solid var(--border);">
     <span class="card-title">Mapa de estaciones</span>
-    <span style="font-size:0.8rem;color:var(--text-muted);">{{ items | length }} estaciones en Ecuador</span>
+    <span style="font-size:0.8rem;color:var(--text-muted);">{{ items | length }} estaciones</span>
   </div>
   <div id="map-estaciones" style="height:380px;width:100%;"></div>
 </div>
@@ -24,15 +24,15 @@
     <span class="card-title">Red de estaciones <span class="text-muted text-sm">({{ items | length }})</span></span>
     <div class="flex gap-2" style="align-items:center;">
       <input type="search" class="form-input" placeholder="Buscar..." style="width:auto;font-size:0.8rem;padding:6px 10px;" oninput="filtrarTabla(this, 'tabla-estaciones')">
-    <button class="btn btn-primary" onclick="document.getElementById('modal-crear').showModal()">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      Nueva estación
-    </button>
+      <button class="btn btn-primary" onclick="document.getElementById('modal-crear').showModal()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Nueva estación
+      </button>
     </div>
   </div>
   <div class="table-wrap">
     <table id="tabla-estaciones">
-      <thead><tr><th>Nombre</th><th>Código</th><th>Capacidad</th><th>Coordenadas</th><th>Estado</th><th style="width:130px;"></th></tr></thead>
+      <thead><tr><th>Nombre</th><th>Código</th><th>Capacidad</th><th>Coordenadas</th><th>Estado</th><th style="width:220px;"></th></tr></thead>
       <tbody>
         {% for s in items %}
         <tr>
@@ -55,6 +55,11 @@
                 data-longitud="{{ s.longitud | default('') }}"
                 data-activa="{{ 'true' if s.activa else 'false' }}"
                 onclick="openEdit(this)">Editar</button>
+              <form method="post" action="/gerente/estaciones/{{ s.id }}/toggleactiva" style="display:inline;">
+                <button type="submit" class="btn btn-ghost" style="padding:4px 10px;font-size:0.75rem;">
+                  {{ "Desactivar" if s.activa else "Activar" }}
+                </button>
+              </form>
               <button class="btn btn-ghost" style="padding:4px 10px;font-size:0.75rem;color:#EF4444;border-color:rgba(239,68,68,0.35);"
                 data-id="{{ s.id }}" data-label="{{ s.nombre | default(s.id) | e }}"
                 onclick="openDel(this)">Eliminar</button>
@@ -73,7 +78,7 @@
   <div class="modal-card">
     <div class="modal-header"><span class="card-title">Nueva estación</span>
       <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-crear').close()">✕</button></div>
-    <form method="post" action="/admin/estaciones/crear">
+    <form method="post" action="/gerente/estaciones/crear">
       <div class="form-group">
         <label class="form-label">Buscar lugar en Ecuador *</label>
         <div style="display:flex;gap:8px;">
@@ -108,14 +113,6 @@
     <div class="modal-header"><span class="card-title">Editar estación</span>
       <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-editar').close()">✕</button></div>
     <form method="post" id="form-editar">
-      <div class="form-group">
-        <label class="form-label">Buscar lugar en Ecuador</label>
-        <div style="display:flex;gap:8px;">
-          <input class="form-input" type="text" id="editar-lugar-search" placeholder="Buscar lugar en Ecuador..." style="flex:1;">
-          <button type="button" class="btn btn-ghost" onclick="buscarLugar('editar')" style="white-space:nowrap;">Buscar</button>
-        </div>
-        <div id="editar-sugerencias" style="display:none;border:1px solid var(--border);border-radius:8px;margin-top:4px;overflow:hidden;"></div>
-      </div>
       <div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;">
         <div class="form-group"><label class="form-label">Nombre</label>
           <input class="form-input" type="text" name="nombre" id="edit-nombre"></div>
@@ -177,40 +174,36 @@ ESTACIONES.forEach(est => {
     .addTo(map)
     .bindPopup(`<strong>${est.nombre || 'Estación'}</strong><br>Capacidad: ${est.capacidad ?? '—'}<br>${est.activa ? 'Activa' : 'Inactiva'}`);
 });
-</script>
-<script>
+
 function openEdit(btn) {
   const d = btn.dataset;
-  document.getElementById('form-editar').action    = '/admin/estaciones/' + d.id + '/editar';
+  document.getElementById('form-editar').action    = '/gerente/estaciones/' + d.id + '/editar';
   document.getElementById('edit-nombre').value     = d.nombre;
   document.getElementById('edit-codigo').value     = d.codigo;
   document.getElementById('edit-capacidad').value  = d.capacidad;
   document.getElementById('edit-latitud').value    = d.latitud;
   document.getElementById('edit-longitud').value   = d.longitud;
   document.getElementById('edit-activa').value     = d.activa;
-  document.getElementById('editar-lugar-search').value = '';
-  document.getElementById('editar-sugerencias').style.display = 'none';
   document.getElementById('modal-editar').showModal();
 }
 function openDel(btn) {
-  document.getElementById('form-eliminar').action  = '/admin/estaciones/' + btn.dataset.id + '/eliminar';
+  document.getElementById('form-eliminar').action  = '/gerente/estaciones/' + btn.dataset.id + '/eliminar';
   document.getElementById('del-label').textContent = btn.dataset.label;
   document.getElementById('modal-eliminar').showModal();
 }
-document.querySelectorAll('dialog').forEach(d => d.addEventListener('click', e => { if (e.target === d) d.close(); }));
 
 async function buscarLugar(prefijo) {
-  const inputId = prefijo === 'crear' ? 'crear-lugar-search' : 'editar-lugar-search';
-  const contId  = prefijo === 'crear' ? 'crear-sugerencias'  : 'editar-sugerencias';
-  const latId   = prefijo === 'crear' ? 'crear-latitud'      : 'edit-latitud';
-  const lngId   = prefijo === 'crear' ? 'crear-longitud'     : 'edit-longitud';
+  const inputId = 'crear-lugar-search';
+  const contId  = 'crear-sugerencias';
+  const latId   = 'crear-latitud';
+  const lngId   = 'crear-longitud';
 
   const q = document.getElementById(inputId).value.trim();
   const cont = document.getElementById(contId);
   if (!q) { cont.style.display = 'none'; return; }
 
   try {
-    const resp = await fetch('/admin/estaciones/buscar-lugar?q=' + encodeURIComponent(q));
+    const resp = await fetch('/gerente/estaciones/buscar-lugar?q=' + encodeURIComponent(q));
     const data = await resp.json();
     cont.innerHTML = '';
     if (!data.length) {
@@ -239,9 +232,9 @@ async function buscarLugar(prefijo) {
   }
 }
 
-['crear-lugar-search', 'editar-lugar-search'].forEach(id => {
-  const el = document.getElementById(id);
-  if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); buscarLugar(id.startsWith('crear') ? 'crear' : 'editar'); } });
+document.getElementById('crear-lugar-search').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); buscarLugar('crear'); }
 });
+document.querySelectorAll('dialog').forEach(d => d.addEventListener('click', e => { if (e.target === d) d.close(); }));
 </script>
 {% endblock %}

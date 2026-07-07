@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Inspección de Bicicleta{% endblock %}
+{% block page_title %}Inspección de Bicicleta{% endblock %}
+
+{% block content %}
+
+<div class="card" style="max-width:640px;margin:0 auto 20px;">
+  <div class="card-header">
+    <span class="card-title">Contexto de la devolución</span>
+    {% if ctx.tiene_pago_pendiente %}<span class="badge badge-yellow">Pago pendiente</span>
+    {% elif ctx %}<span class="badge badge-green">Pago al día</span>{% endif %}
+  </div>
+  <div style="display:flex;flex-direction:column;gap:12px;padding:20px;">
+    <div style="display:flex;justify-content:space-between;">
+      <span style="color:var(--text-muted);font-size:0.85rem;">Bicicleta</span>
+      <span style="font-family:'Sora',sans-serif;font-weight:700;color:var(--text);">{{ bici.codigo or ctx.bici_codigo or "—" }}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;">
+      <span style="color:var(--text-muted);font-size:0.85rem;">Tipo</span>
+      <span>
+        {% if bici.tipo == "electric_bike" %}<span class="badge badge-green">Eléctrica</span>
+        {% else %}<span class="badge badge-blue">Clásica</span>{% endif %}
+      </span>
+    </div>
+    <div style="display:flex;justify-content:space-between;">
+      <span style="color:var(--text-muted);font-size:0.85rem;">Ciclista</span>
+      <span style="font-weight:600;color:var(--text);">{{ ctx.ciclista_nombre or "—" }}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;">
+      <span style="color:var(--text-muted);font-size:0.85rem;">Duración del viaje</span>
+      <span>{{ ctx.duracion_minutos or 0 }} min</span>
+    </div>
+  </div>
+</div>
+
+{% if ctx.tiene_pago_pendiente %}
+<div class="flash info" style="max-width:640px;margin:0 auto 20px;">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  Este ciclista tiene un pago pendiente de este viaje. La aprobación de la inspección no depende del pago, pero recuerda informarlo a operación.
+</div>
+{% endif %}
+
+<div class="card" style="max-width:640px;margin:0 auto;">
+  <div class="card-header">
+    <span class="card-title">Checklist de inspección</span>
+  </div>
+  <form method="post" action="/empleado/vigilancia/inspeccion/{{ bici.id or ctx.bici_id }}/registrar" style="padding:20px;display:flex;flex-direction:column;gap:18px;" id="form-inspeccion">
+
+    <div>
+      <div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:10px;">Marca el estado de cada componente</div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        {% for clave, etiqueta in checklist %}
+        <div class="fila-checklist" data-etiqueta="{{ etiqueta }}" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border:1px solid var(--border);border-radius:10px;">
+          <span style="font-weight:600;color:var(--text);font-size:0.88rem;">{{ etiqueta }}</span>
+          <div style="display:flex;gap:14px;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:0.82rem;cursor:pointer;">
+              <input type="radio" name="{{ clave }}" value="ok" required class="input-checklist"> OK
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:0.82rem;cursor:pointer;color:#EF4444;">
+              <input type="radio" name="{{ clave }}" value="mal" required class="input-checklist"> Con daños
+            </label>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div id="resumen-fallas" style="display:none;padding:12px 14px;border-radius:10px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.3);font-size:0.85rem;color:#EF4444;"></div>
+
+    <div class="form-group">
+      <label class="form-label">Cargo por daños (USD)</label>
+      <input class="form-input" type="number" name="cargo_danos" min="0" step="0.01" placeholder="0.00 — dejar en 0 si no aplica">
+      <div style="font-size:0.78rem;color:var(--text-muted);margin-top:6px;">Si hay daños, ingresa el monto adicional a cobrar al ciclista además del viaje.</div>
+    </div>
+
+    {% if bici.tipo == "electric_bike" %}
+    <div class="form-group">
+      <label class="form-label">Batería (%)</label>
+      <input class="form-input" type="number" name="bateria" min="0" max="100" placeholder="Ej. 85">
+    </div>
+    {% endif %}
+
+    <div class="form-group">
+      <label class="form-label">Observaciones</label>
+      <textarea class="form-input" name="observaciones" rows="3" placeholder="Detalles adicionales sobre la inspección (opcional)"></textarea>
+    </div>
+
+    <button type="submit" class="btn btn-primary" style="align-self:flex-start;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+      Registrar inspección
+    </button>
+  </form>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const resumen = document.getElementById('resumen-fallas');
+
+function actualizarResumen() {
+  const fallas = [];
+  document.querySelectorAll('.fila-checklist').forEach(fila => {
+    const marcado = fila.querySelector('input.input-checklist:checked');
+    if (marcado && marcado.value === 'mal') fallas.push(fila.dataset.etiqueta);
+  });
+  if (fallas.length === 0) {
+    resumen.style.display = 'none';
+    resumen.textContent = '';
+    return;
+  }
+  resumen.style.display = 'block';
+  resumen.textContent = 'Fallas detectadas: ' + fallas.join(', ') + '. Se generará una orden de mantenimiento y una infracción al ciclista.';
+}
+
+document.querySelectorAll('.input-checklist').forEach(input => {
+  input.addEventListener('change', actualizarResumen);
+});
+</script>
+{% endblock %}

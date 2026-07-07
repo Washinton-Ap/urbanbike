@@ -63,6 +63,18 @@ def _viaje_activo(user_id: str) -> dict | None:
         return None
 
 
+def _infracciones_activas(user_id: str) -> int:
+    try:
+        res = _pb().list_records(
+            "infracciones",
+            filter=f'ciclista_id = "{user_id}" && resuelta = false',
+            per_page=1,
+        )
+        return res.get("totalItems", 0)
+    except Exception:
+        return 0
+
+
 # ── Dashboard ────────────────────────────────────────────────────────────────
 
 @router.get("/dashboard", response_class=HTMLResponse)
@@ -105,8 +117,14 @@ async def alquilar(request: Request):
         pb = _pb()
         res_b = pb.list_records("bicicletas", filter='estado = "disponible"', sort="codigo", per_page=200)
         bicicletas = res_b.get("items", [])
+        # Normaliza espacios en el nombre de estación para que coincida de forma
+        # confiable con el nombre de las estaciones al comparar en el mapa.
+        for b in bicicletas:
+            b["estacion"] = (b.get("estacion") or "").strip()
         res_e = pb.list_records("estaciones", filter='activa = true', sort="nombre", per_page=50)
         estaciones = res_e.get("items", [])
+        for e in estaciones:
+            e["nombre"] = (e.get("nombre") or "").strip()
         res_t = pb.list_records("tarifas", filter='activa = true', per_page=200)
         tarifas = res_t.get("items", [])
     except Exception:
@@ -138,6 +156,12 @@ async def reservar(
     if _viaje_activo(user_id):
         request.session["flash"] = {"type": "error", "msg": "Ya tienes un viaje activo. Finalízalo primero."}
         return RedirectResponse("/ciclista/viaje-activo", status_code=302)
+
+    # Verificar infracciones activas: no se permite reservar mientras haya alguna sin resolver
+    if _infracciones_activas(user_id) > 0:
+        request.session["flash"] = {"type": "error", "msg":
+            "Tienes infracciones pendientes de resolución. No puedes reservar hasta que sean resueltas."}
+        return RedirectResponse("/ciclista/alquilar", status_code=302)
 
     # Garantía de pago: bloquear nuevas reservas si tiene pagos pendientes o rechazos repetidos
     try:
@@ -199,6 +223,52 @@ async def reservar(
     except Exception as e:
         request.session["flash"] = {"type": "error", "msg": f"Error al iniciar viaje: {e}"}
         return RedirectResponse("/ciclista/alquilar", status_code=302)
+
+
+# ── Detalle de bicicleta ─────────────────────────────────────────────────────
+
+@router.get("/bicicleta/{bici_id}", response_class=HTMLResponse)
+async def bicicleta_detalle(request: Request, bici_id: str):
+    user = getattr(request.state, "user", {})
+    flash = request.session.pop("flash", None)
+    try:
+        pb = _pb()
+        bici = pb.get_record("bicicletas", bici_id)
+    except Exception:
+        request.session["flash"] = {"type": "error", "msg": "Bicicleta no encontrada."}
+        return RedirectResponse("/ciclista/alquilar", status_code=302)
+
+    estacion: dict = {}
+    try:
+        nombre_bici = (bici.get("estacion") or "").strip().lower()
+        if nombre_bici:
+            for e in pb.list_records("estaciones", per_page=200).get("items", []):
+                if (e.get("nombre") or "").strip().lower() == nombre_bici:
+                    estacion = e
+                    break
+    except Exception:
+        pass
+
+    precio_hora = _tarifa_hora(pb, bici.get("tipo") or "classic_bike")
+
+    viajes_recientes: list[dict] = []
+    try:
+        viajes_recientes = pb.list_records(
+            "viajes",
+            filter=f'bicicleta_id = "{bici_id}"',
+            sort="-fecha_inicio", per_page=5,
+        ).get("items", [])
+    except Exception:
+        pass
+
+    tiene_viaje_activo = _viaje_activo(user.get("id", "")) is not None
+
+    return templates.TemplateResponse(request, "ciclista/detalle_bicicleta.html", _ctx(request,
+        title=f"Bicicleta {bici.get('codigo', '')}", flash=flash,
+        bici=bici, estacion=estacion, precio_hora=precio_hora,
+        viajes_recientes=viajes_recientes, tiene_viaje_activo=tiene_viaje_activo,
+        pb_url=settings.pb_url,
+    ))
 
 
 # ── Viaje activo ─────────────────────────────────────────────────────────────
@@ -280,10 +350,11 @@ async def finalizar(
             "longitud_actual":     viaje.get("longitud_inicio", 0),
         })
 
-        # Liberar bicicleta
+        # La bicicleta queda retenida en mantenimiento: vigilancia debe inspeccionarla
+        # antes de que vuelva a estar disponible para otro ciclista.
         if bici_id:
             pb.update_record("bicicletas", bici_id, {
-                "estado":   "disponible",
+                "estado":   "mantenimiento",
                 "estacion": estacion_fin_nombre,
             })
 
@@ -470,6 +541,36 @@ async def confirmar_pago(
         return RedirectResponse(f"/ciclista/pago/{pago_id}", status_code=302)
 
 
+@router.post("/borrar-comprobante/{pago_id}")
+async def borrar_comprobante(request: Request, pago_id: str):
+    user    = getattr(request.state, "user", {})
+    user_id = user.get("id", "")
+    try:
+        pb = _pb()
+        registro = pb.get_record("pagos", pago_id)
+        if registro.get("ciclista_id") != user_id:
+            request.session["flash"] = {"type": "error", "msg": "No tienes acceso a ese pago."}
+            return RedirectResponse("/ciclista/historial", status_code=302)
+        if registro.get("estado") != "verificacion_pendiente":
+            request.session["flash"] = {"type": "error", "msg": "Solo puedes borrar el comprobante cuando el pago está en verificación pendiente."}
+            return RedirectResponse(f"/ciclista/pago/{pago_id}", status_code=302)
+
+        pb.update_record_with_file("pagos", pago_id,
+            {"estado": "pendiente"},
+            {"comprobante_imagen": ("", b"", "application/octet-stream")},
+        )
+        registrar_auditoria(
+            user.get("pb_token", ""), user_id, user.get("name") or user.get("email", ""),
+            user.get("email", ""), "editar", "pagos",
+            f"Comprobante de imagen borrado para reintentar: pago {pago_id}", request,
+            usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
+        )
+        request.session["flash"] = {"type": "success", "msg": "Imagen eliminada. Puedes subir un nuevo comprobante."}
+    except Exception as e:
+        request.session["flash"] = {"type": "error", "msg": f"Error al borrar el comprobante: {e}"}
+    return RedirectResponse(f"/ciclista/pago/{pago_id}", status_code=302)
+
+
 @router.get("/comprobante/{pago_id}", response_class=HTMLResponse)
 async def comprobante(request: Request, pago_id: str):
     user = getattr(request.state, "user", {})
@@ -501,29 +602,74 @@ async def comprobante(request: Request, pago_id: str):
 # ── Historial ─────────────────────────────────────────────────────────────────
 
 @router.get("/historial", response_class=HTMLResponse)
-async def historial(request: Request):
+async def historial(request: Request, q: str = "", estado: str = ""):
     user = getattr(request.state, "user", {})
     flash = request.session.pop("flash", None)
     viajes: list[dict] = []
     estaciones_nombres: dict[str, str] = {}
+    bicis_por_id: dict[str, dict] = {}
+    pagos_por_viaje: dict[str, list[dict]] = {}
+    pagos_sueltos: list[dict] = []
     try:
         pb = _pb()
-        res = pb.list_records(
-            "viajes",
-            filter=f'ciclista_id = "{user.get("id", "")}"',
-            sort="-fecha_inicio",
-            per_page=100,
-        )
+        partes = [f'ciclista_id = "{user.get("id", "")}"']
+        if estado:
+            partes.append(f'estado = "{estado}"')
+        texto = q.strip().replace('"', "")
+        if texto:
+            partes.append(f'(bicicleta_codigo ~ "{texto}" || estacion_inicio_nombre ~ "{texto}")')
+        filtro = " && ".join(partes)
+
+        res = pb.list_records("viajes", filter=filtro, sort="-fecha_inicio", per_page=100)
         viajes = res.get("items", [])
         estaciones_nombres = {
             e["id"]: e.get("nombre", "")
             for e in pb.list_records("estaciones", per_page=200).get("items", [])
         }
+        bicis_por_id = {
+            b["id"]: b
+            for b in pb.list_records("bicicletas", per_page=500).get("items", [])
+        }
+        # Se traen todos los pagos del ciclista (no solo los de los viajes listados
+        # arriba), para que los cargos por daños también aparezcan en el historial.
+        pagos = pb.list_records(
+            "pagos", filter=f'ciclista_id = "{user.get("id", "")}"', sort="-fecha_pago", per_page=300,
+        ).get("items", [])
+        ids_viajes_listados = {v["id"] for v in viajes}
+        for p in pagos:
+            vid = p.get("viaje_id") or ""
+            if vid and vid in ids_viajes_listados:
+                pagos_por_viaje.setdefault(vid, []).append(p)
+            elif not vid:
+                pagos_sueltos.append(p)
     except Exception:
         pass
     return templates.TemplateResponse(request, "ciclista/historial.html", _ctx(request,
         title="Mis Viajes", flash=flash, viajes=viajes,
         estaciones_nombres=estaciones_nombres,
+        bicis_por_id=bicis_por_id, pagos_por_viaje=pagos_por_viaje,
+        pagos_sueltos=pagos_sueltos,
+        q=q, estado=estado,
+    ))
+
+
+# ── Infracciones ─────────────────────────────────────────────────────────────
+
+@router.get("/infracciones", response_class=HTMLResponse)
+async def infracciones(request: Request):
+    user = getattr(request.state, "user", {})
+    flash = request.session.pop("flash", None)
+    items: list[dict] = []
+    try:
+        items = _pb().list_records(
+            "infracciones",
+            filter=f'ciclista_id = "{user.get("id", "")}"',
+            sort="-fecha", per_page=200,
+        ).get("items", [])
+    except Exception:
+        pass
+    return templates.TemplateResponse(request, "ciclista/infracciones.html", _ctx(request,
+        title="Mis Infracciones", flash=flash, infracciones=items,
     ))
 
 

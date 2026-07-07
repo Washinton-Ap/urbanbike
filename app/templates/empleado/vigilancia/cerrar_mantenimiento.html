@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Certificar Mantenimiento{% endblock %}
+{% block page_title %}Certificar Mantenimiento{% endblock %}
+
+{% block content %}
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Órdenes en proceso <span class="text-muted text-sm">({{ ordenes | length }})</span></span>
+  </div>
+
+  {% if ordenes %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Bicicleta</th>
+          <th>Descripción</th>
+          <th>Técnico</th>
+          <th>Apertura</th>
+          <th style="width:140px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for o in ordenes %}
+        <tr>
+          <td style="font-weight:600;color:var(--text);font-family:monospace;">{{ o.bicicleta_codigo }}</td>
+          <td class="text-sm" style="max-width:320px;">{{ o.descripcion }}</td>
+          <td class="text-muted text-sm">{{ o.tecnico_nombre or "—" }}</td>
+          <td class="text-muted text-sm">{{ o.fecha_apertura | replace("T", " ") | replace("Z", "") }}</td>
+          <td>
+            <button class="btn btn-primary" style="padding:4px 10px;font-size:0.75rem;"
+              data-id="{{ o.id }}"
+              data-bicicleta="{{ o.bicicleta_codigo | default('') | e }}"
+              onclick="openCertificar(this)">Certificar</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:64px 24px;">
+    <div style="display:flex;justify-content:center;margin-bottom:20px;opacity:0.3;">
+      <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+    </div>
+    <div style="font-family:'Sora',sans-serif;font-weight:700;font-size:1.1rem;color:var(--text);margin-bottom:8px;">
+      Sin órdenes en proceso
+    </div>
+    <div style="font-size:0.88rem;color:var(--text-muted);max-width:360px;margin:0 auto;line-height:1.6;">
+      Cuando mantenimiento tome una orden de trabajo, aparecerá aquí para certificar su cierre.
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<dialog id="modal-certificar">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title">Certificar mantenimiento — <span id="cert-bicicleta"></span></span>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-certificar').close()">✕</button></div>
+    <form method="post" id="form-certificar">
+      <div class="form-group">
+        <label class="form-label">Observaciones de cierre</label>
+        <textarea class="form-input" name="observaciones_cierre" rows="3" placeholder="Detalle del trabajo realizado y verificación final..."></textarea>
+      </div>
+      <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-certificar').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Certificar y liberar bicicleta</button></div>
+    </form>
+  </div>
+</dialog>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openCertificar(btn) {
+  const d = btn.dataset;
+  document.getElementById('form-certificar').action = '/empleado/vigilancia/mantenimiento/' + d.id + '/certificar';
+  document.getElementById('cert-bicicleta').textContent = d.bicicleta;
+  document.getElementById('modal-certificar').showModal();
+}
+document.querySelectorAll('dialog').forEach(d => d.addEventListener('click', e => { if (e.target === d) d.close(); }));
+</script>
+{% endblock %}

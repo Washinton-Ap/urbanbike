@@ -16,7 +16,11 @@
     <span class="card-title">Empleados registrados <span class="text-muted text-sm">({{ empleados | length }})</span></span>
     <div class="flex gap-2" style="align-items:center;">
       <input type="search" class="form-input" placeholder="Buscar..." style="width:auto;font-size:0.8rem;padding:6px 10px;" oninput="filtrarTabla(this, 'tabla-empleados')">
-      <a href="/gerente/empleados/excel" class="btn btn-primary">
+      <button class="btn btn-primary" onclick="document.getElementById('modal-crear').showModal()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Nuevo empleado
+      </button>
+      <a href="/gerente/empleados/excel" class="btn btn-ghost">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Exportar Excel
       </a>
@@ -27,7 +31,7 @@
   <div class="table-wrap">
     <table id="tabla-empleados">
       <thead>
-        <tr><th>Nombre</th><th>Tipo de empleado</th><th>Correo electrónico</th><th>Estado de cuenta</th><th>Fecha de registro</th></tr>
+        <tr><th>Nombre</th><th>Rol actual</th><th>Correo electrónico</th><th>Estado de cuenta</th><th>Activo</th><th style="width:140px;"></th></tr>
       </thead>
       <tbody>
         {% for e in empleados %}
@@ -46,7 +50,17 @@
             {% if e.verificado %}<span class="badge badge-green">Verificado</span>
             {% else %}<span class="badge badge-yellow">Pendiente</span>{% endif %}
           </td>
-          <td class="text-muted text-sm">{{ e.fecha_registro or "—" }}</td>
+          <td>
+            {% if e.activo %}<span class="badge badge-green">Activo</span>
+            {% else %}<span class="badge badge-red">Bloqueado</span>{% endif %}
+          </td>
+          <td>
+            <button class="btn btn-ghost" style="padding:4px 10px;font-size:0.75rem;"
+              data-id="{{ e.id }}"
+              data-nombre="{{ e.nombre | e }}"
+              data-rol-slug="{{ e.rol_slug | e }}"
+              onclick="openCambiarRol(this)">Cambiar rol</button>
+          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -67,4 +81,60 @@
   {% endif %}
 </div>
 
+<dialog id="modal-crear">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title">Nuevo empleado</span>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-crear').close()">✕</button></div>
+    <form method="post" action="/gerente/empleados/crear">
+      <div class="form-group"><label class="form-label">Nombre</label>
+        <input class="form-input" type="text" name="name" placeholder="Ej. María García"></div>
+      <div class="form-group"><label class="form-label">Email *</label>
+        <input class="form-input" type="email" name="email" required placeholder="empleado@ejemplo.com"></div>
+      <div class="form-group"><label class="form-label">Contraseña * (mín. 8 caracteres)</label>
+        <input class="form-input" type="password" name="password" required minlength="8" placeholder="••••••••"></div>
+      <div class="form-group"><label class="form-label">Rol de empleado *</label>
+        <select class="form-input" name="rol_slug" required>
+          {% for slug in roles_empleado %}
+          <option value="{{ slug }}">{{ roles_empleado_labels.get(slug, slug) }}</option>
+          {% endfor %}
+        </select></div>
+      <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-crear').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Crear</button></div>
+    </form>
+  </div>
+</dialog>
+
+<dialog id="modal-rol">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title">Cambiar rol — <span id="rol-nombre"></span></span>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-rol').close()">✕</button></div>
+    <form method="post" id="form-rol">
+      <div class="form-group"><label class="form-label">Nuevo rol de empleado</label>
+        <select class="form-input" name="rol_slug" id="rol-select" required>
+          {% for slug in roles_empleado %}
+          <option value="{{ slug }}">{{ roles_empleado_labels.get(slug, slug) }}</option>
+          {% endfor %}
+        </select></div>
+      <div style="font-size:0.78rem;color:var(--text-muted);">Solo puedes asignar roles de empleado (operación, mantenimiento o vigilancia).</div>
+      <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-rol').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar</button></div>
+    </form>
+  </div>
+</dialog>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openCambiarRol(btn) {
+  const d = btn.dataset;
+  document.getElementById('form-rol').action   = '/gerente/empleados/' + d.id + '/cambiar-rol';
+  document.getElementById('rol-nombre').textContent = d.nombre;
+  document.getElementById('rol-select').value  = d.rolSlug;
+  document.getElementById('modal-rol').showModal();
+}
+document.querySelectorAll('dialog').forEach(d => d.addEventListener('click', e => { if (e.target === d) d.close(); }));
+</script>
 {% endblock %}

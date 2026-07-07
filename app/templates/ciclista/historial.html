@@ -4,60 +4,140 @@
 
 {% block content %}
 
+<div class="card" style="margin-bottom:20px;">
+  <form method="get" action="/ciclista/historial" style="display:flex;gap:10px;padding:16px 20px;flex-wrap:wrap;align-items:center;">
+    <input type="search" class="form-input" name="q" value="{{ q or '' }}" placeholder="Buscar por bicicleta o estación..." style="flex:1;min-width:220px;">
+    <select class="form-input" name="estado" style="width:auto;" onchange="this.form.submit()">
+      <option value="" {% if not estado %}selected{% endif %}>Todos los estados</option>
+      <option value="activo"     {% if estado == 'activo' %}selected{% endif %}>Activo</option>
+      <option value="completado" {% if estado == 'completado' %}selected{% endif %}>Completado</option>
+      <option value="cancelado"  {% if estado == 'cancelado' %}selected{% endif %}>Cancelado</option>
+    </select>
+    <button type="submit" class="btn btn-primary">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      Buscar
+    </button>
+    {% if q or estado %}
+    <a href="/ciclista/historial" class="btn btn-ghost">Limpiar</a>
+    {% endif %}
+  </form>
+</div>
+
 <div class="card">
   <div class="card-header">
-    <span class="card-title">Historial de viajes <span class="text-muted text-sm">({{ viajes | length }})</span></span>
+    <span class="card-title">Historial de viajes <span class="text-muted text-sm">({{ viajes | length if viajes else 0 }})</span></span>
   </div>
 
   {% if viajes %}
-  <div class="table-wrap">
-    <table class="table">
-      <thead>
-        <tr>
-          <th>Bicicleta</th>
-          <th>Estación de inicio</th>
-          <th>Estación de fin</th>
-          <th>Inicio</th>
-          <th>Fin</th>
-          <th style="text-align:right;">Duración</th>
-          <th>Estado</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for v in viajes %}
-        <tr>
-          <td style="font-weight:600;color:var(--text);font-family:monospace;">{{ v.bicicleta_codigo }}</td>
-          <td>{{ v.estacion_inicio_nombre or "—" }}</td>
-          <td>{{ estaciones_nombres.get(v.estacion_fin_id, v.estacion_fin_id) if v.estacion_fin_id else "—" }}</td>
-          <td class="text-muted text-sm">{{ v.fecha_inicio | replace("T", " ") | replace("Z", "") }}</td>
-          <td class="text-muted text-sm">{{ (v.fecha_fin | replace("T", " ") | replace("Z", "")) if v.fecha_fin else "—" }}</td>
-          <td style="text-align:right;color:var(--text-muted);">
-            {% if v.duracion_minutos %}{{ v.duracion_minutos }} min{% else %}—{% endif %}
-          </td>
-          <td>
-            {% if v.estado == 'activo' %}
-              <span class="badge badge-blue">Activo</span>
-            {% elif v.estado == 'completado' %}
-              <span class="badge badge-green">Completado</span>
-            {% else %}
-              <span class="badge badge-gray">Cancelado</span>
-            {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <div style="display:flex;flex-direction:column;">
+    {% for v in viajes %}
+    {% set bici = bicis_por_id.get(v.bicicleta_id, {}) if bicis_por_id else {} %}
+    {% set pagos_v = pagos_por_viaje.get(v.id, []) if pagos_por_viaje else [] %}
+    {% set pagados_v = pagos_v | selectattr('estado', 'equalto', 'pagado') | list %}
+    {% set pago_unico = pagados_v[0] if pagados_v else (pagos_v[0] if pagos_v else none) %}
+    
+    <div style="display:flex;align-items:center;gap:16px;padding:16px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
+
+      <div style="flex-shrink:0;">
+        {% if bici.foto %}
+        <img src="{{ file_url('bicicletas', bici.id, bici.foto, '120x120') }}" 
+             alt="{{ v.bicicleta_codigo }}" 
+             style="width:60px;height:60px;object-fit:cover;border-radius:8px;border:1px solid var(--border); cursor:pointer; transition: transform 0.2s;"
+             onmouseover="this.style.transform='scale(1.05)'"
+             onmouseout="this.style.transform='scale(1)'"
+             onclick="abrirModalBici('{{ file_url('bicicletas', bici.id, bici.foto, '') }}', '{{ v.bicicleta_codigo }}', '{{ bici.tipo }}')">
+        {% else %}
+        <div style="width:60px;height:60px;border-radius:8px;border:1px solid var(--border);background:var(--bg-soft);display:flex;align-items:center;justify-content:center;color:var(--text-muted);">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm-9.5 11.5L9 10l4 4 4-4 4 7.5M9 10l-1-3h-3"/></svg>
+        </div>
+        {% endif %}
+      </div>
+
+      <div style="flex:1;min-width:200px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
+          <span style="font-family:'Sora',sans-serif;font-weight:700;color:var(--text);">{{ v.bicicleta_codigo or 'S/N' }}</span>
+          {% if bici and bici.tipo == "electric_bike" %}
+            <span class="badge badge-green">Eléctrica</span>
+          {% else %}
+            <span class="badge badge-blue">Clásica</span>
+          {% endif %}
+          
+          {% if v.estado == 'activo' %}
+            <span class="badge badge-blue">Activo</span>
+          {% elif v.estado == 'completado' %}
+            <span class="badge badge-green">Completado</span>
+          {% else %}
+            <span class="badge badge-gray">Cancelado</span>
+          {% endif %}
+        </div>
+        <div style="font-size:0.85rem;color:var(--text-muted);">
+          📍 {{ v.estacion_inicio_nombre or "—" }} → {{ estaciones_nombres.get(v.estacion_fin_id, "—") if (estaciones_nombres and v.estacion_fin_id) else "—" }}
+        </div>
+        <div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px;">
+          ⏱ {{ v.fecha_inicio | replace("T", " ") | replace("Z", "") if v.fecha_inicio else "—" }}
+          {% if v.duracion_minutos %} &middot; {{ v.duracion_minutos }} min{% endif %}
+        </div>
+      </div>
+
+      <div style="text-align:right;min-width:150px;display:flex;flex-direction:column;gap:10px;">
+        {% if pago_unico %}
+        <div>
+          <div style="font-family:'Sora',sans-serif;font-weight:800;font-size:1.1rem;color:var(--text);">${{ "%.2f" | format(pago_unico.monto_total | float if pago_unico.monto_total else 0.0) }}</div>
+          <div style="margin-top:4px;">
+            {% if pago_unico.tipo == "cargo_danos" %}<span class="badge badge-red">Cargo por daños</span>
+            {% elif pago_unico.estado == "pagado" %}<span class="badge badge-green">Pagado</span>
+            {% elif pago_unico.estado == "pendiente_efectivo" %}<span class="badge badge-yellow">Pend. efectivo</span>
+            {% elif pago_unico.estado == "verificacion_pendiente" %}<span class="badge badge-blue">En verificación</span>
+            {% elif pago_unico.estado == "rechazado" %}<span class="badge badge-red">Rechazado</span>
+            {% else %}<span class="badge badge-yellow">Pendiente</span>{% endif %}
+          </div>
+          {% if pago_unico.estado != "pagado" and pago_unico.id %}
+          <a href="/ciclista/pago/{{ pago_unico.id }}" style="font-size:0.8rem;color:var(--primary);font-weight:600;display:inline-block;margin-top:4px;">Pagar →</a>
+          {% endif %}
+        </div>
+        {% else %}
+        <span class="text-muted text-sm">—</span>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
   </div>
+
+  {% if pagos_sueltos %}
+  <div style="border-top:1px solid var(--border);padding:16px 20px;">
+    <div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:12px;">Otros cargos</div>
+    {% for pago in pagos_sueltos %}
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);">
+      <div>
+        {% if pago.tipo == "cargo_danos" %}<span class="badge badge-red">Cargo por daños</span>
+        {% else %}<span class="badge badge-gray">{{ pago.tipo or "Cargo" }}</span>{% endif %}
+        {% if pago.descripcion_cargo %}<span style="font-size:0.8rem;color:var(--text-muted);margin-left:8px;">{{ pago.descripcion_cargo }}</span>{% endif %}
+      </div>
+      <div style="text-align:right;">
+        <div style="font-family:'Sora',sans-serif;font-weight:800;color:var(--text);">${{ "%.2f" | format(pago.monto_total | float if pago.monto_total else 0.0) }}</div>
+        {% if pago.estado != "pagado" and pago.id %}
+        <a href="/ciclista/pago/{{ pago.id }}" style="font-size:0.78rem;color:var(--primary);font-weight:600;">Pagar →</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   {% else %}
   <div style="text-align:center;padding:64px 24px;">
     <div style="display:flex;justify-content:center;margin-bottom:20px;opacity:0.3;">
       <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
     </div>
     <div style="font-family:'Sora',sans-serif;font-weight:700;font-size:1.1rem;color:var(--text);margin-bottom:8px;">
-      Sin historial de viajes
+      {% if q or estado %}Sin resultados{% else %}Sin historial de viajes{% endif %}
     </div>
     <div style="font-size:0.88rem;color:var(--text-muted);max-width:360px;margin:0 auto;line-height:1.6;">
+      {% if q or estado %}
+      No se encontraron viajes con esos criterios de búsqueda.
+      {% else %}
       Aún no tienes viajes registrados. Cuando realices tu primer alquiler, aparecerá aquí.
+      {% endif %}
     </div>
     <div style="margin-top:24px;">
       <a href="/ciclista/alquilar" class="btn btn-primary">
@@ -68,5 +148,68 @@
   </div>
   {% endif %}
 </div>
+
+<div id="biciModal" style="display:none; position:fixed; z-index:1000; left:0; top:0; width:100%; height:100%; background-color:rgba(0,0,0,0.6); align-items:center; justify-content:center; opacity:0; transition:opacity 0.2s ease; backdrop-filter: blur(3px);">
+  <div style="background:var(--bg-card, #ffffff); border-radius:12px; max-width:400px; width:90%; padding:24px; position:relative; box-shadow:0 10px 25px rgba(0,0,0,0.2);">
+    
+    <button onclick="cerrarModalBici()" style="position:absolute; top:12px; right:12px; background:var(--bg-soft, #f1f5f9); border:none; border-radius:50%; width:32px; height:32px; cursor:pointer; display:flex; align-items:center; justify-content:center; color:var(--text);">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+    
+    <div style="text-align:center;">
+      <img id="modalImg" src="" alt="Bicicleta" style="width:100%; max-height:250px; border-radius:8px; object-fit:contain; margin-bottom:16px; border:1px solid var(--border);">
+      
+      <h3 id="modalTitle" style="margin-top:0; margin-bottom:8px; font-family:'Sora',sans-serif; font-size:1.4rem; color:var(--text);"></h3>
+      <div id="modalType" style="margin-bottom:16px;"></div>
+      
+      <div style="text-align:left; background:var(--bg-soft, #f8fafc); padding:16px; border-radius:8px; font-size:0.9rem; color:var(--text-muted); line-height:1.6;">
+        <p id="modalDesc" style="margin:0;"></p>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  function abrirModalBici(imgSrc, codigo, tipo) {
+    // Inyectar imagen y título
+    document.getElementById('modalImg').src = imgSrc;
+    document.getElementById('modalTitle').innerText = codigo ? codigo : 'Bicicleta UrbanBike';
+    
+    let typeHtml = '';
+    let descText = '';
+
+    // Generar texto persuasivo dependiendo del tipo
+    if(tipo === 'electric_bike') {
+       typeHtml = '<span class="badge badge-green">⚡ Bicicleta Eléctrica</span>';
+       descText = '¡Llega más lejos sin sudar! Esta bicicleta de pedaleo asistido es perfecta para recorrer la ciudad de forma rápida, cómoda y ecológica. Ideal para evitar el tráfico y subir pendientes con cero esfuerzo.';
+    } else {
+       typeHtml = '<span class="badge badge-blue">🚲 Bicicleta Clásica</span>';
+       descText = 'Ligera, ágil y clásica. La opción perfecta para disfrutar del paisaje, hacer un poco de ejercicio cardiovascular y moverte libremente por las ciclovías de la ciudad a tu propio ritmo.';
+    }
+    
+    document.getElementById('modalType').innerHTML = typeHtml;
+    document.getElementById('modalDesc').innerText = descText; // Inyecta la descripción
+    
+    // Animación de apertura suave
+    const modal = document.getElementById('biciModal');
+    modal.style.display = 'flex';
+    setTimeout(() => { modal.style.opacity = '1'; }, 10);
+  }
+
+  function cerrarModalBici() {
+    const modal = document.getElementById('biciModal');
+    modal.style.opacity = '0';
+    setTimeout(() => { modal.style.display = 'none'; }, 200);
+  }
+
+  // Cerrar el modal automáticamente si se hace clic fuera del recuadro blanco
+  window.onclick = function(event) {
+    const modal = document.getElementById('biciModal');
+    if (event.target === modal) {
+      cerrarModalBici();
+    }
+  }
+</script>
 
 {% endblock %}

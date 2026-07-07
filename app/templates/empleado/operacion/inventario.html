@@ -7,7 +7,13 @@
 <div class="card">
   <div class="card-header">
     <span class="card-title">Flota completa</span>
-    <span style="font-size:0.8rem;color:var(--text-muted);">{{ bicicletas | length }} bicicletas</span>
+    <div class="flex gap-2" style="align-items:center;">
+      <span style="font-size:0.8rem;color:var(--text-muted);">{{ bicicletas | length }} bicicletas</span>
+      <button class="btn btn-primary" onclick="document.getElementById('modal-crear').showModal()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Nueva bicicleta
+      </button>
+    </div>
   </div>
 
   {% if bicicletas %}
@@ -20,6 +26,7 @@
           <th>Estado</th>
           <th>Estación</th>
           <th>Notas</th>
+          <th style="width:150px;">Acciones</th>
         </tr>
       </thead>
       <tbody>
@@ -46,6 +53,13 @@
           </td>
           <td style="color:var(--text-muted);font-size:0.85rem;">{{ b.estacion or '—' }}</td>
           <td style="color:var(--text-muted);font-size:0.82rem;">{{ b.notas or '—' }}</td>
+          <td>
+            <button class="btn btn-ghost" style="padding:4px 10px;font-size:0.75rem;"
+              data-id="{{ b.id }}"
+              data-codigo="{{ b.codigo | default('') | e }}"
+              data-estado="{{ b.estado | default('disponible') | e }}"
+              onclick="openEstado(this)">Cambiar estado</button>
+          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -61,4 +75,61 @@
   {% endif %}
 </div>
 
+<dialog id="modal-crear">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title">Nueva bicicleta</span>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-crear').close()">✕</button></div>
+    <form method="post" action="/empleado/operacion/bicicletas/crear">
+      <div class="form-group"><label class="form-label">Tipo *</label>
+        <select class="form-input" name="tipo" required>
+          <option value="classic_bike">Clásica</option>
+          <option value="electric_bike">Eléctrica</option>
+        </select></div>
+      <div class="form-group"><label class="form-label">Estación</label>
+        <select class="form-input" name="estacion">
+          <option value="">Sin asignar</option>
+          {% for e in estaciones %}<option value="{{ e.nombre }}">{{ e.nombre }}</option>{% endfor %}
+        </select></div>
+      <div class="form-group"><label class="form-label">Notas</label>
+        <input class="form-input" type="text" name="notas" placeholder="Observaciones opcionales"></div>
+      <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:8px;">El código se genera automáticamente (UB-### para clásicas, EB-### para eléctricas).</div>
+      <div class="flex gap-2" style="justify-content:flex-end;margin-top:16px;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-crear').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Crear</button></div>
+    </form>
+  </div>
+</dialog>
+
+<dialog id="modal-estado">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title">Cambiar estado — <span id="estado-codigo"></span></span>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-estado').close()">✕</button></div>
+    <form method="post" id="form-estado">
+      <div class="form-group"><label class="form-label">Nuevo estado</label>
+        <select class="form-input" name="estado" id="estado-select" required>
+          <option value="disponible">Disponible</option>
+          <option value="en_uso">En uso</option>
+          <option value="mantenimiento">Mantenimiento</option>
+          <option value="retirada">Retirada</option>
+        </select></div>
+      <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-estado').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar</button></div>
+    </form>
+  </div>
+</dialog>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openEstado(btn) {
+  const d = btn.dataset;
+  document.getElementById('form-estado').action = '/empleado/operacion/bicicletas/' + d.id + '/editar-estado';
+  document.getElementById('estado-codigo').textContent = d.codigo;
+  document.getElementById('estado-select').value = d.estado;
+  document.getElementById('modal-estado').showModal();
+}
+document.querySelectorAll('dialog').forEach(d => d.addEventListener('click', e => { if (e.target === d) d.close(); }));
+</script>
 {% endblock %}

@@ -147,6 +147,7 @@ def perfil_post(
     password:      str = Form(""),
     password_conf: str = Form(""),
     avatar:        UploadFile | None = File(None),
+    cedula:        str = Form(""),
 ):
     user = request.state.user
     pb   = PocketBaseClient()
@@ -157,6 +158,12 @@ def perfil_post(
 
     if name.strip():
         payload["name"] = name.strip()
+
+    if cedula.strip():
+        if not cedula.strip().isdigit() or len(cedula.strip()) != 10:
+            errors.append("La cédula debe tener exactamente 10 dígitos numéricos.")
+        else:
+            payload["cedula"] = cedula.strip()
 
     if password:
         if password != password_conf:
@@ -199,13 +206,30 @@ def perfil_post(
 
         if "name" in payload:
             user["name"] = payload["name"]
+        if "cedula" in payload:
+            user["cedula"] = payload["cedula"]
         if tiene_avatar:
             actualizado = pb.get_record("users", user["id"])
             user["avatar"] = actualizado.get("avatar", "")
-        if "name" in payload or tiene_avatar:
+        if "name" in payload or "cedula" in payload or tiene_avatar:
             request.session["user"] = user
         request.session["flash"] = {"type": "success", "msg": "Perfil actualizado correctamente."}
     except Exception as e:
         request.session["flash"] = {"type": "error", "msg": f"Error al guardar: {e}"}
 
+    return RedirectResponse("/perfil", status_code=302)
+
+
+@app.post("/perfil/borrar-avatar")
+def perfil_borrar_avatar(request: Request):
+    user = request.state.user
+    pb   = PocketBaseClient()
+    pb.set_token(user["pb_token"])
+    try:
+        pb.update_record_with_file("users", user["id"], {}, {"avatar": ("", b"", "application/octet-stream")})
+        user["avatar"] = ""
+        request.session["user"] = user
+        request.session["flash"] = {"type": "success", "msg": "Avatar eliminado correctamente."}
+    except Exception as e:
+        request.session["flash"] = {"type": "error", "msg": f"Error al eliminar el avatar: {e}"}
     return RedirectResponse("/perfil", status_code=302)

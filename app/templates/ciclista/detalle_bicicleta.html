@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+{% block title %}Bicicleta {{ bici.codigo }}{% endblock %}
+{% block page_title %}Bicicleta {{ bici.codigo }}{% endblock %}
+
+{% block head %}
+{% if estacion.latitud and estacion.longitud %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+{% endif %}
+<style>
+  .detalle-bici-grid {
+    display: grid;
+    grid-template-columns: 1.2fr 0.8fr;
+    gap: 20px;
+    align-items: start;
+  }
+  .detalle-bici-foto {
+    width: 100%;
+    height: 350px;
+    object-fit: cover;
+    border-radius: 12px;
+    cursor: zoom-in;
+    display: block;
+  }
+  @media (max-width: 768px) {
+    .detalle-bici-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+  #modal-zoom {
+    padding: 0;
+    background: transparent;
+    border: none;
+    max-width: 90vw;
+  }
+  #modal-zoom img {
+    width: 100%;
+    max-height: 85vh;
+    object-fit: contain;
+    border-radius: 12px;
+    display: block;
+  }
+  dialog::backdrop {
+    background: rgba(0, 0, 0, 0.85);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="detalle-bici-grid">
+
+  <!-- Columna izquierda: foto + badges -->
+  <div class="card" style="padding:0;overflow:hidden;">
+    {% set foto_url = file_url('bicicletas', bici.id, bici.foto, '800x600') %}
+    {% if foto_url %}
+    <img src="{{ foto_url }}" alt="{{ bici.codigo }}" class="detalle-bici-foto" onclick="document.getElementById('modal-zoom').showModal()">
+    {% else %}
+    <div class="detalle-bici-foto" style="display:flex;align-items:center;justify-content:center;background:var(--bg-soft);color:var(--text-muted);opacity:0.5;cursor:default;">
+      <svg width="90" height="90" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm-9.5 11.5L9 10l4 4 4-4 4 7.5M9 10l-1-3h-3"/></svg>
+    </div>
+    {% endif %}
+    <div style="padding:16px;display:flex;gap:8px;flex-wrap:wrap;">
+      {% if bici.estado == "disponible" %}<span class="badge badge-green">Disponible</span>
+      {% elif bici.estado == "en_uso" %}<span class="badge badge-blue">En uso</span>
+      {% elif bici.estado == "mantenimiento" %}<span class="badge badge-yellow">Mantenimiento</span>
+      {% else %}<span class="badge badge-red">Retirada</span>{% endif %}
+
+      {% if bici.tipo == "electric_bike" %}<span class="badge badge-green">Eléctrica</span>
+      {% else %}<span class="badge badge-blue">Clásica</span>{% endif %}
+    </div>
+  </div>
+
+  <!-- Columna derecha: info + tarifa + reservar -->
+  <div style="display:flex;flex-direction:column;gap:16px;">
+    <div class="card">
+      <div class="card-header"><span class="card-title">Información</span></div>
+      <div style="display:flex;flex-direction:column;gap:12px;padding:20px;">
+        <div style="display:flex;justify-content:space-between;">
+          <span style="color:var(--text-muted);font-size:0.85rem;">Código</span>
+          <span style="font-family:'Sora',sans-serif;font-weight:700;color:var(--text);">{{ bici.codigo }}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;">
+          <span style="color:var(--text-muted);font-size:0.85rem;">Tipo</span>
+          <span>{{ "Eléctrica" if bici.tipo == "electric_bike" else "Clásica" }}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;">
+          <span style="color:var(--text-muted);font-size:0.85rem;">Estación actual</span>
+          <span style="font-weight:600;color:var(--text);">{{ bici.estacion or "—" }}</span>
+        </div>
+        {% if bici.notas %}
+        <div style="border-top:1px solid var(--border);padding-top:12px;">
+          <span style="color:var(--text-muted);font-size:0.8rem;">Notas: </span>
+          <span style="font-size:0.85rem;">{{ bici.notas }}</span>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Características -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">Características</span></div>
+      <div style="display:flex;flex-direction:column;gap:14px;padding:20px;">
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="width:32px;height:32px;border-radius:8px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          </div>
+          <div>
+            <div style="font-size:0.78rem;color:var(--text-muted);">Velocidad máxima</div>
+            <div style="font-weight:600;color:var(--text);font-size:0.9rem;">{{ "32 km/h" if bici.tipo == "electric_bike" else "25 km/h" }}</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="width:32px;height:32px;border-radius:8px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><path d="M12 2a5 5 0 0 0-5 5c0 3 5 15 5 15s5-12 5-15a5 5 0 0 0-5-5z"/><circle cx="12" cy="7" r="2"/></svg>
+          </div>
+          <div>
+            <div style="font-size:0.78rem;color:var(--text-muted);">Peso</div>
+            <div style="font-weight:600;color:var(--text);font-size:0.9rem;">{{ "22 kg" if bici.tipo == "electric_bike" else "18 kg" }}</div>
+          </div>
+        </div>
+        {% if bici.tipo == "electric_bike" %}
+        <div style="display:flex;align-items:center;gap:12px;">
+          <div style="width:32px;height:32px;border-radius:8px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><rect x="1" y="6" width="18" height="12" rx="2"/><line x1="23" y1="10" x2="23" y2="14"/></svg>
+          </div>
+          <div>
+            <div style="font-size:0.78rem;color:var(--text-muted);">Autonomía</div>
+            <div style="font-weight:600;color:var(--text);font-size:0.9rem;">60 km por carga</div>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card" style="text-align:center;padding:28px 20px;background:var(--primary-light);">
+      <div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:6px;">Tarifa por hora (miembro)</div>
+      <div style="font-family:'Sora',sans-serif;font-weight:800;font-size:2.5rem;color:var(--primary);">${{ "%.2f" | format(precio_hora) }}</div>
+    </div>
+
+    {% if bici.estado == "disponible" and not tiene_viaje_activo %}
+    <form method="post" action="/ciclista/reservar">
+      <input type="hidden" name="bicicleta_id" value="{{ bici.id }}">
+      <input type="hidden" name="bicicleta_codigo" value="{{ bici.codigo }}">
+      <input type="hidden" name="estacion_inicio_id" value="{{ estacion.id or '' }}">
+      <input type="hidden" name="estacion_inicio_nombre" value="{{ bici.estacion or '' }}">
+      <input type="hidden" name="latitud" value="{{ estacion.latitud or 0 }}">
+      <input type="hidden" name="longitud" value="{{ estacion.longitud or 0 }}">
+      <button type="submit" class="btn btn-primary" style="width:100%;font-size:1.05rem;font-weight:700;padding:18px;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 0 0 0-2h-3l-1 5.5M5.5 17.5 9 8l3 5h6"/></svg>
+        Reservar esta bicicleta
+      </button>
+    </form>
+    {% elif tiene_viaje_activo %}
+    <div class="flash info">Ya tienes un viaje activo. Finalízalo antes de reservar otra bicicleta.</div>
+    {% else %}
+    <div class="flash error">Esta bicicleta no está disponible en este momento.</div>
+    {% endif %}
+  </div>
+</div>
+
+{% if estacion.latitud and estacion.longitud %}
+<div class="card" style="padding:0;overflow:hidden;margin-top:20px;">
+  <div class="card-header" style="border-bottom:1px solid var(--border);">
+    <span class="card-title">Ubicación — {{ estacion.nombre }}</span>
+  </div>
+  <div id="map-bici" style="height:280px;width:100%;"></div>
+</div>
+{% endif %}
+
+<div class="card" style="margin-top:20px;">
+  <div class="card-header"><span class="card-title">Últimos viajes de esta bicicleta</span></div>
+  {% if viajes_recientes %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Estación inicio</th>
+          <th>Inicio</th>
+          <th style="text-align:right;">Duración</th>
+          <th>Estado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in viajes_recientes %}
+        <tr>
+          <td>{{ v.estacion_inicio_nombre or "—" }}</td>
+          <td class="text-muted text-sm">{{ v.fecha_inicio | replace("T", " ") | replace("Z", "") }}</td>
+          <td style="text-align:right;color:var(--text-muted);">{{ v.duracion_minutos ~ " min" if v.duracion_minutos else "—" }}</td>
+          <td>
+            {% if v.estado == 'activo' %}<span class="badge badge-blue">Activo</span>
+            {% elif v.estado == 'completado' %}<span class="badge badge-green">Completado</span>
+            {% else %}<span class="badge badge-gray">Cancelado</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:32px 24px;color:var(--text-muted);font-size:0.88rem;">Aún no hay viajes registrados con esta bicicleta.</div>
+  {% endif %}
+</div>
+
+<dialog id="modal-zoom">
+  {% if foto_url %}
+  <img src="{{ file_url('bicicletas', bici.id, bici.foto) }}" alt="{{ bici.codigo }}" onclick="document.getElementById('modal-zoom').close()">
+  {% endif %}
+</dialog>
+
+{% endblock %}
+
+{% block scripts %}
+{% if estacion.latitud and estacion.longitud %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const map = L.map('map-bici').setView([{{ estacion.latitud }}, {{ estacion.longitud }}], 15);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap contributors',
+  maxZoom: 18,
+}).addTo(map);
+const azulIcon = L.divIcon({
+  className: '',
+  html: '<div style="width:18px;height:18px;border-radius:50%;background:#1E86BD;border:2px solid #fff;box-shadow:0 0 0 2px #1E86BD;"></div>',
+  iconSize: [18, 18],
+  iconAnchor: [9, 9],
+});
+L.marker([{{ estacion.latitud }}, {{ estacion.longitud }}], { icon: azulIcon }).addTo(map).bindPopup("{{ estacion.nombre | e }}");
+</script>
+{% endif %}
+<script>
+document.getElementById('modal-zoom').addEventListener('click', function(e) {
+  if (e.target === this) this.close();
+});
+</script>
+{% endblock %}

@@ -16,9 +16,78 @@
   <script src="/static/js/usabilidad.js"></script>
 
   {% block head %}{% endblock %}
+
+  <style>
+    /* ── Menú hamburguesa ── */
+    .hamburger {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--text);
+      padding: 6px;
+      border-radius: 6px;
+      font-size: 1.4rem;
+      line-height: 1;
+    }
+    #sidebar-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 199;
+    }
+    #sidebar-overlay.open { display: block; }
+    @media (max-width: 768px) {
+      .layout {
+        display: block;
+        width: 100%;
+      }
+      .sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100dvh;
+        width: 260px;
+        transform: translateX(-100%);
+        transition: transform 0.25s ease;
+        z-index: 200;
+        overflow-y: auto;
+      }
+      .sidebar.open {
+        transform: translateX(0);
+      }
+      .main-wrapper {
+        width: 100%;
+        min-height: 100dvh;
+        margin-left: 0 !important;
+        padding-left: 0 !important;
+      }
+      .topbar {
+        width: 100%;
+        left: 0;
+        margin-left: 0 !important;
+        padding-left: 0.5rem;
+        position: relative;
+        display: flex;
+        align-items: center;
+      }
+      .hamburger {
+        display: flex !important;
+        align-items: center;
+        justify-content: center;
+        order: -1;
+        margin-right: 0.75rem;
+        flex-shrink: 0;
+      }
+    }
+  </style>
 </head>
 <body>
 
+<div id="sidebar-overlay"></div>
 <div class="layout">
 
   <!-- ══════════════ SIDEBAR ══════════════ -->
@@ -49,18 +118,6 @@
         <a class="nav-item {% if '/admin/usuarios' in p %}active{% endif %}" href="/admin/usuarios">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           Usuarios
-        </a>
-        <a class="nav-item {% if '/admin/bicicletas' in p %}active{% endif %}" href="/admin/bicicletas">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 0 0 0-2h-3l-1 5.5M5.5 17.5 9 8l3 5h6"/></svg>
-          Bicicletas
-        </a>
-        <a class="nav-item {% if '/admin/estaciones' in p %}active{% endif %}" href="/admin/estaciones">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-          Estaciones
-        </a>
-        <a class="nav-item {% if '/admin/tarifas' in p %}active{% endif %}" href="/admin/tarifas">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-          Tarifas
         </a>
         <a class="nav-item {% if '/admin/bitacora' in p %}active{% endif %}" href="/admin/bitacora">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -105,6 +162,18 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           Empleados
         </a>
+        <a class="nav-item {% if '/gerente/bicicletas' in p %}active{% endif %}" href="/gerente/bicicletas">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 0 0 0-2h-3l-1 5.5M5.5 17.5 9 8l3 5h6"/></svg>
+          Bicicletas
+        </a>
+        <a class="nav-item {% if '/gerente/estaciones' in p %}active{% endif %}" href="/gerente/estaciones">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          Estaciones
+        </a>
+        <a class="nav-item {% if '/gerente/tarifas' in p %}active{% endif %}" href="/gerente/tarifas">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          Tarifas
+        </a>
       {% endif %}
 
       <!-- ── Ciclista ── -->
@@ -121,6 +190,10 @@
         <a class="nav-item {% if '/ciclista/historial' in p %}active{% endif %}" href="/ciclista/historial">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
           Mis Viajes
+        </a>
+        <a class="nav-item {% if '/ciclista/infracciones' in p %}active{% endif %}" href="/ciclista/infracciones">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          Mis Infracciones
         </a>
         <a class="nav-item {% if '/ciclista/reportes' in p %}active{% endif %}" href="/ciclista/reportes">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -172,10 +245,6 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 0 0 0-2h-3l-1 5.5M5.5 17.5 9 8l3 5h6"/></svg>
           Bicicletas
         </a>
-        <a class="nav-item {% if '/empleado/mantenimiento/inspeccion' in p %}active{% endif %}" href="/empleado/mantenimiento/inspeccion">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-          Inspección
-        </a>
         <a class="nav-item {% if '/empleado/mantenimiento/reportes' in p %}active{% endif %}" href="/empleado/mantenimiento/reportes">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
           Reportes
@@ -195,7 +264,15 @@
         </a>
         <a class="nav-item {% if '/empleado/vigilancia/devoluciones' in p %}active{% endif %}" href="/empleado/vigilancia/devoluciones">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.43"/></svg>
-          Devoluciones
+          Inspección/Devolución
+        </a>
+        <a class="nav-item {% if '/empleado/vigilancia/infracciones' in p %}active{% endif %}" href="/empleado/vigilancia/infracciones">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          Infracciones
+        </a>
+        <a class="nav-item {% if '/empleado/vigilancia/mantenimiento/cerrar' in p %}active{% endif %}" href="/empleado/vigilancia/mantenimiento/cerrar">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          Certificar Mant.
         </a>
         <a class="nav-item {% if '/empleado/vigilancia/alertas' in p %}active{% endif %}" href="/empleado/vigilancia/alertas">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
@@ -246,6 +323,7 @@
   <div class="main-wrapper">
 
     <header class="topbar">
+      <button id="hamburger-btn" class="hamburger" aria-label="Abrir menú">&#9776;</button>
       <span class="topbar-title">{% block page_title %}{{ title | default("") }}{% endblock %}</span>
       <div class="topbar-actions">
         <button id="a11y-toggle" class="theme-toggle" title="Usabilidad" aria-label="Abrir panel de usabilidad">
@@ -333,5 +411,36 @@
 </aside>
 
 {% block scripts %}{% endblock %}
+
+<script>
+(function () {
+  const btn     = document.getElementById('hamburger-btn');
+  const sidebar = document.querySelector('.sidebar');
+  const overlay = document.getElementById('sidebar-overlay');
+  if (!btn || !sidebar || !overlay) return;
+
+  function open() {
+    sidebar.classList.add('open');
+    overlay.classList.add('open');
+    btn.innerHTML = '&#10005;';
+    btn.setAttribute('aria-label', 'Cerrar menú');
+  }
+  function close() {
+    sidebar.classList.remove('open');
+    overlay.classList.remove('open');
+    btn.innerHTML = '&#9776;';
+    btn.setAttribute('aria-label', 'Abrir menú');
+  }
+
+  btn.addEventListener('click', () => sidebar.classList.contains('open') ? close() : open());
+  overlay.addEventListener('click', close);
+
+  document.querySelectorAll('.sidebar .nav-item').forEach(a => {
+    a.addEventListener('click', () => {
+      if (window.innerWidth <= 768) close();
+    });
+  });
+})();
+</script>
 </body>
 </html>

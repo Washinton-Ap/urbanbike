@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Mis Infracciones{% endblock %}
+{% block page_title %}Mis Infracciones{% endblock %}
+
+{% block content %}
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Historial de infracciones <span class="text-muted text-sm">({{ infracciones | length }})</span></span>
+  </div>
+
+  {% if infracciones %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Tipo</th>
+          <th>Descripción</th>
+          <th>Bicicleta</th>
+          <th>Fecha</th>
+          <th>Estado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for i in infracciones %}
+        <tr>
+          <td class="text-sm">{{ i.tipo or "—" }}</td>
+          <td class="text-sm" style="max-width:320px;">{{ i.descripcion or "—" }}</td>
+          <td style="font-family:monospace;">{{ i.bicicleta_codigo or "—" }}</td>
+          <td class="text-muted text-sm">{{ i.fecha | replace("T", " ") | replace("Z", "") if i.fecha else "—" }}</td>
+          <td>
+            {% if i.resuelta %}<span class="badge badge-green">Resuelta</span>
+            {% else %}<span class="badge badge-yellow">Pendiente</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:64px 24px;">
+    <div style="display:flex;justify-content:center;margin-bottom:20px;opacity:0.3;">
+      <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+    </div>
+    <div style="font-family:'Sora',sans-serif;font-weight:700;font-size:1.1rem;color:var(--text);margin-bottom:8px;">
+      Sin infracciones registradas
+    </div>
+    <div style="font-size:0.88rem;color:var(--text-muted);max-width:360px;margin:0 auto;line-height:1.6;">
+      No tienes infracciones. Sigue cuidando las bicicletas en cada viaje.
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

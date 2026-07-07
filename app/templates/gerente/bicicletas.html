@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}Bicicletas{% endblock %}
+{% block page_title %}Gestión de Bicicletas{% endblock %}
+
+{% block content %}
+{% if error %}<div class="flash error" style="margin-bottom:20px;">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  Error PocketBase: {{ error }}</div>{% endif %}
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Flota de bicicletas <span class="text-muted text-sm">({{ items | length }})</span></span>
+    <div class="flex gap-2" style="align-items:center;">
+      <input type="search" class="form-input" placeholder="Buscar..." style="width:auto;font-size:0.8rem;padding:6px 10px;" oninput="filtrarTabla(this, 'tabla-bicicletas')">
+      <button class="btn btn-primary" onclick="document.getElementById('modal-crear').showModal()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Nueva bicicleta
+      </button>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table id="tabla-bicicletas">
+      <thead><tr><th></th><th>Código</th><th>Tipo</th><th>Estado</th><th>Estación</th><th>Notas</th><th style="width:150px;"></th></tr></thead>
+      <tbody>
+        {% for b in items %}
+        <tr>
+          <td>
+            {% if b.foto %}
+            <img src="{{ file_url('bicicletas', b.id, b.foto, '64x48') }}" alt="{{ b.codigo }}" style="width:64px;height:48px;object-fit:cover;border-radius:6px;border:1px solid var(--border);">
+            {% else %}
+            <div style="width:64px;height:48px;display:flex;align-items:center;justify-content:center;background:var(--bg-soft);border-radius:6px;border:1px solid var(--border);color:var(--text-muted);">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm-9.5 11.5L9 10l4 4 4-4 4 7.5M9 10l-1-3h-3"/></svg>
+            </div>
+            {% endif %}
+          </td>
+          <td class="font-semibold" style="font-family:'Sora',sans-serif;">{{ b.codigo or "—" }}</td>
+          <td>{% if b.tipo == "electric_bike" %}<span class="badge badge-blue">Eléctrica</span>{% else %}<span class="badge badge-gray">Clásica</span>{% endif %}</td>
+          <td>
+            {% if b.estado == "disponible" %}<span class="badge badge-green">Disponible</span>
+            {% elif b.estado == "en_uso" %}<span class="badge badge-blue">En uso</span>
+            {% elif b.estado == "mantenimiento" %}<span class="badge badge-yellow">Mantenimiento</span>
+            {% else %}<span class="badge badge-red">Retirada</span>{% endif %}
+          </td>
+          <td class="text-muted text-sm">{{ b.estacion or "—" }}</td>
+          <td class="text-muted text-xs">{{ b.notas or "—" }}</td>
+          <td>
+            <div class="flex gap-2">
+              <button class="btn btn-ghost" style="padding:4px 10px;font-size:0.75rem;"
+                data-id="{{ b.id }}"
+                data-codigo="{{ b.codigo | default('') | e }}"
+                data-tipo="{{ b.tipo | default('classic_bike') | e }}"
+                data-estado="{{ b.estado | default('disponible') | e }}"
+                data-estacion="{{ b.estacion | default('') | e }}"
+                data-notas="{{ b.notas | default('') | e }}"
+                data-foto="{{ file_url('bicicletas', b.id, b.foto) }}"
+                onclick="openEdit(this)">Editar</button>
+              <button class="btn btn-ghost" style="padding:4px 10px;font-size:0.75rem;color:#EF4444;border-color:rgba(239,68,68,0.35);"
+                data-id="{{ b.id }}" data-label="{{ b.codigo | default(b.id) | e }}"
+                onclick="openDel(this)">Eliminar</button>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" style="text-align:center;padding:48px;color:var(--text-muted);">No hay bicicletas registradas.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<dialog id="modal-crear">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title">Nueva bicicleta</span>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-crear').close()">✕</button></div>
+    <form method="post" action="/gerente/bicicletas/crear" enctype="multipart/form-data">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group"><label class="form-label">Código *</label>
+          <input class="form-input" type="text" name="codigo" required placeholder="UB-001"></div>
+        <div class="form-group"><label class="form-label">Tipo *</label>
+          <select class="form-input" name="tipo" required>
+            <option value="classic_bike">Clásica</option>
+            <option value="electric_bike">Eléctrica</option></select></div>
+      </div>
+      <div class="form-group"><label class="form-label">Estado *</label>
+        <select class="form-input" name="estado" required>
+          <option value="disponible">Disponible</option><option value="en_uso">En uso</option>
+          <option value="mantenimiento">Mantenimiento</option><option value="retirada">Retirada</option></select></div>
+      <div class="form-group"><label class="form-label">Estación</label>
+        <select class="form-input" name="estacion">
+          <option value="">Sin asignar</option>
+          {% for e in estaciones %}<option value="{{ e.nombre }}">{{ e.nombre }}</option>{% endfor %}
+        </select></div>
+      <div class="form-group"><label class="form-label">Notas</label>
+        <input class="form-input" type="text" name="notas" placeholder="Observaciones opcionales"></div>
+      <div class="form-group"><label class="form-label">Foto (JPG/PNG, máx. 3MB)</label>
+        <input class="form-input" type="file" name="foto" accept="image/jpeg,image/png"></div>
+      <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-crear').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Crear</button></div>
+    </form>
+  </div>
+</dialog>
+
+<dialog id="modal-editar">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title">Editar bicicleta</span>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-editar').close()">✕</button></div>
+    <form method="post" id="form-editar" enctype="multipart/form-data">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group"><label class="form-label">Código</label>
+          <input class="form-input" type="text" name="codigo" id="edit-codigo"></div>
+        <div class="form-group"><label class="form-label">Tipo</label>
+          <select class="form-input" name="tipo" id="edit-tipo">
+            <option value="classic_bike">Clásica</option><option value="electric_bike">Eléctrica</option></select></div>
+      </div>
+      <div class="form-group"><label class="form-label">Estado</label>
+        <select class="form-input" name="estado" id="edit-estado">
+          <option value="disponible">Disponible</option><option value="en_uso">En uso</option>
+          <option value="mantenimiento">Mantenimiento</option><option value="retirada">Retirada</option></select></div>
+      <div class="form-group"><label class="form-label">Estación</label>
+        <select class="form-input" name="estacion" id="edit-estacion">
+          <option value="">Sin asignar</option>
+          {% for e in estaciones %}<option value="{{ e.nombre }}">{{ e.nombre }}</option>{% endfor %}
+        </select></div>
+      <div class="form-group"><label class="form-label">Notas</label>
+        <input class="form-input" type="text" name="notas" id="edit-notas"></div>
+      <div class="form-group">
+        <label class="form-label">Foto actual</label>
+        <div id="edit-foto-preview" style="margin-bottom:8px;"></div>
+        <label class="form-label">Reemplazar foto (JPG/PNG, máx. 3MB)</label>
+        <input class="form-input" type="file" name="foto" id="edit-foto" accept="image/jpeg,image/png">
+      </div>
+      <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-editar').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar cambios</button></div>
+    </form>
+  </div>
+</dialog>
+
+<dialog id="modal-eliminar">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title" style="color:#EF4444;">Eliminar bicicleta</span></div>
+    <p style="color:var(--text-muted);margin-bottom:20px;">¿Eliminar la bicicleta <strong id="del-label" style="color:var(--text);"></strong>? Esta acción no se puede deshacer.</p>
+    <form method="post" id="form-eliminar">
+      <div class="flex gap-2" style="justify-content:flex-end;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-eliminar').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary" style="background:#EF4444;border-color:#EF4444;">Eliminar</button></div>
+    </form>
+  </div>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openEdit(btn) {
+  const d = btn.dataset;
+  document.getElementById('form-editar').action  = '/gerente/bicicletas/' + d.id + '/editar';
+  document.getElementById('edit-codigo').value   = d.codigo;
+  document.getElementById('edit-tipo').value     = d.tipo;
+  document.getElementById('edit-estado').value   = d.estado;
+  document.getElementById('edit-estacion').value = d.estacion;
+  document.getElementById('edit-notas').value    = d.notas;
+  document.getElementById('edit-foto').value     = '';
+  const preview = document.getElementById('edit-foto-preview');
+  preview.innerHTML = d.foto
+    ? '<img src="' + d.foto + '?thumb=120x90" style="width:120px;height:90px;object-fit:cover;border-radius:6px;border:1px solid var(--border);">'
+    : '<span class="text-muted text-sm">Sin foto asignada</span>';
+  document.getElementById('modal-editar').showModal();
+}
+function openDel(btn) {
+  document.getElementById('form-eliminar').action  = '/gerente/bicicletas/' + btn.dataset.id + '/eliminar';
+  document.getElementById('del-label').textContent = btn.dataset.label;
+  document.getElementById('modal-eliminar').showModal();
+}
+document.querySelectorAll('dialog').forEach(d => d.addEventListener('click', e => { if (e.target === d) d.close(); }));
+</script>
+{% endblock %}

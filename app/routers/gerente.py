@@ -2,12 +2,15 @@
 
 import io
 import json
+import urllib.parse
+import urllib.request
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Query, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi import APIRouter, File, Form, Query, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 
 from app.db import clickhouse as ch
-from app.db.pocketbase import get_admin_client
+from app.db.pocketbase import get_admin_client, registrar_auditoria
 from app.templating import templates
 
 router = APIRouter(prefix="/gerente", tags=["gerente"])
@@ -18,6 +21,48 @@ POR_PAGINA = 25
 
 def _ctx(request: Request, **extra) -> dict:
     return {"user": getattr(request.state, "user", None), **extra}
+
+
+def _pb():
+    import app.db.pocketbase as pbmod
+    try:
+        return get_admin_client()
+    except Exception:
+        pbmod._admin_client = None
+        return get_admin_client()
+
+
+def _flash(request: Request, url: str, tipo: str, msg: str) -> RedirectResponse:
+    request.session["flash"] = {"type": tipo, "msg": msg}
+    return RedirectResponse(url, status_code=302)
+
+
+_ACCION_TIPO = {"crear": "crear", "editar": "editar", "eliminar": "eliminar"}
+_MODULO_PLURAL = {"bicicleta": "bicicletas", "estación": "estaciones", "tarifa": "tarifas", "usuario": "usuarios"}
+
+
+def _log(request: Request, accion: str, detalle: str) -> None:
+    """Registra una acción de CRUD del gerente en la bitácora de cambios y en la auditoría."""
+    user = getattr(request.state, "user", {}) or {}
+    try:
+        _pb().create_record("bitacora_cambios", {
+            "usuario_nombre": user.get("name") or user.get("email", "Gerente"),
+            "accion":  accion,
+            "detalle": detalle,
+            "fecha":   datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        })
+    except Exception:
+        pass
+
+    palabras = accion.lower().split(" ", 1)
+    accion_tipo = _ACCION_TIPO.get(palabras[0], "editar")
+    modulo = _MODULO_PLURAL.get(palabras[1], "sistema") if len(palabras) > 1 else "sistema"
+    registrar_auditoria(
+        user.get("pb_token", ""), user.get("id", ""),
+        user.get("name") or user.get("email", "Gerente"), user.get("email", ""),
+        accion_tipo, modulo, detalle, request,
+        usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
+    )
 
 
 def _build_where(fecha_inicio: str, fecha_fin: str, membresia: str, tipo_bici: str) -> str:
@@ -542,6 +587,20 @@ def reportes_pagos_excel(
     )
 
 
+_ROLES_EMPLEADO = ["empleado-operacion", "empleado-mantenimiento", "empleado-vigilancia"]
+_ROLES_EMPLEADO_LABELS = {
+    "empleado-operacion":     "Operación",
+    "empleado-mantenimiento": "Mantenimiento",
+    "empleado-vigilancia":    "Vigilancia",
+}
+
+
+def _roles_empleado_map(pb) -> dict[str, str]:
+    """slug -> id de rol, solo para los 3 roles de empleado."""
+    roles = pb.list_records("roles", per_page=50).get("items", [])
+    return {r.get("slug"): r["id"] for r in roles if r.get("slug") in _ROLES_EMPLEADO}
+
+
 def _empleados_pb() -> list[dict]:
     pb = get_admin_client()
     items = pb.list_records("users", expand="rol", sort="email", per_page=200).get("items", [])
@@ -551,10 +610,13 @@ def _empleados_pb() -> list[dict]:
         slug = (rol_obj.get("slug") or "").lower()
         if "empleado" in slug:
             empleados.append({
+                "id": u.get("id", ""),
                 "nombre": u.get("name") or u.get("email", ""),
                 "email": u.get("email", ""),
                 "rol": rol_obj.get("nombre") or rol_obj.get("slug") or "Sin rol",
+                "rol_slug": slug,
                 "verificado": bool(u.get("verified")),
+                "activo": bool(u.get("activo")),
                 "fecha_registro": (u.get("created") or "")[:10],
             })
     return empleados
@@ -572,7 +634,62 @@ def empleados(request: Request):
     return templates.TemplateResponse(request, "gerente/empleados.html", _ctx(request,
         title="Empleados — Gerente", flash=flash,
         empleados=empleados_list, pb_ok=pb_ok,
+        roles_empleado=_ROLES_EMPLEADO, roles_empleado_labels=_ROLES_EMPLEADO_LABELS,
     ))
+
+
+@router.post("/empleados/crear")
+def empleados_crear(
+    request: Request,
+    email: str = Form(...),
+    password: str = Form(...),
+    name: str = Form(""),
+    rol_slug: str = Form(...),
+):
+    if rol_slug not in _ROLES_EMPLEADO:
+        return _flash(request, "/gerente/empleados", "error", "Rol no válido. Solo puedes crear empleados.")
+    try:
+        pb = _pb()
+        rol_id = _roles_empleado_map(pb).get(rol_slug)
+        if not rol_id:
+            return _flash(request, "/gerente/empleados", "error", "No se encontró el rol solicitado.")
+        payload: dict = {
+            "email": email, "password": password, "passwordConfirm": password,
+            "emailVisibility": True, "rol": rol_id, "activo": True,
+        }
+        if name:
+            payload["name"] = name
+        pb.create_record("users", payload)
+        _log(request, "Crear usuario", f"Empleado creado: {email} ({_ROLES_EMPLEADO_LABELS.get(rol_slug, rol_slug)})")
+        try:
+            pb.request_verification("users", email)
+        except Exception:
+            pass
+        return _flash(request, "/gerente/empleados", "success", "Empleado creado correctamente.")
+    except Exception as e:
+        return _flash(request, "/gerente/empleados", "error", str(e))
+
+
+@router.post("/empleados/{uid}/cambiar-rol")
+def empleados_cambiar_rol(request: Request, uid: str, rol_slug: str = Form(...)):
+    if rol_slug not in _ROLES_EMPLEADO:
+        return _flash(request, "/gerente/empleados", "error", "Rol no válido. Solo puedes asignar roles de empleado.")
+    try:
+        pb = _pb()
+        usuario = pb.get_record("users", uid, expand="rol")
+        rol_actual_slug = ((usuario.get("expand") or {}).get("rol") or {}).get("slug", "")
+        if rol_actual_slug not in _ROLES_EMPLEADO:
+            return _flash(request, "/gerente/empleados", "error",
+                          "Solo puedes cambiar el rol de usuarios que ya son empleados.")
+        rol_id = _roles_empleado_map(pb).get(rol_slug)
+        if not rol_id:
+            return _flash(request, "/gerente/empleados", "error", "No se encontró el rol solicitado.")
+        pb.update_record("users", uid, {"rol": rol_id})
+        _log(request, "Editar usuario",
+             f"Rol de {usuario.get('email', uid)} cambiado a {_ROLES_EMPLEADO_LABELS.get(rol_slug, rol_slug)}")
+        return _flash(request, "/gerente/empleados", "success", "Rol actualizado.")
+    except Exception as e:
+        return _flash(request, "/gerente/empleados", "error", str(e))
 
 
 @router.get("/empleados/excel")
@@ -656,6 +773,317 @@ def empleados_excel(request: Request):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{fname}"'},
     )
+
+
+# ── Bicicletas ─────────────────────────────────────────────────────────────────
+
+@router.get("/bicicletas", response_class=HTMLResponse)
+def bicicletas_list(request: Request):
+    flash = request.session.pop("flash", None)
+    items: list = []
+    estaciones: list = []
+    error: str | None = None
+    try:
+        items = _pb().list_records("bicicletas", sort="codigo", per_page=500).get("items", [])
+    except Exception as e:
+        error = str(e)
+    try:
+        estaciones = _pb().list_records("estaciones", sort="nombre", per_page=200).get("items", [])
+    except Exception:
+        pass
+    return templates.TemplateResponse(request, "gerente/bicicletas.html", _ctx(request,
+        title="Bicicletas", items=items, estaciones=estaciones, flash=flash, error=error,
+    ))
+
+
+def _validar_foto(foto: UploadFile | None) -> tuple[bool, str | None]:
+    """Valida que la foto sea jpg/png y no supere 3MB. Devuelve (tiene_foto, error)."""
+    tiene_foto = foto is not None and foto.filename
+    if not tiene_foto:
+        return False, None
+    if foto.content_type not in ("image/jpeg", "image/png"):
+        return True, "La foto debe ser un archivo JPG o PNG."
+    if foto.size and foto.size > 3 * 1024 * 1024:
+        return True, "La foto no debe superar los 3 MB."
+    return True, None
+
+
+@router.post("/bicicletas/crear")
+def bicicletas_crear(
+    request: Request,
+    codigo: str = Form(...),
+    tipo: str = Form("classic_bike"),
+    estado: str = Form("disponible"),
+    estacion: str = Form(""),
+    notas: str = Form(""),
+    foto: UploadFile | None = File(None),
+):
+    tiene_foto, error_foto = _validar_foto(foto)
+    if error_foto:
+        return _flash(request, "/gerente/bicicletas", "error", error_foto)
+    try:
+        pb = _pb()
+        registro = pb.create_record("bicicletas", {
+            "codigo": codigo, "tipo": tipo, "estado": estado,
+            "estacion": estacion, "notas": notas,
+        })
+        if tiene_foto:
+            contenido = foto.file.read()
+            pb.update_record_with_file("bicicletas", registro["id"], {},
+                {"foto": (foto.filename, contenido, foto.content_type)})
+        _log(request, "Crear bicicleta", f"Bicicleta registrada: {codigo}")
+        return _flash(request, "/gerente/bicicletas", "success", "Bicicleta registrada.")
+    except Exception as e:
+        return _flash(request, "/gerente/bicicletas", "error", str(e))
+
+
+@router.post("/bicicletas/{bid}/editar")
+def bicicletas_editar(
+    request: Request, bid: str,
+    codigo: str = Form(""), tipo: str = Form(""),
+    estado: str = Form(""), estacion: str = Form(""),
+    notas: str = Form(""),
+    foto: UploadFile | None = File(None),
+):
+    tiene_foto, error_foto = _validar_foto(foto)
+    if error_foto:
+        return _flash(request, "/gerente/bicicletas", "error", error_foto)
+    try:
+        pb = _pb()
+        payload: dict = {"tipo": tipo, "estado": estado, "estacion": estacion, "notas": notas}
+        if codigo:
+            payload["codigo"] = codigo
+        if tiene_foto:
+            contenido = foto.file.read()
+            pb.update_record_with_file("bicicletas", bid, payload,
+                {"foto": (foto.filename, contenido, foto.content_type)})
+        else:
+            pb.update_record("bicicletas", bid, payload)
+        _log(request, "Editar bicicleta", f"Bicicleta actualizada: {codigo or bid}")
+        return _flash(request, "/gerente/bicicletas", "success", "Bicicleta actualizada.")
+    except Exception as e:
+        return _flash(request, "/gerente/bicicletas", "error", str(e))
+
+
+@router.post("/bicicletas/{bid}/eliminar")
+def bicicletas_eliminar(request: Request, bid: str):
+    try:
+        _pb().delete_record("bicicletas", bid)
+        _log(request, "Eliminar bicicleta", f"Bicicleta eliminada (id: {bid})")
+        return _flash(request, "/gerente/bicicletas", "success", "Bicicleta eliminada.")
+    except Exception as e:
+        return _flash(request, "/gerente/bicicletas", "error", str(e))
+
+
+# ── Estaciones ───────────────────────────────────────────────────────────────
+
+@router.get("/estaciones", response_class=HTMLResponse)
+def estaciones_list(request: Request):
+    flash = request.session.pop("flash", None)
+    items: list = []
+    error: str | None = None
+    try:
+        items = _pb().list_records("estaciones", sort="nombre", per_page=500).get("items", [])
+    except Exception as e:
+        error = str(e)
+    return templates.TemplateResponse(request, "gerente/estaciones.html", _ctx(request,
+        title="Estaciones", items=items, flash=flash, error=error,
+        estaciones_json=json.dumps(items),
+    ))
+
+
+def _siguiente_codigo_estacion(pb) -> str:
+    items = pb.list_records("estaciones", filter='codigo ~ "EST-"', per_page=500).get("items", [])
+    maximo = 0
+    for e in items:
+        partes = (e.get("codigo") or "").split("-")
+        if len(partes) == 2 and partes[0] == "EST" and partes[1].isdigit():
+            maximo = max(maximo, int(partes[1]))
+    return f"EST-{str(maximo + 1).zfill(3)}"
+
+
+@router.post("/estaciones/crear")
+def estaciones_crear(
+    request: Request,
+    nombre: str = Form(...),
+    capacidad: str = Form(""),
+    latitud: str = Form(""),
+    longitud: str = Form(""),
+    activa: str = Form("true"),
+):
+    try:
+        pb = _pb()
+        codigo = _siguiente_codigo_estacion(pb)
+        payload: dict = {"nombre": nombre, "codigo": codigo, "activa": activa == "true"}
+        if capacidad:
+            try: payload["capacidad"] = int(capacidad)
+            except ValueError: pass
+        if latitud:
+            try: payload["latitud"] = float(latitud)
+            except ValueError: pass
+        if longitud:
+            try: payload["longitud"] = float(longitud)
+            except ValueError: pass
+        pb.create_record("estaciones", payload)
+        _log(request, "Crear estación", f"Estación creada: {nombre} ({codigo})")
+        return _flash(request, "/gerente/estaciones", "success", f"Estación {codigo} creada.")
+    except Exception as e:
+        return _flash(request, "/gerente/estaciones", "error", str(e))
+
+
+@router.get("/estaciones/buscar-lugar")
+def estaciones_buscar_lugar(request: Request, q: str = Query("")) -> JSONResponse:
+    if not q.strip():
+        return JSONResponse([])
+    params = urllib.parse.urlencode({
+        "q": q.strip(),
+        "format": "json",
+        "limit": 5,
+        "countrycodes": "ec",
+        "accept-language": "es",
+    })
+    url = f"https://nominatim.openstreetmap.org/search?{params}"
+    req = urllib.request.Request(url, headers={"User-Agent": "UrbanBike-App/1.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+        resultados = [
+            {"nombre": item.get("display_name", ""), "lat": float(item["lat"]), "lng": float(item["lon"])}
+            for item in data
+        ]
+        return JSONResponse(resultados)
+    except Exception:
+        return JSONResponse([])
+
+
+@router.post("/estaciones/{eid}/editar")
+def estaciones_editar(
+    request: Request, eid: str,
+    nombre: str = Form(""), codigo: str = Form(""),
+    capacidad: str = Form(""), latitud: str = Form(""),
+    longitud: str = Form(""), activa: str = Form("true"),
+):
+    try:
+        payload: dict = {"activa": activa == "true"}
+        if nombre: payload["nombre"] = nombre
+        if codigo: payload["codigo"] = codigo
+        if capacidad:
+            try: payload["capacidad"] = int(capacidad)
+            except ValueError: pass
+        if latitud:
+            try: payload["latitud"] = float(latitud)
+            except ValueError: pass
+        if longitud:
+            try: payload["longitud"] = float(longitud)
+            except ValueError: pass
+        _pb().update_record("estaciones", eid, payload)
+        _log(request, "Editar estación", f"Estación actualizada: {nombre or eid}")
+        return _flash(request, "/gerente/estaciones", "success", "Estación actualizada.")
+    except Exception as e:
+        return _flash(request, "/gerente/estaciones", "error", str(e))
+
+
+@router.post("/estaciones/{eid}/toggleactiva")
+def estaciones_toggleactiva(request: Request, eid: str):
+    try:
+        pb = _pb()
+        est = pb.get_record("estaciones", eid)
+        nueva = not bool(est.get("activa"))
+        pb.update_record("estaciones", eid, {"activa": nueva})
+        _log(request, "Editar estación", f"Estación {est.get('nombre', eid)} marcada como {'activa' if nueva else 'inactiva'}")
+        return _flash(request, "/gerente/estaciones", "success", "Estado de la estación actualizado.")
+    except Exception as e:
+        return _flash(request, "/gerente/estaciones", "error", str(e))
+
+
+@router.post("/estaciones/{eid}/eliminar")
+def estaciones_eliminar(request: Request, eid: str):
+    try:
+        _pb().delete_record("estaciones", eid)
+        _log(request, "Eliminar estación", f"Estación eliminada (id: {eid})")
+        return _flash(request, "/gerente/estaciones", "success", "Estación eliminada.")
+    except Exception as e:
+        return _flash(request, "/gerente/estaciones", "error", str(e))
+
+
+# ── Tarifas ──────────────────────────────────────────────────────────────────
+
+@router.get("/tarifas", response_class=HTMLResponse)
+def tarifas_list(request: Request):
+    flash = request.session.pop("flash", None)
+    items: list = []
+    error: str | None = None
+    try:
+        items = _pb().list_records("tarifas", sort="tipo_bicicleta", per_page=200).get("items", [])
+    except Exception as e:
+        error = str(e)
+    return templates.TemplateResponse(request, "gerente/tarifas.html", _ctx(request,
+        title="Tarifas", items=items, flash=flash, error=error,
+    ))
+
+
+@router.post("/tarifas/crear")
+def tarifas_crear(
+    request: Request,
+    tipo_bicicleta: str = Form(...),
+    tipo_usuario: str = Form(...),
+    precio_hora: str = Form(...),
+    activa: str = Form("true"),
+):
+    try:
+        _pb().create_record("tarifas", {
+            "tipo_bicicleta": tipo_bicicleta,
+            "tipo_usuario":   tipo_usuario,
+            "precio_hora":    float(precio_hora),
+            "activa":         activa == "true",
+        })
+        _log(request, "Crear tarifa", f"Tarifa creada: {tipo_bicicleta} / {tipo_usuario}")
+        return _flash(request, "/gerente/tarifas", "success", "Tarifa creada.")
+    except Exception as e:
+        return _flash(request, "/gerente/tarifas", "error", str(e))
+
+
+@router.post("/tarifas/{tid}/editar")
+def tarifas_editar(
+    request: Request, tid: str,
+    tipo_bicicleta: str = Form(""), tipo_usuario: str = Form(""),
+    precio_hora: str = Form(""), activa: str = Form("true"),
+):
+    try:
+        payload: dict = {"activa": activa == "true"}
+        if tipo_bicicleta: payload["tipo_bicicleta"] = tipo_bicicleta
+        if tipo_usuario:   payload["tipo_usuario"]   = tipo_usuario
+        if precio_hora:
+            try: payload["precio_hora"] = float(precio_hora)
+            except ValueError: pass
+        _pb().update_record("tarifas", tid, payload)
+        _log(request, "Editar tarifa", f"Tarifa actualizada (id: {tid})")
+        return _flash(request, "/gerente/tarifas", "success", "Tarifa actualizada.")
+    except Exception as e:
+        return _flash(request, "/gerente/tarifas", "error", str(e))
+
+
+@router.post("/tarifas/{tid}/toggleactiva")
+def tarifas_toggleactiva(request: Request, tid: str):
+    try:
+        pb = _pb()
+        tarifa = pb.get_record("tarifas", tid)
+        nueva = not bool(tarifa.get("activa"))
+        pb.update_record("tarifas", tid, {"activa": nueva})
+        _log(request, "Editar tarifa", f"Tarifa {tarifa.get('tipo_bicicleta', tid)}/{tarifa.get('tipo_usuario', '')} marcada como {'activa' if nueva else 'inactiva'}")
+        return _flash(request, "/gerente/tarifas", "success", "Estado de la tarifa actualizado.")
+    except Exception as e:
+        return _flash(request, "/gerente/tarifas", "error", str(e))
+
+
+@router.post("/tarifas/{tid}/eliminar")
+def tarifas_eliminar(request: Request, tid: str):
+    try:
+        _pb().delete_record("tarifas", tid)
+        _log(request, "Eliminar tarifa", f"Tarifa eliminada (id: {tid})")
+        return _flash(request, "/gerente/tarifas", "success", "Tarifa eliminada.")
+    except Exception as e:
+        return _flash(request, "/gerente/tarifas", "error", str(e))
 
 
 @router.get("/informe", response_class=HTMLResponse)

@@ -2,10 +2,12 @@
 
 import io
 import json
+import urllib.parse
+import urllib.request
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, File, Form, Query, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 
 from app.db.pocketbase import get_admin_client, PocketBaseError, registrar_auditoria
 from app.templating import templates
@@ -117,13 +119,51 @@ def usuarios_crear(
 def usuarios_editar(
     request: Request, uid: str,
     name: str = Form(""), rol: str = Form(""),
+    email: str = Form(""), cedula: str = Form(""),
 ):
     try:
         payload: dict = {"rol": rol}
-        if name: payload["name"] = name
+        if name:   payload["name"]  = name
+        if email:  payload["email"] = email
+        if cedula: payload["cedula"] = cedula
         _pb().update_record("users", uid, payload)
         _log(request, "Editar usuario", f"Usuario actualizado (id: {uid})")
         return _flash(request, "/admin/usuarios", "success", "Usuario actualizado.")
+    except Exception as e:
+        return _flash(request, "/admin/usuarios", "error", str(e))
+
+
+@router.post("/usuarios/{uid}/toggle-activo")
+def usuarios_toggle_activo(request: Request, uid: str):
+    try:
+        pb = _pb()
+        usuario = pb.get_record("users", uid)
+        nuevo = not bool(usuario.get("activo"))
+        pb.update_record("users", uid, {"activo": nuevo})
+        _log(request, "Editar usuario",
+             f"Usuario {usuario.get('email', uid)} marcado como {'activo' if nuevo else 'bloqueado'}")
+        return _flash(request, "/admin/usuarios", "success", "Estado del usuario actualizado.")
+    except Exception as e:
+        return _flash(request, "/admin/usuarios", "error", str(e))
+
+
+@router.post("/usuarios/{uid}/cambiar-password")
+def usuarios_cambiar_password(
+    request: Request, uid: str,
+    password: str = Form(...), password_confirm: str = Form(...),
+):
+    if password != password_confirm:
+        return _flash(request, "/admin/usuarios", "error", "Las contraseñas no coinciden.")
+    if len(password) < 8:
+        return _flash(request, "/admin/usuarios", "error", "La contraseña debe tener al menos 8 caracteres.")
+    try:
+        pb = _pb()
+        usuario = pb.get_record("users", uid)
+        pb.update_record("users", uid, {
+            "password": password, "passwordConfirm": password_confirm,
+        })
+        _log(request, "Editar usuario", f"Contraseña restablecida para {usuario.get('email', uid)}")
+        return _flash(request, "/admin/usuarios", "success", "Contraseña actualizada.")
     except Exception as e:
         return _flash(request, "/admin/usuarios", "error", str(e))
 
@@ -252,19 +292,29 @@ def estaciones_list(request: Request):
     ))
 
 
+def _siguiente_codigo_estacion(pb) -> str:
+    items = pb.list_records("estaciones", filter='codigo ~ "EST-"', per_page=500).get("items", [])
+    maximo = 0
+    for e in items:
+        partes = (e.get("codigo") or "").split("-")
+        if len(partes) == 2 and partes[0] == "EST" and partes[1].isdigit():
+            maximo = max(maximo, int(partes[1]))
+    return f"EST-{str(maximo + 1).zfill(3)}"
+
+
 @router.post("/estaciones/crear")
 def estaciones_crear(
     request: Request,
     nombre: str = Form(...),
-    codigo: str = Form(""),
     capacidad: str = Form(""),
     latitud: str = Form(""),
     longitud: str = Form(""),
     activa: str = Form("true"),
 ):
     try:
-        payload: dict = {"nombre": nombre, "activa": activa == "true"}
-        if codigo: payload["codigo"] = codigo
+        pb = _pb()
+        codigo = _siguiente_codigo_estacion(pb)
+        payload: dict = {"nombre": nombre, "codigo": codigo, "activa": activa == "true"}
         if capacidad:
             try: payload["capacidad"] = int(capacidad)
             except ValueError: pass
@@ -274,9 +324,9 @@ def estaciones_crear(
         if longitud:
             try: payload["longitud"] = float(longitud)
             except ValueError: pass
-        _pb().create_record("estaciones", payload)
-        _log(request, "Crear estación", f"Estación creada: {nombre}")
-        return _flash(request, "/admin/estaciones", "success", "Estación creada.")
+        pb.create_record("estaciones", payload)
+        _log(request, "Crear estación", f"Estación creada: {nombre} ({codigo})")
+        return _flash(request, "/admin/estaciones", "success", f"Estación {codigo} creada.")
     except Exception as e:
         return _flash(request, "/admin/estaciones", "error", str(e))
 
@@ -316,6 +366,31 @@ def estaciones_eliminar(request: Request, eid: str):
         return _flash(request, "/admin/estaciones", "success", "Estación eliminada.")
     except Exception as e:
         return _flash(request, "/admin/estaciones", "error", str(e))
+
+
+@router.get("/estaciones/buscar-lugar")
+def estaciones_buscar_lugar(request: Request, q: str = Query("")) -> JSONResponse:
+    if not q.strip():
+        return JSONResponse([])
+    params = urllib.parse.urlencode({
+        "q": q.strip(),
+        "format": "json",
+        "limit": 5,
+        "countrycodes": "ec",
+        "accept-language": "es",
+    })
+    url = f"https://nominatim.openstreetmap.org/search?{params}"
+    req = urllib.request.Request(url, headers={"User-Agent": "UrbanBike-App/1.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+        resultados = [
+            {"nombre": item.get("display_name", ""), "lat": float(item["lat"]), "lng": float(item["lon"])}
+            for item in data
+        ]
+        return JSONResponse(resultados)
+    except Exception:
+        return JSONResponse([])
 
 
 # ── TARIFAS ───────────────────────────────────────────────────────────────────

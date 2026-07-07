@@ -3,7 +3,7 @@
 import json
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.config import settings
@@ -34,6 +34,32 @@ def _flash(request: Request, url: str, tipo: str, msg: str) -> RedirectResponse:
 
 def _ahora() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _duracion_hms(minutos: int) -> str:
+    minutos = max(0, int(minutos))
+    h, m = divmod(minutos, 60)
+    return f"{h:02d}:{m:02d}:00"
+
+
+# Los ciclistas registrados en la plataforma se tarifican como "member"
+# (la tarifa "casual" es para usuarios sin cuenta, fuera del alcance del sistema).
+TIPO_MEMBRESIA = "member"
+
+
+def _tarifa_hora(pb, tipo_bicicleta: str) -> float:
+    try:
+        res = pb.list_records(
+            "tarifas",
+            filter=f'tipo_bicicleta = "{tipo_bicicleta}" && tipo_usuario = "{TIPO_MEMBRESIA}" && activa = true',
+            per_page=1,
+        )
+        items = res.get("items", [])
+        if items:
+            return float(items[0].get("precio_hora") or 0)
+    except Exception:
+        pass
+    return 0.0
 
 
 # ── Fallback /empleado/dashboard → redirige según rol ──────────────────────
@@ -79,13 +105,79 @@ async def op_dashboard(request: Request):
 async def op_inventario(request: Request):
     flash = request.session.pop("flash", None)
     bicicletas: list[dict] = []
+    estaciones: list[dict] = []
     try:
         bicicletas = _pb().list_records("bicicletas", sort="codigo", per_page=500).get("items", [])
+        estaciones = _pb().list_records("estaciones", filter='activa = true', sort="nombre", per_page=200).get("items", [])
     except Exception:
         pass
     return templates.TemplateResponse(request, "empleado/operacion/inventario.html", _ctx(request,
-        title="Inventario de Bicicletas", flash=flash, bicicletas=bicicletas,
+        title="Inventario de Bicicletas", flash=flash, bicicletas=bicicletas, estaciones=estaciones,
     ))
+
+
+_PREFIJO_TIPO = {"classic_bike": "UB", "electric_bike": "EB"}
+
+
+def _siguiente_codigo(pb, tipo: str) -> str:
+    prefijo = _PREFIJO_TIPO.get(tipo, "UB")
+    items = pb.list_records("bicicletas", filter=f'codigo ~ "{prefijo}-"', per_page=500).get("items", [])
+    maximo = 0
+    for b in items:
+        partes = (b.get("codigo") or "").split("-")
+        if len(partes) == 2 and partes[0] == prefijo and partes[1].isdigit():
+            maximo = max(maximo, int(partes[1]))
+    return f"{prefijo}-{str(maximo + 1).zfill(3)}"
+
+
+@router.post("/operacion/bicicletas/crear")
+async def op_bicicletas_crear(
+    request: Request,
+    tipo:     str = Form("classic_bike"),
+    estacion: str = Form(""),
+    notas:    str = Form(""),
+):
+    user = getattr(request.state, "user", {})
+    try:
+        pb = _pb()
+        codigo = _siguiente_codigo(pb, tipo)
+        pb.create_record("bicicletas", {
+            "codigo":   codigo,
+            "tipo":     tipo,
+            "estado":   "disponible",
+            "estacion": estacion,
+            "notas":    notas,
+        })
+        registrar_auditoria(
+            user.get("pb_token", ""), user.get("id", ""), user.get("name") or user.get("email", ""),
+            user.get("email", ""), "crear", "bicicletas",
+            f"Bicicleta registrada desde inventario: {codigo}", request,
+            usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
+        )
+        return _flash(request, "/empleado/operacion/inventario", "success", f"Bicicleta {codigo} registrada correctamente.")
+    except Exception as e:
+        return _flash(request, "/empleado/operacion/inventario", "error", str(e))
+
+
+@router.post("/operacion/bicicletas/{bid}/editar-estado")
+async def op_bicicletas_editar_estado(
+    request: Request, bid: str,
+    estado: str = Form(...),
+):
+    user = getattr(request.state, "user", {})
+    try:
+        pb = _pb()
+        bici = pb.get_record("bicicletas", bid)
+        pb.update_record("bicicletas", bid, {"estado": estado})
+        registrar_auditoria(
+            user.get("pb_token", ""), user.get("id", ""), user.get("name") or user.get("email", ""),
+            user.get("email", ""), "editar", "bicicletas",
+            f"Estado de {bici.get('codigo', bid)} cambiado a {estado}", request,
+            usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
+        )
+        return _flash(request, "/empleado/operacion/inventario", "success", "Estado actualizado.")
+    except Exception as e:
+        return _flash(request, "/empleado/operacion/inventario", "error", str(e))
 
 
 @router.get("/operacion/alquileres", response_class=HTMLResponse)
@@ -178,25 +270,63 @@ async def op_alquileres_completar(
     estacion_fin_id:     str = Form(...),
     estacion_fin_nombre: str = Form(...),
 ):
+    user = getattr(request.state, "user", {})
     try:
         pb = _pb()
         viaje = pb.get_record("viajes", viaje_id)
         inicio_str = viaje.get("fecha_inicio", "")
-        duracion = 0
+        segundos = 0
         try:
             inicio   = datetime.fromisoformat(inicio_str.replace("Z", "+00:00"))
-            duracion = max(1, int((datetime.now(timezone.utc) - inicio).total_seconds() / 60))
+            segundos = max(1, int((datetime.now(timezone.utc) - inicio).total_seconds()))
         except Exception:
-            pass
+            segundos = 60
+        duracion_minutos = max(1, -(-segundos // 60))
+
+        bici_id = viaje.get("bicicleta_id", "")
+        tipo_bicicleta = "classic_bike"
+        if bici_id:
+            try:
+                bici = pb.get_record("bicicletas", bici_id)
+                tipo_bicicleta = bici.get("tipo") or "classic_bike"
+            except Exception:
+                pass
+        precio_hora = _tarifa_hora(pb, tipo_bicicleta)
+        monto_total = round(segundos / 3600 * precio_hora, 2)
+
         pb.update_record("viajes", viaje_id, {
             "estado": "completado", "fecha_fin": _ahora(),
             "estacion_fin_id": estacion_fin_id,
-            "duracion_minutos": duracion,
+            "duracion_minutos": duracion_minutos,
         })
-        bici_id = viaje.get("bicicleta_id", "")
         if bici_id:
             pb.update_record("bicicletas", bici_id, {"estado": "disponible", "estacion": estacion_fin_nombre})
-        return _flash(request, "/empleado/operacion/alquileres", "success", f"Viaje completado en {estacion_fin_nombre}.")
+
+        pago = pb.create_record("pagos", {
+            "viaje_id":          viaje_id,
+            "ciclista_id":       viaje.get("ciclista_id", ""),
+            "ciclista_nombre":   viaje.get("ciclista_nombre") or "Registro presencial",
+            "duracion_minutos":  duracion_minutos,
+            "tipo_bicicleta":    tipo_bicicleta,
+            "tipo_membresia":    TIPO_MEMBRESIA,
+            "precio_hora":       precio_hora,
+            "monto_total":       monto_total,
+            "estado":            "pendiente",
+            "metodo_pago":       "",
+            "fecha_pago":        "",
+            "comprobante_numero": "",
+            "es_presencial":     True,
+            "empleado_id":       user.get("id", ""),
+        })
+
+        registrar_auditoria(
+            user.get("pb_token", ""), user.get("id", ""), user.get("name") or user.get("email", ""),
+            user.get("email", ""), "editar", "viajes",
+            f"Viaje completado en {estacion_fin_nombre} (duración: {duracion_minutos} min, monto: ${monto_total:.2f})", request,
+            usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
+        )
+
+        return RedirectResponse(f"/empleado/operacion/pagos/cobrar/{pago['id']}", status_code=302)
     except Exception as e:
         return _flash(request, "/empleado/operacion/alquileres", "error", str(e))
 
@@ -232,9 +362,9 @@ async def op_rebalanceo_trasladar(
         bici = pb.get_record("bicicletas", bicicleta_id)
         origen = bici.get("estacion") or "—"
         destino = pb.get_record("estaciones", estacion_destino_id)
-        destino_nombre = destino.get("nombre", "")
+        destino_nombre = (destino.get("nombre") or "").strip()
 
-        pb.update_record("bicicletas", bicicleta_id, {"estacion": destino_nombre})
+        pb.update_record("bicicletas", bicicleta_id, {"estacion": destino_nombre, "estado": "disponible"})
 
         registrar_auditoria(
             user.get("pb_token", ""), user.get("id", ""), user.get("name") or user.get("email", ""),
@@ -283,6 +413,147 @@ async def op_pagos(request: Request):
         total_pagado=total_pagado, total_pendiente=total_pendiente,
         pb_url=settings.pb_url,
     ))
+
+
+@router.get("/operacion/pagos/cobrar/{pago_id}", response_class=HTMLResponse)
+async def op_pagos_cobrar(request: Request, pago_id: str):
+    flash = request.session.pop("flash", None)
+    try:
+        pb = _pb()
+        registro = pb.get_record("pagos", pago_id)
+    except Exception:
+        return _flash(request, "/empleado/operacion/alquileres", "error", "Pago no encontrado.")
+
+    if registro.get("estado") == "pagado":
+        return _flash(request, "/empleado/operacion/pagos", "info", "Este pago ya fue cobrado.")
+
+    viaje: dict = {}
+    try:
+        viaje = pb.get_record("viajes", registro.get("viaje_id", ""))
+    except Exception:
+        pass
+
+    cuentas: list[dict] = []
+    try:
+        cuentas = pb.list_records("cuentas_bancarias", filter="activa = true", sort="banco", per_page=50).get("items", [])
+    except Exception:
+        pass
+
+    return templates.TemplateResponse(request, "empleado/operacion/cobrar_presencial.html", _ctx(request,
+        title="Cobro Presencial", flash=flash, pago=registro, viaje=viaje, cuentas=cuentas,
+        duracion_hms=_duracion_hms(registro.get("duracion_minutos") or 0),
+    ))
+
+
+@router.post("/operacion/pagos/cobrar/{pago_id}/confirmar")
+async def op_pagos_cobrar_confirmar(
+    request: Request,
+    pago_id: str,
+    metodo_pago:           str = Form(...),
+    monto_recibido:        str = Form(""),
+    numero_tarjeta:        str = Form(""),
+    nombre_titular:        str = Form(""),
+    mes_expiracion:        str = Form(""),
+    anio_expiracion:       str = Form(""),
+    numero_cuenta_origen:  str = Form(""),
+    comprobante_imagen:    UploadFile | None = File(None),
+):
+    user = getattr(request.state, "user", {})
+    volver = f"/empleado/operacion/pagos/cobrar/{pago_id}"
+    try:
+        pb = _pb()
+        registro = pb.get_record("pagos", pago_id)
+        if registro.get("estado") == "pagado":
+            return _flash(request, "/empleado/operacion/alquileres", "info", "Este pago ya fue cobrado.")
+
+        ahora = datetime.now(timezone.utc)
+        comprobante = registro.get("comprobante_numero") or f"UB-{ahora.strftime('%Y%m%d')}-{pago_id[-4:].upper()}"
+
+        # ── Efectivo: el empleado cobra en el momento ────────────────────────
+        if metodo_pago == "efectivo":
+            try:
+                monto = float(monto_recibido)
+            except ValueError:
+                return _flash(request, volver, "error", "Monto recibido no válido.")
+            pb.update_record("pagos", pago_id, {
+                "estado":                       "pagado",
+                "metodo_pago":                  "efectivo",
+                "fecha_pago":                   _ahora(),
+                "fecha_confirmacion":           _ahora(),
+                "comprobante_numero":           comprobante,
+                "confirmado_por_empleado_id":   user.get("id", ""),
+                "confirmado_por_empleado_nombre": user.get("name") or user.get("email", ""),
+                "observaciones_pago":           f"Monto recibido: ${monto:.2f}",
+                "es_presencial":                True,
+                "empleado_id":                  user.get("id", ""),
+            })
+            registrar_auditoria(
+                user.get("pb_token", ""), user.get("id", ""), user.get("name") or user.get("email", ""),
+                user.get("email", ""), "editar", "pagos",
+                f"Cobro presencial en efectivo (${monto:.2f}): comprobante {comprobante}", request,
+                usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
+            )
+            return _flash(request, "/empleado/operacion/alquileres", "success", "Pago cobrado en efectivo.")
+
+        # ── Tarjeta (simulado, igual que el flujo del ciclista) ──────────────
+        if metodo_pago == "tarjeta":
+            digitos = "".join(ch for ch in numero_tarjeta if ch.isdigit())
+            if len(digitos) < 4 or not nombre_titular.strip() or not mes_expiracion or not anio_expiracion:
+                return _flash(request, volver, "error", "Completa todos los datos de la tarjeta.")
+            ultimos4 = digitos[-4:]
+            pb.update_record("pagos", pago_id, {
+                "estado":                       "pagado",
+                "metodo_pago":                  "tarjeta",
+                "fecha_pago":                   _ahora(),
+                "fecha_confirmacion":           _ahora(),
+                "comprobante_numero":           comprobante,
+                "numero_tarjeta_ultimos4":      ultimos4,
+                "confirmado_por_empleado_id":   user.get("id", ""),
+                "confirmado_por_empleado_nombre": user.get("name") or user.get("email", ""),
+                "es_presencial":                True,
+                "empleado_id":                  user.get("id", ""),
+            })
+            registrar_auditoria(
+                user.get("pb_token", ""), user.get("id", ""), user.get("name") or user.get("email", ""),
+                user.get("email", ""), "editar", "pagos",
+                f"Cobro presencial con tarjeta (•••• {ultimos4}): comprobante {comprobante}", request,
+                usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
+            )
+            return _flash(request, "/empleado/operacion/alquileres", "success", "Pago cobrado con tarjeta.")
+
+        # ── Transferencia (queda pendiente de verificación, igual que el ciclista) ──
+        if metodo_pago == "transferencia":
+            tiene_archivo = comprobante_imagen is not None and comprobante_imagen.filename
+            if not numero_cuenta_origen.strip() or not tiene_archivo:
+                return _flash(request, volver, "error",
+                    "Ingresa el número de cuenta de origen y adjunta el comprobante de la transferencia.")
+            if comprobante_imagen.content_type not in ("image/jpeg", "image/png", "application/pdf"):
+                return _flash(request, volver, "error", "El comprobante debe ser JPG, PNG o PDF.")
+            if comprobante_imagen.size and comprobante_imagen.size > 5 * 1024 * 1024:
+                return _flash(request, volver, "error", "El comprobante no debe superar los 5 MB.")
+
+            contenido = await comprobante_imagen.read()
+            pb.update_record_with_file("pagos", pago_id, {
+                "estado":               "verificacion_pendiente",
+                "metodo_pago":          "transferencia",
+                "comprobante_numero":   comprobante,
+                "numero_cuenta_origen": numero_cuenta_origen.strip(),
+                "es_presencial":        True,
+                "empleado_id":          user.get("id", ""),
+            }, {"comprobante_imagen": (comprobante_imagen.filename, contenido, comprobante_imagen.content_type)})
+
+            registrar_auditoria(
+                user.get("pb_token", ""), user.get("id", ""), user.get("name") or user.get("email", ""),
+                user.get("email", ""), "editar", "pagos",
+                f"Comprobante de transferencia presencial subido para verificación: {comprobante}", request,
+                usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
+            )
+            return _flash(request, "/empleado/operacion/pagos", "info",
+                          "Comprobante recibido. Queda pendiente de verificación.")
+
+        return _flash(request, volver, "error", "Método de pago no válido.")
+    except Exception as e:
+        return _flash(request, volver, "error", str(e))
 
 
 @router.post("/operacion/pagos/{pago_id}/registrar")
@@ -412,7 +683,8 @@ async def op_pagos_confirmar_efectivo(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# MANTENIMIENTO
+# MANTENIMIENTO — solo recibe y trabaja órdenes; no las crea ni las cierra
+# (esas acciones ahora corresponden a vigilancia).
 # ══════════════════════════════════════════════════════════════════════════════
 
 @router.get("/mantenimiento/dashboard", response_class=HTMLResponse)
@@ -462,143 +734,52 @@ async def mnt_ordenes(request: Request):
     ))
 
 
-@router.post("/mantenimiento/ordenes/crear")
-async def mnt_ordenes_crear(
-    request: Request,
-    bicicleta_id:     str = Form(...),
-    bicicleta_codigo: str = Form(...),
-    tipo:             str = Form("correctivo"),
-    descripcion:      str = Form(...),
-    tecnico_nombre:   str = Form(""),
-):
+@router.post("/mantenimiento/ordenes/{oid}/tomar")
+async def mnt_ordenes_tomar(request: Request, oid: str):
+    user = getattr(request.state, "user", {})
     try:
-        _pb().create_record("ordenes_mant", {
-            "bicicleta_id":     bicicleta_id,
-            "bicicleta_codigo": bicicleta_codigo,
-            "tipo":             tipo,
-            "descripcion":      descripcion,
-            "estado":           "pendiente",
-            "tecnico_nombre":   tecnico_nombre,
-            "fecha_apertura":   _ahora(),
+        pb = _pb()
+        orden = pb.get_record("ordenes_mant", oid)
+        if orden.get("estado") != "pendiente":
+            return _flash(request, "/empleado/mantenimiento/ordenes", "error", "Esta orden ya no está pendiente.")
+        pb.update_record("ordenes_mant", oid, {
+            "estado":               "en_proceso",
+            "tecnico_nombre":       user.get("name") or user.get("email", ""),
+            "fecha_inicio_trabajo": _ahora(),
         })
-        # Marcar bicicleta en mantenimiento
-        _pb().update_record("bicicletas", bicicleta_id, {"estado": "mantenimiento"})
-        return _flash(request, "/empleado/mantenimiento/ordenes", "success", "Orden creada correctamente.")
+        registrar_auditoria(
+            user.get("pb_token", ""), user.get("id", ""), user.get("name") or user.get("email", ""),
+            user.get("email", ""), "editar", "ordenes_mant",
+            f"Orden tomada por técnico: {orden.get('bicicleta_codigo', oid)}", request,
+            usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
+        )
+        return _flash(request, "/empleado/mantenimiento/ordenes", "success", "Orden tomada. Ya puedes trabajar en ella.")
     except Exception as e:
         return _flash(request, "/empleado/mantenimiento/ordenes", "error", str(e))
 
 
-@router.post("/mantenimiento/ordenes/{oid}/editar")
-async def mnt_ordenes_editar(
+@router.post("/mantenimiento/ordenes/{oid}/actualizar")
+async def mnt_ordenes_actualizar(
     request: Request, oid: str,
-    tipo:           str = Form(""),
     descripcion:    str = Form(""),
-    estado:         str = Form(""),
     tecnico_nombre: str = Form(""),
+    observaciones:  str = Form(""),
 ):
+    user = getattr(request.state, "user", {})
     try:
-        payload: dict = {}
-        if tipo:           payload["tipo"]           = tipo
+        payload: dict = {"observaciones": observaciones}
         if descripcion:    payload["descripcion"]    = descripcion
         if tecnico_nombre: payload["tecnico_nombre"] = tecnico_nombre
-        if estado:
-            payload["estado"] = estado
-            if estado == "completado":
-                payload["fecha_cierre"] = _ahora()
         _pb().update_record("ordenes_mant", oid, payload)
+        registrar_auditoria(
+            user.get("pb_token", ""), user.get("id", ""), user.get("name") or user.get("email", ""),
+            user.get("email", ""), "editar", "ordenes_mant",
+            f"Orden actualizada (id: {oid})", request,
+            usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
+        )
         return _flash(request, "/empleado/mantenimiento/ordenes", "success", "Orden actualizada.")
     except Exception as e:
         return _flash(request, "/empleado/mantenimiento/ordenes", "error", str(e))
-
-
-@router.post("/mantenimiento/ordenes/{oid}/eliminar")
-async def mnt_ordenes_eliminar(request: Request, oid: str):
-    try:
-        _pb().delete_record("ordenes_mant", oid)
-        return _flash(request, "/empleado/mantenimiento/ordenes", "success", "Orden eliminada.")
-    except Exception as e:
-        return _flash(request, "/empleado/mantenimiento/ordenes", "error", str(e))
-
-
-_CHECKLIST_ITEMS = [
-    ("frenos",     "Frenos"),
-    ("llantas",    "Llantas"),
-    ("cadena",     "Cadena"),
-    ("luces",      "Luces"),
-    ("estructura", "Estructura"),
-    ("manubrio",   "Manubrio"),
-    ("sillin",     "Sillín"),
-]
-
-
-@router.get("/mantenimiento/inspeccion", response_class=HTMLResponse)
-async def mnt_inspeccion(request: Request):
-    flash = request.session.pop("flash", None)
-    bicicletas: list[dict] = []
-    try:
-        bicicletas = _pb().list_records("bicicletas", sort="codigo", per_page=500).get("items", [])
-    except Exception:
-        pass
-    return templates.TemplateResponse(request, "empleado/mantenimiento/inspeccion.html", _ctx(request,
-        title="Inspección de Bicicletas", flash=flash,
-        bicicletas=bicicletas, checklist=_CHECKLIST_ITEMS,
-    ))
-
-
-@router.post("/mantenimiento/inspeccion/registrar")
-async def mnt_inspeccion_registrar(request: Request):
-    user = getattr(request.state, "user", {})
-    form = await request.form()
-    bicicleta_id     = form.get("bicicleta_id", "")
-    bicicleta_codigo = form.get("bicicleta_codigo", "")
-    bateria          = form.get("bateria", "")
-    observaciones    = form.get("observaciones", "")
-
-    fallas: list[str] = []
-    for clave, etiqueta in _CHECKLIST_ITEMS:
-        if form.get(clave) == "mal":
-            fallas.append(etiqueta)
-
-    aprobada = len(fallas) == 0
-
-    try:
-        pb = _pb()
-        if aprobada:
-            pb.update_record("bicicletas", bicicleta_id, {"estado": "disponible"})
-            registrar_auditoria(
-                user.get("pb_token", ""), user.get("id", ""), user.get("name") or user.get("email", ""),
-                user.get("email", ""), "editar", "bicicletas",
-                f"Inspección aprobada: {bicicleta_codigo} marcada como disponible"
-                + (f" (batería: {bateria}%)" if bateria else "")
-                + (f" — {observaciones}" if observaciones else ""), request,
-                usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
-            )
-            return _flash(request, "/empleado/mantenimiento/inspeccion", "success",
-                          f"Inspección aprobada. {bicicleta_codigo} está disponible nuevamente.")
-        else:
-            descripcion = f"Inspección reprobada — fallas detectadas: {', '.join(fallas)}."
-            if observaciones:
-                descripcion += f" Observaciones: {observaciones}"
-            pb.create_record("ordenes_mant", {
-                "bicicleta_id":     bicicleta_id,
-                "bicicleta_codigo": bicicleta_codigo,
-                "tipo":             "correctivo",
-                "descripcion":      descripcion,
-                "estado":           "pendiente",
-                "tecnico_nombre":   "",
-                "fecha_apertura":   _ahora(),
-            })
-            pb.update_record("bicicletas", bicicleta_id, {"estado": "mantenimiento"})
-            registrar_auditoria(
-                user.get("pb_token", ""), user.get("id", ""), user.get("name") or user.get("email", ""),
-                user.get("email", ""), "crear", "ordenes_mant",
-                f"Inspección reprobada: orden de mantenimiento creada para {bicicleta_codigo} ({', '.join(fallas)})", request,
-                usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
-            )
-            return _flash(request, "/empleado/mantenimiento/inspeccion", "info",
-                          f"Inspección reprobada. Se generó una orden de mantenimiento para {bicicleta_codigo}.")
-    except Exception as e:
-        return _flash(request, "/empleado/mantenimiento/inspeccion", "error", str(e))
 
 
 @router.get("/mantenimiento/bicicletas", response_class=HTMLResponse)
@@ -617,6 +798,19 @@ async def mnt_bicicletas(request: Request):
 # ══════════════════════════════════════════════════════════════════════════════
 # VIGILANCIA
 # ══════════════════════════════════════════════════════════════════════════════
+
+_CHECKLIST_ITEMS = [
+    ("frenos",     "Frenos"),
+    ("llantas",    "Llantas"),
+    ("cadena",     "Cadena"),
+    ("luces",      "Luces"),
+    ("estructura", "Estructura"),
+    ("manubrio",   "Manubrio"),
+    ("sillin",     "Sillín"),
+]
+
+_LIMITE_INFRACCIONES_BLOQUEO = 3
+
 
 @router.get("/vigilancia/dashboard", response_class=HTMLResponse)
 async def vig_dashboard(request: Request):
@@ -731,11 +925,48 @@ async def vig_devolver(
             "fecha_fin":        _ahora(),
             "duracion_minutos": duracion,
         })
-        bici_id = viaje.get("bicicleta_id", "")
-        if bici_id:
-            pb.update_record("bicicletas", bici_id, {"estado": "disponible", "estacion": estacion_fin_nombre})
 
-        detalle = f"Devolución {motivo} registrada en {estacion_fin_nombre} (duración: {duracion} min)"
+        bici_id = viaje.get("bicicleta_id", "")
+        bici_codigo = viaje.get("bicicleta_codigo", "")
+        tipo_bicicleta = "classic_bike"
+        if bici_id:
+            try:
+                bici = pb.get_record("bicicletas", bici_id)
+                tipo_bicicleta = bici.get("tipo") or "classic_bike"
+            except Exception:
+                pass
+            # La bicicleta queda retenida en mantenimiento hasta que vigilancia
+            # complete la inspección de devolución.
+            pb.update_record("bicicletas", bici_id, {"estado": "mantenimiento", "estacion": estacion_fin_nombre})
+
+        # Crear el pago del viaje si todavía no existe uno
+        pago_id = ""
+        tiene_pago_pendiente = False
+        existentes = pb.list_records("pagos", filter=f'viaje_id = "{viaje_id}"', per_page=1).get("items", [])
+        if existentes:
+            pago_id = existentes[0]["id"]
+            tiene_pago_pendiente = existentes[0].get("estado") != "pagado"
+        else:
+            precio_hora = _tarifa_hora(pb, tipo_bicicleta)
+            monto_total = round(duracion / 60 * precio_hora, 2)
+            pago = pb.create_record("pagos", {
+                "viaje_id":          viaje_id,
+                "ciclista_id":       viaje.get("ciclista_id", ""),
+                "ciclista_nombre":   viaje.get("ciclista_nombre") or "—",
+                "duracion_minutos":  duracion,
+                "tipo_bicicleta":    tipo_bicicleta,
+                "tipo_membresia":    TIPO_MEMBRESIA,
+                "precio_hora":       precio_hora,
+                "monto_total":       monto_total,
+                "estado":            "pendiente",
+                "metodo_pago":       "",
+                "fecha_pago":        "",
+                "comprobante_numero": "",
+            })
+            pago_id = pago["id"]
+            tiene_pago_pendiente = True
+
+        detalle = f"Devolución {motivo} registrada en {estacion_fin_nombre} (duración: {duracion} min) — bicicleta retenida para inspección"
         if observaciones:
             detalle += f" — {observaciones}"
         registrar_auditoria(
@@ -744,10 +975,248 @@ async def vig_devolver(
             usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
         )
 
-        return _flash(request, "/empleado/vigilancia/devoluciones", "success",
-                      f"Devolución {motivo} registrada en {estacion_fin_nombre}. Duración: {duracion} min.")
+        request.session["devolucion_ctx"] = {
+            "viaje_id":             viaje_id,
+            "bici_id":              bici_id,
+            "bici_codigo":          bici_codigo,
+            "ciclista_id":          viaje.get("ciclista_id", ""),
+            "ciclista_nombre":      viaje.get("ciclista_nombre") or "—",
+            "pago_id":              pago_id,
+            "tiene_pago_pendiente": tiene_pago_pendiente,
+            "motivo":               motivo,
+            "observaciones":        observaciones,
+            "duracion_minutos":     duracion,
+        }
+        return RedirectResponse(f"/empleado/vigilancia/inspeccion/{bici_id}", status_code=302)
     except Exception as e:
         return _flash(request, "/empleado/vigilancia/devoluciones", "error", str(e))
+
+
+@router.get("/vigilancia/inspeccion/{bici_id}", response_class=HTMLResponse)
+async def vig_inspeccion(request: Request, bici_id: str):
+    flash = request.session.pop("flash", None)
+    ctx = request.session.get("devolucion_ctx") or {}
+    bici: dict = {}
+    try:
+        bici = _pb().get_record("bicicletas", bici_id)
+    except Exception:
+        pass
+    return templates.TemplateResponse(request, "empleado/vigilancia/inspeccion.html", _ctx(request,
+        title="Inspección de Bicicleta", flash=flash,
+        bici=bici, ctx=ctx, checklist=_CHECKLIST_ITEMS,
+    ))
+
+
+@router.post("/vigilancia/inspeccion/{bici_id}/registrar")
+async def vig_inspeccion_registrar(request: Request, bici_id: str):
+    user = getattr(request.state, "user", {})
+    form = await request.form()
+    bateria       = form.get("bateria", "")
+    observaciones = form.get("observaciones", "")
+    cargo_danos_raw = form.get("cargo_danos", "")
+    ctx = request.session.get("devolucion_ctx") or {}
+
+    fallas: list[str] = []
+    for clave, etiqueta in _CHECKLIST_ITEMS:
+        if form.get(clave) == "mal":
+            fallas.append(etiqueta)
+    aprobada = len(fallas) == 0
+
+    try:
+        pb = _pb()
+        bici = pb.get_record("bicicletas", bici_id)
+        bicicleta_codigo = bici.get("codigo") or ctx.get("bici_codigo") or bici_id
+
+        if aprobada:
+            pb.update_record("bicicletas", bici_id, {"estado": "disponible"})
+            registrar_auditoria(
+                user.get("pb_token", ""), user.get("id", ""), user.get("name") or user.get("email", ""),
+                user.get("email", ""), "editar", "bicicletas",
+                f"Inspección de devolución aprobada: {bicicleta_codigo} disponible"
+                + (f" (batería: {bateria}%)" if bateria else "")
+                + (f" — {observaciones}" if observaciones else ""), request,
+                usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
+            )
+            request.session.pop("devolucion_ctx", None)
+            msg = f"Inspección aprobada. {bicicleta_codigo} está disponible nuevamente."
+            if ctx.get("tiene_pago_pendiente"):
+                msg += " Nota: el ciclista tiene un pago pendiente de este viaje."
+            return _flash(request, "/empleado/vigilancia/devoluciones", "success", msg)
+
+        # ── Reprobada: se genera orden de mantenimiento y una infracción ─────
+        descripcion = f"Inspección de devolución reprobada — fallas detectadas: {', '.join(fallas)}."
+        if observaciones:
+            descripcion += f" Observaciones: {observaciones}"
+
+        pb.create_record("ordenes_mant", {
+            "bicicleta_id":     bici_id,
+            "bicicleta_codigo": bicicleta_codigo,
+            "tipo":             "correctivo",
+            "descripcion":      descripcion,
+            "estado":           "pendiente",
+            "tecnico_nombre":   "",
+            "fecha_apertura":   _ahora(),
+            "origen":           "inspeccion_vigilancia",
+            "notificada_por":   user.get("name") or user.get("email", ""),
+        })
+        pb.update_record("bicicletas", bici_id, {"estado": "mantenimiento"})
+
+        ciclista_id = ctx.get("ciclista_id") or ""
+        ciclista_nombre = ctx.get("ciclista_nombre") or "—"
+        if ciclista_id:
+            pb.create_record("infracciones", {
+                "ciclista_id":       ciclista_id,
+                "tipo":              "dano_bicicleta",
+                "descripcion":       descripcion,
+                "bicicleta_id":      bici_id,
+                "bicicleta_codigo":  bicicleta_codigo,
+                "resuelta":          False,
+                "fecha":             _ahora(),
+                "notificada_por":    user.get("name") or user.get("email", ""),
+            })
+            total_pendientes = pb.list_records(
+                "infracciones",
+                filter=f'ciclista_id = "{ciclista_id}" && resuelta = false',
+                per_page=1,
+            ).get("totalItems", 0)
+            if total_pendientes >= _LIMITE_INFRACCIONES_BLOQUEO:
+                pb.update_record("users", ciclista_id, {"activo": False})
+
+        # Cargo adicional por daños, si el empleado ingresó un monto
+        cargo_danos = 0.0
+        try:
+            cargo_danos = float(cargo_danos_raw)
+        except (TypeError, ValueError):
+            cargo_danos = 0.0
+        if cargo_danos > 0 and ciclista_id:
+            pb.create_record("pagos", {
+                "viaje_id":          ctx.get("viaje_id", ""),
+                "ciclista_id":       ciclista_id,
+                "ciclista_nombre":   ciclista_nombre,
+                "monto_total":       cargo_danos,
+                "estado":            "pendiente",
+                "metodo_pago":       "",
+                "fecha_pago":        "",
+                "comprobante_numero": "",
+                "tipo":              "cargo_danos",
+                "descripcion_cargo": f"Cargo por daños: {', '.join(fallas)}",
+            })
+
+        registrar_auditoria(
+            user.get("pb_token", ""), user.get("id", ""), user.get("name") or user.get("email", ""),
+            user.get("email", ""), "crear", "ordenes_mant",
+            f"Inspección de devolución reprobada: orden generada para {bicicleta_codigo} ({', '.join(fallas)})"
+            + (f"; infracción registrada a {ciclista_nombre}" if ciclista_id else "")
+            + (f"; cargo por daños de ${cargo_danos:.2f}" if cargo_danos > 0 else ""), request,
+            usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
+        )
+        request.session.pop("devolucion_ctx", None)
+        msg = f"Inspección reprobada. Se generó una orden de mantenimiento para {bicicleta_codigo}"
+        msg += " y se registró una infracción al ciclista." if ciclista_id else "."
+        if cargo_danos > 0:
+            msg += f" Se generó un cargo por daños de ${cargo_danos:.2f}."
+        return _flash(request, "/empleado/vigilancia/devoluciones", "info", msg)
+    except Exception as e:
+        return _flash(request, f"/empleado/vigilancia/inspeccion/{bici_id}", "error", str(e))
+
+
+@router.get("/vigilancia/infracciones", response_class=HTMLResponse)
+async def vig_infracciones(request: Request):
+    flash = request.session.pop("flash", None)
+    infracciones: list[dict] = []
+    try:
+        infracciones = _pb().list_records("infracciones", sort="-fecha", per_page=500).get("items", [])
+    except Exception:
+        pass
+    total = len(infracciones)
+    pendientes = sum(1 for i in infracciones if not i.get("resuelta"))
+    resueltas = total - pendientes
+    return templates.TemplateResponse(request, "empleado/vigilancia/infracciones.html", _ctx(request,
+        title="Infracciones", flash=flash, infracciones=infracciones,
+        total=total, pendientes=pendientes, resueltas=resueltas,
+    ))
+
+
+@router.post("/vigilancia/infracciones/{iid}/resolver")
+async def vig_infracciones_resolver(
+    request: Request, iid: str,
+    resolucion: str = Form(""),
+):
+    user = getattr(request.state, "user", {})
+    try:
+        pb = _pb()
+        infra = pb.get_record("infracciones", iid)
+        pb.update_record("infracciones", iid, {
+            "resuelta":         True,
+            "resolucion":       resolucion.strip(),
+            "fecha_resolucion": _ahora(),
+            "resuelta_por":     user.get("name") or user.get("email", ""),
+        })
+        ciclista_id = infra.get("ciclista_id", "")
+        if ciclista_id:
+            pendientes = pb.list_records(
+                "infracciones",
+                filter=f'ciclista_id = "{ciclista_id}" && resuelta = false',
+                per_page=1,
+            ).get("totalItems", 0)
+            if pendientes == 0:
+                pb.update_record("users", ciclista_id, {"activo": True})
+        registrar_auditoria(
+            user.get("pb_token", ""), user.get("id", ""), user.get("name") or user.get("email", ""),
+            user.get("email", ""), "editar", "infracciones",
+            f"Infracción resuelta (id: {iid})" + (f": {resolucion.strip()}" if resolucion.strip() else ""), request,
+            usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
+        )
+        return _flash(request, "/empleado/vigilancia/infracciones", "success", "Infracción marcada como resuelta.")
+    except Exception as e:
+        return _flash(request, "/empleado/vigilancia/infracciones", "error", str(e))
+
+
+@router.get("/vigilancia/mantenimiento/cerrar", response_class=HTMLResponse)
+async def vig_mantenimiento_cerrar(request: Request):
+    flash = request.session.pop("flash", None)
+    ordenes: list[dict] = []
+    try:
+        ordenes = _pb().list_records(
+            "ordenes_mant", filter='estado = "en_proceso"',
+            sort="-fecha_apertura", per_page=200,
+        ).get("items", [])
+    except Exception:
+        pass
+    return templates.TemplateResponse(request, "empleado/vigilancia/cerrar_mantenimiento.html", _ctx(request,
+        title="Certificar Mantenimiento", flash=flash, ordenes=ordenes,
+    ))
+
+
+@router.post("/vigilancia/mantenimiento/{oid}/certificar")
+async def vig_mantenimiento_certificar(
+    request: Request, oid: str,
+    observaciones_cierre: str = Form(""),
+):
+    user = getattr(request.state, "user", {})
+    try:
+        pb = _pb()
+        orden = pb.get_record("ordenes_mant", oid)
+        pb.update_record("ordenes_mant", oid, {
+            "estado":               "completado",
+            "fecha_cierre":         _ahora(),
+            "observaciones_cierre": observaciones_cierre.strip(),
+            "certificada_por":      user.get("name") or user.get("email", ""),
+        })
+        bici_id = orden.get("bicicleta_id", "")
+        if bici_id:
+            pb.update_record("bicicletas", bici_id, {"estado": "disponible"})
+        registrar_auditoria(
+            user.get("pb_token", ""), user.get("id", ""), user.get("name") or user.get("email", ""),
+            user.get("email", ""), "editar", "ordenes_mant",
+            f"Mantenimiento certificado: orden de {orden.get('bicicleta_codigo', oid)}"
+            + (f" — {observaciones_cierre.strip()}" if observaciones_cierre.strip() else ""), request,
+            usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
+        )
+        return _flash(request, "/empleado/vigilancia/mantenimiento/cerrar", "success",
+                      "Mantenimiento certificado. Bicicleta disponible nuevamente.")
+    except Exception as e:
+        return _flash(request, "/empleado/vigilancia/mantenimiento/cerrar", "error", str(e))
 
 
 _LIMITE_ALERTA_MIN = 120

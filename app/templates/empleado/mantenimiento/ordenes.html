@@ -14,10 +14,6 @@
         <option value="en_proceso" {% if filtro == 'en_proceso' %}selected{% endif %}>En proceso</option>
         <option value="completado" {% if filtro == 'completado' %}selected{% endif %}>Completado</option>
       </select>
-      <button class="btn btn-primary" onclick="openCrear()">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        Nueva orden
-      </button>
     </div>
   </div>
 
@@ -53,18 +49,20 @@
             {% else %}<span class="badge badge-green">Completado</span>{% endif %}
           </td>
           <td>
-            <div class="flex gap-2">
-              <button class="btn btn-ghost" style="padding:4px 10px;font-size:0.75rem;"
-                data-id="{{ o.id }}"
-                data-tipo="{{ o.tipo }}"
-                data-descripcion="{{ o.descripcion | e }}"
-                data-estado="{{ o.estado }}"
-                data-tecnico="{{ o.tecnico_nombre | default('') | e }}"
-                onclick="openEdit(this)">Editar</button>
-              <button class="btn btn-ghost" style="padding:4px 10px;font-size:0.75rem;color:#EF4444;border-color:rgba(239,68,68,0.35);"
-                data-id="{{ o.id }}" data-label="orden de {{ o.bicicleta_codigo }}"
-                onclick="openDel(this)">Eliminar</button>
-            </div>
+            {% if o.estado == 'pendiente' %}
+            <form method="post" action="/empleado/mantenimiento/ordenes/{{ o.id }}/tomar">
+              <button type="submit" class="btn btn-primary" style="padding:4px 10px;font-size:0.75rem;">Tomar orden</button>
+            </form>
+            {% elif o.estado == 'en_proceso' %}
+            <button class="btn btn-ghost" style="padding:4px 10px;font-size:0.75rem;"
+              data-id="{{ o.id }}"
+              data-descripcion="{{ o.descripcion | e }}"
+              data-tecnico="{{ o.tecnico_nombre | default('') | e }}"
+              data-observaciones="{{ o.observaciones | default('') | e }}"
+              onclick="openActualizar(this)">Actualizar</button>
+            {% else %}
+            <span class="text-muted text-sm">—</span>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}
@@ -80,113 +78,41 @@
       Sin órdenes de trabajo
     </div>
     <div style="font-size:0.88rem;color:var(--text-muted);max-width:360px;margin:0 auto;line-height:1.6;">
-      No hay órdenes registradas{% if filtro %} con el estado seleccionado{% endif %}. Crea una nueva orden para empezar.
+      No hay órdenes registradas{% if filtro %} con el estado seleccionado{% endif %}. Las órdenes generadas por vigilancia aparecerán aquí.
     </div>
   </div>
   {% endif %}
 </div>
 
-<dialog id="modal-crear">
+<dialog id="modal-actualizar">
   <div class="modal-card">
-    <div class="modal-header"><span class="card-title">Nueva orden de trabajo</span>
-      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-crear').close()">✕</button></div>
-    <form method="post" action="/empleado/mantenimiento/ordenes/crear">
-      <div class="form-group">
-        <label class="form-label">Bicicleta *</label>
-        <select class="form-input" name="bicicleta_id" id="crear-bicicleta" required onchange="syncCodigo(this)">
-          <option value="" disabled selected>Selecciona una bicicleta...</option>
-          {% for b in bicicletas %}
-          <option value="{{ b.id }}" data-codigo="{{ b.codigo }}">{{ b.codigo }} — {{ b.estacion or 'Sin estación' }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <input type="hidden" name="bicicleta_codigo" id="crear-bicicleta-codigo">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-        <div class="form-group"><label class="form-label">Tipo</label>
-          <select class="form-input" name="tipo">
-            <option value="preventivo">Preventivo</option>
-            <option value="correctivo" selected>Correctivo</option>
-            <option value="urgente">Urgente</option>
-          </select></div>
-        <div class="form-group"><label class="form-label">Técnico asignado</label>
-          <input class="form-input" type="text" name="tecnico_nombre" placeholder="Nombre del técnico"></div>
-      </div>
-      <div class="form-group"><label class="form-label">Descripción *</label>
-        <textarea class="form-input" name="descripcion" rows="3" required placeholder="Detalle de la incidencia o trabajo a realizar..."></textarea></div>
-      <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;">
-        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-crear').close()">Cancelar</button>
-        <button type="submit" class="btn btn-primary">Crear orden</button></div>
-    </form>
-  </div>
-</dialog>
-
-<dialog id="modal-editar">
-  <div class="modal-card">
-    <div class="modal-header"><span class="card-title">Editar orden de trabajo</span>
-      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-editar').close()">✕</button></div>
-    <form method="post" id="form-editar">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-        <div class="form-group"><label class="form-label">Tipo</label>
-          <select class="form-input" name="tipo" id="edit-tipo">
-            <option value="preventivo">Preventivo</option>
-            <option value="correctivo">Correctivo</option>
-            <option value="urgente">Urgente</option>
-          </select></div>
-        <div class="form-group"><label class="form-label">Estado</label>
-          <select class="form-input" name="estado" id="edit-estado">
-            <option value="pendiente">Pendiente</option>
-            <option value="en_proceso">En proceso</option>
-            <option value="completado">Completado</option>
-          </select></div>
-      </div>
+    <div class="modal-header"><span class="card-title">Actualizar orden de trabajo</span>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-actualizar').close()">✕</button></div>
+    <form method="post" id="form-actualizar">
       <div class="form-group"><label class="form-label">Técnico asignado</label>
-        <input class="form-input" type="text" name="tecnico_nombre" id="edit-tecnico"></div>
+        <input class="form-input" type="text" name="tecnico_nombre" id="act-tecnico"></div>
       <div class="form-group"><label class="form-label">Descripción</label>
-        <textarea class="form-input" name="descripcion" id="edit-descripcion" rows="3"></textarea></div>
+        <textarea class="form-input" name="descripcion" id="act-descripcion" rows="3"></textarea></div>
+      <div class="form-group"><label class="form-label">Observaciones</label>
+        <textarea class="form-input" name="observaciones" id="act-observaciones" rows="3" placeholder="Avances del trabajo..."></textarea></div>
       <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;">
-        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-editar').close()">Cancelar</button>
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-actualizar').close()">Cancelar</button>
         <button type="submit" class="btn btn-primary">Guardar cambios</button></div>
     </form>
   </div>
 </dialog>
 
-<dialog id="modal-eliminar">
-  <div class="modal-card">
-    <div class="modal-header"><span class="card-title" style="color:#EF4444;">Eliminar orden</span></div>
-    <p style="color:var(--text-muted);margin-bottom:20px;">¿Eliminar la <strong id="del-label" style="color:var(--text);"></strong>? Esta acción no se puede deshacer.</p>
-    <form method="post" id="form-eliminar">
-      <div class="flex gap-2" style="justify-content:flex-end;">
-        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-eliminar').close()">Cancelar</button>
-        <button type="submit" class="btn btn-primary" style="background:#EF4444;border-color:#EF4444;">Eliminar</button></div>
-    </form>
-  </div>
-</dialog>
 {% endblock %}
 
 {% block scripts %}
 <script>
-function openCrear() {
-  document.getElementById('crear-bicicleta').value = '';
-  document.getElementById('crear-bicicleta-codigo').value = '';
-  document.getElementById('modal-crear').showModal();
-}
-function syncCodigo(sel) {
-  const opt = sel.options[sel.selectedIndex];
-  document.getElementById('crear-bicicleta-codigo').value = opt.dataset.codigo || '';
-}
-function openEdit(btn) {
+function openActualizar(btn) {
   const d = btn.dataset;
-  document.getElementById('form-editar').action      = '/empleado/mantenimiento/ordenes/' + d.id + '/editar';
-  document.getElementById('edit-tipo').value         = d.tipo;
-  document.getElementById('edit-estado').value       = d.estado;
-  document.getElementById('edit-tecnico').value      = d.tecnico;
-  document.getElementById('edit-descripcion').value  = d.descripcion;
-  document.getElementById('modal-editar').showModal();
-}
-function openDel(btn) {
-  document.getElementById('form-eliminar').action  = '/empleado/mantenimiento/ordenes/' + btn.dataset.id + '/eliminar';
-  document.getElementById('del-label').textContent = btn.dataset.label;
-  document.getElementById('modal-eliminar').showModal();
+  document.getElementById('form-actualizar').action  = '/empleado/mantenimiento/ordenes/' + d.id + '/actualizar';
+  document.getElementById('act-tecnico').value       = d.tecnico;
+  document.getElementById('act-descripcion').value   = d.descripcion;
+  document.getElementById('act-observaciones').value = d.observaciones;
+  document.getElementById('modal-actualizar').showModal();
 }
 document.querySelectorAll('dialog').forEach(d => d.addEventListener('click', e => { if (e.target === d) d.close(); }));
 </script>

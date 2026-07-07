@@ -107,13 +107,6 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 18,
 }).addTo(map);
 
-const azulIcon = L.divIcon({
-  className: '',
-  html: '<div style="width:18px;height:18px;border-radius:50%;background:#1E86BD;border:2px solid #fff;box-shadow:0 0 0 2px #1E86BD;"></div>',
-  iconSize: [18, 18],
-  iconAnchor: [9, 9],
-});
-
 const panelEstacion = document.getElementById('panel-estacion');
 const panelVacio    = document.getElementById('panel-vacio');
 
@@ -138,7 +131,10 @@ function bicicletaCard(bici, estacion) {
       ${tipoBadge}
     </div>
     <div style="margin-bottom:14px;">${estadoBadge}</div>
-    <button class="btn btn-primary btn-reservar" style="width:100%;font-size:0.82rem;">Reservar</button>
+    <div style="display:flex;gap:8px;">
+      <a href="/ciclista/bicicleta/${bici.id}" class="btn btn-ghost" style="flex:1;font-size:0.82rem;text-align:center;">Ver detalles</a>
+      <button class="btn btn-primary btn-reservar" style="flex:1;font-size:0.82rem;">Reservar</button>
+    </div>
   `;
   div.querySelector('.btn-reservar').addEventListener('click', () => reservar(bici, estacion));
   return div;
@@ -172,6 +168,14 @@ document.getElementById('modal-resumen').addEventListener('click', e => {
   if (e.target.id === 'modal-resumen') e.target.close();
 });
 
+function normalizar(texto) {
+  return (texto || '').trim().toLowerCase();
+}
+
+function bicicletasDisponiblesEn(estacion) {
+  return BICICLETAS.filter(b => normalizar(b.estacion) === normalizar(estacion.nombre) && b.estado === 'disponible');
+}
+
 function mostrarEstacion(estacion) {
   panelVacio.style.display = 'none';
   panelEstacion.style.display = 'block';
@@ -180,7 +184,7 @@ function mostrarEstacion(estacion) {
 
   const cont = document.getElementById('panel-bicicletas');
   cont.innerHTML = '';
-  const disponibles = BICICLETAS.filter(b => b.estacion === estacion.nombre && b.estado === 'disponible');
+  const disponibles = bicicletasDisponiblesEn(estacion);
   if (disponibles.length === 0) {
     cont.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:32px;color:var(--text-muted);font-size:0.88rem;">
       No hay bicicletas disponibles en esta estación por el momento.
@@ -190,9 +194,25 @@ function mostrarEstacion(estacion) {
   disponibles.forEach(b => cont.appendChild(bicicletaCard(b, estacion)));
 }
 
+function iconoConContador(cantidad) {
+  const badge = cantidad > 0
+    ? `<div style="position:absolute;top:-6px;right:-8px;min-width:16px;height:16px;padding:0 3px;border-radius:8px;background:#10B981;border:2px solid #fff;color:#fff;font-size:0.62rem;font-weight:700;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Sans',sans-serif;">${cantidad}</div>`
+    : '';
+  return L.divIcon({
+    className: '',
+    html: `<div style="position:relative;width:18px;height:18px;">
+      <div style="width:18px;height:18px;border-radius:50%;background:#1E86BD;border:2px solid #fff;box-shadow:0 0 0 2px #1E86BD;"></div>
+      ${badge}
+    </div>`,
+    iconSize: [18, 18],
+    iconAnchor: [9, 9],
+  });
+}
+
 ESTACIONES.forEach(est => {
   if (!est.latitud || !est.longitud) return;
-  L.marker([est.latitud, est.longitud], { icon: azulIcon })
+  const disponibles = bicicletasDisponiblesEn(est);
+  L.marker([est.latitud, est.longitud], { icon: iconoConContador(disponibles.length) })
     .addTo(map)
     .bindTooltip(est.nombre)
     .on('click', () => mostrarEstacion(est));

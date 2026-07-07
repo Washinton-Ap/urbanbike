@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Infracciones{% endblock %}
+{% block page_title %}Infracciones{% endblock %}
+
+{% block content %}
+
+<div class="kpi-grid" style="margin-bottom:24px;">
+  <div class="kpi-card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+      <div style="width:32px;height:32px;border-radius:8px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      </div>
+      <div class="kpi-label">Total</div>
+    </div>
+    <div class="kpi-value" style="color:#1E86BD;">{{ total }}</div>
+    <div class="kpi-delta">infracciones registradas</div>
+  </div>
+
+  <div class="kpi-card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+      <div style="width:32px;height:32px;border-radius:8px;background:rgba(245,158,11,0.12);display:flex;align-items:center;justify-content:center;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      </div>
+      <div class="kpi-label">Pendientes</div>
+    </div>
+    <div class="kpi-value" style="color:#F59E0B;">{{ pendientes }}</div>
+    <div class="kpi-delta">requieren resolución</div>
+  </div>
+
+  <div class="kpi-card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+      <div style="width:32px;height:32px;border-radius:8px;background:rgba(16,185,129,0.12);display:flex;align-items:center;justify-content:center;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      </div>
+      <div class="kpi-label">Resueltas</div>
+    </div>
+    <div class="kpi-value" style="color:#10B981;">{{ resueltas }}</div>
+    <div class="kpi-delta">ya regularizadas</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Registro de infracciones <span class="text-muted text-sm">({{ infracciones | length }})</span></span>
+    <input type="search" class="form-input" placeholder="Buscar..." style="width:auto;font-size:0.8rem;padding:6px 10px;" oninput="filtrarTabla(this, 'tabla-infracciones')">
+  </div>
+
+  {% if infracciones %}
+  <div class="table-wrap">
+    <table class="table" id="tabla-infracciones">
+      <thead>
+        <tr>
+          <th>Ciclista</th>
+          <th>Tipo</th>
+          <th>Descripción</th>
+          <th>Bicicleta</th>
+          <th>Fecha</th>
+          <th>Estado</th>
+          <th style="width:120px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for i in infracciones %}
+        <tr>
+          <td style="font-weight:600;color:var(--text);">{{ i.ciclista_id or "—" }}</td>
+          <td class="text-sm">{{ i.tipo or "—" }}</td>
+          <td class="text-sm" style="max-width:280px;">{{ i.descripcion or "—" }}</td>
+          <td style="font-family:monospace;">{{ i.bicicleta_codigo or "—" }}</td>
+          <td class="text-muted text-sm">{{ i.fecha | replace("T", " ") | replace("Z", "") if i.fecha else "—" }}</td>
+          <td>
+            {% if i.resuelta %}<span class="badge badge-green">Resuelta</span>
+            {% else %}<span class="badge badge-yellow">Pendiente</span>{% endif %}
+          </td>
+          <td>
+            {% if not i.resuelta %}
+            <button class="btn btn-primary" style="padding:4px 10px;font-size:0.75rem;"
+              data-id="{{ i.id }}"
+              data-ciclista="{{ i.ciclista_id | default('') | e }}"
+              data-descripcion="{{ i.descripcion | default('') | e }}"
+              onclick="openResolver(this)">Resolver</button>
+            {% else %}
+            <span class="text-muted text-sm">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:64px 24px;">
+    <div style="display:flex;justify-content:center;margin-bottom:20px;opacity:0.3;">
+      <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+    </div>
+    <div style="font-family:'Sora',sans-serif;font-weight:700;font-size:1.1rem;color:var(--text);margin-bottom:8px;">
+      Sin infracciones registradas
+    </div>
+    <div style="font-size:0.88rem;color:var(--text-muted);">Las infracciones generadas por inspecciones reprobadas aparecerán aquí.</div>
+  </div>
+  {% endif %}
+</div>
+
+<dialog id="modal-resolver">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title">Resolver infracción</span>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-resolver').close()">✕</button></div>
+    <p style="color:var(--text-muted);margin-bottom:16px;font-size:0.85rem;" id="resolver-descripcion"></p>
+    <form method="post" id="form-resolver">
+      <div class="form-group">
+        <label class="form-label">Resolución</label>
+        <textarea class="form-input" name="resolucion" rows="3" placeholder="Detalle de cómo se resolvió la infracción..." required></textarea>
+      </div>
+      <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-resolver').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Marcar como resuelta</button></div>
+    </form>
+  </div>
+</dialog>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openResolver(btn) {
+  const d = btn.dataset;
+  document.getElementById('form-resolver').action = '/empleado/vigilancia/infracciones/' + d.id + '/resolver';
+  document.getElementById('resolver-descripcion').textContent = d.descripcion;
+  document.getElementById('modal-resolver').showModal();
+}
+document.querySelectorAll('dialog').forEach(d => d.addEventListener('click', e => { if (e.target === d) d.close(); }));
+</script>
+{% endblock %}
