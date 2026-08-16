@@ -298,11 +298,14 @@ def _tarifa_hora(bicicleta_codigo: str, tipo_membresia: str = "casual") -> float
     coleccion vieja de PocketBase. Devuelve 0.0 si no hay tarifa
     vigente, mismo comportamiento que antes (nunca levanta excepcion
     hacia el llamador)."""
-    id_categoria = tarifas_repo.categoria_de_bicicleta(bicicleta_codigo)
-    if not id_categoria:
+    try:
+        id_categoria = tarifas_repo.categoria_de_bicicleta(bicicleta_codigo)
+        if not id_categoria:
+            return 0.0
+        resultado = tarifas_repo.precio_modalidad(id_categoria, tipo_membresia, "hora")
+        return resultado[0] if resultado else 0.0
+    except Exception:
         return 0.0
-    resultado = tarifas_repo.precio_modalidad(id_categoria, tipo_membresia, "hora")
-    return resultado[0] if resultado else 0.0
 
 
 MAX_VIAJES_ACTIVOS = 4  # tope de bicicletas alquiladas a la vez por ciclista,
