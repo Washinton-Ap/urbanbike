@@ -23,7 +23,7 @@ from __future__ import annotations
 import uuid
 from datetime import date
 
-from app.db import clickhouse as ch
+from app.db import clickhouse as ch, promociones_repo
 
 TIPOS_MEMBRESIA_VALIDOS = ("member", "casual")
 MODALIDADES_VALIDAS = ("hora", "dia", "semana")
@@ -136,6 +136,56 @@ def precio_modalidad(id_categoria: str, tipo_membresia: str, modalidad: str) -> 
           AND today() BETWEEN vigente_desde AND vigente_hasta
     """, {"id_categoria": id_categoria, "tipo_membresia": tipo_membresia, "modalidad": modalidad})
     return (float(fila["precio"]), str(fila["id"])) if fila else None
+
+
+def id_bicicleta_de_codigo(codigo: str) -> str | None:
+    """id real (UUID de ClickHouse) de una bicicleta por su codigo --
+    necesario junto con categoria_de_bicicleta() para resolver
+    promociones aplicables por bicicleta especifica (ver
+    promociones_repo.promo_aplicable(), parametro id_bicicleta). No
+    confundir con el id de PocketBase (viajes.bicicleta_id) -- es un
+    espacio de ids distinto."""
+    fila = ch.query_one(
+        "SELECT id FROM urbanbike_operativa.bicicletas FINAL WHERE codigo = %(codigo)s",
+        {"codigo": codigo},
+    )
+    return str(fila["id"]) if fila else None
+
+
+def precio_modalidad_con_promocion(bicicleta_codigo: str, tipo_membresia: str, modalidad: str) -> tuple[float, str] | None:
+    """Como precio_modalidad(), pero con la promocion aplicable (si hay
+    alguna) ya descontada -- misma promociones_repo.promo_aplicable()
+    que ya usa _catalogo_bicicletas() (ciclista.py) para el precio que
+    ve el ciclista en el catalogo/ficha, para que el cobro real
+    coincida con el precio mostrado (hallazgo real de la revision final
+    del plan de modalidad de tarifa real, 17-ago-2026: antes el cobro
+    real de cualquier modalidad, incluida 'hora', ignoraba promociones
+    por completo, aunque la ficha SI las mostraba con descuento).
+
+    Devuelve (precio_con_promocion, id_tarifa) -- id_tarifa sigue
+    siendo el de la tarifa base: una promocion nunca crea una fila de
+    tarifa nueva, solo descuenta el precio final. None si no hay
+    tarifa vigente para ese combo, igual que precio_modalidad() (nunca
+    se inventa un precio).
+
+    USAR SOLO para el SUBTOTAL real de un segmento -- nunca para el
+    precio que multiplica el recargo por demora (ver vig_devolver()/
+    cambiar_modalidad(): "no tiene sentido descontar una
+    penalizacion", mismo criterio ya aplicado a descuento_monto)."""
+    id_categoria = categoria_de_bicicleta(bicicleta_codigo)
+    if not id_categoria:
+        return None
+    resultado = precio_modalidad(id_categoria, tipo_membresia, modalidad)
+    if not resultado:
+        return None
+    precio_base, id_tarifa = resultado
+    id_bicicleta = id_bicicleta_de_codigo(bicicleta_codigo) or ""
+    promos = promociones_repo.activas_hoy()
+    _, precio_final = promociones_repo.promo_aplicable(
+        promos, id_categoria=id_categoria, id_bicicleta=id_bicicleta,
+        modalidad=modalidad, precio=precio_base, es_member=(tipo_membresia == "member"),
+    )
+    return precio_final, id_tarifa
 
 
 def eliminar(id_tarifa: str) -> tuple[bool, str]:

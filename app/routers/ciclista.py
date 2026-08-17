@@ -470,7 +470,6 @@ async def alquilar(request: Request):
     bicicletas: list[dict] = []
     todas_bicicletas_pb: list[dict] = []
     estaciones: list[dict] = []
-    tarifas: list[dict] = []
     try:
         pb = _pb()
         res_b = pb.list_records("bicicletas", filter='estado = "disponible"', sort="codigo", per_page=200)
@@ -490,8 +489,6 @@ async def alquilar(request: Request):
         estaciones = res_e.get("items", [])
         for e in estaciones:
             e["nombre"] = (e.get("nombre") or "").strip()
-        res_t = pb.list_records("tarifas", filter='activa = true', per_page=200)
-        tarifas = res_t.get("items", [])
     except Exception:
         pass
 
@@ -510,7 +507,6 @@ async def alquilar(request: Request):
         bicicletas=bicicletas, estaciones=estaciones,
         bicicletas_json=json.dumps(bicicletas),
         estaciones_json=json.dumps(estaciones),
-        tarifas_json=json.dumps(tarifas),
         pb_url=settings.pb_url,
         catalogo_bicicletas=catalogo_bicicletas,
     ))
@@ -523,12 +519,17 @@ async def reservar(
     bicicleta_codigo:      str = Form(...),
     estacion_inicio_id:    str = Form(...),
     estacion_inicio_nombre: str = Form(...),
+    modalidad:              str = Form("hora"),
     latitud:               str = Form("0"),
     longitud:              str = Form("0"),
     codigo_descuento:      str = Form(""),
 ):
     user = getattr(request.state, "user", {})
     user_id = user.get("id", "")
+
+    if modalidad not in ("hora", "dia", "semana"):
+        request.session["flash"] = {"type": "error", "msg": "Modalidad no válida."}
+        return RedirectResponse("/ciclista/alquilar", status_code=302)
 
     # Tope de bicicletas alquiladas a la vez (punto 3) -- ya no bloquea con
     # un solo viaje activo, un ciclista puede tener varios simultáneos.
@@ -615,6 +616,8 @@ async def reservar(
             "fecha_inicio":           _ahora(),
             "descuento_codigo":       codigo_valido["codigo"] if codigo_valido else "",
             "descuento_porcentaje":   codigo_valido["porcentaje"] if codigo_valido else 0,
+            "modalidad_actual":       modalidad,
+            "inicio_segmento_actual": _ahora(),
         })
         if codigo_valido:
             codigos_descuento_repo.marcar_usado(codigo_valido["id"], nuevo_viaje["id"])
@@ -732,7 +735,15 @@ async def viaje_activo(request: Request, viaje_id: str):
 
     estaciones: list[dict] = []
     tipo_bicicleta = "classic_bike"
-    precio_hora = 0.0
+    precio_hora = 0.0  # ahora: precio de la modalidad ACTUAL del viaje (Tarea 9), no siempre "hora"
+    # SIEMPRE el precio de la modalidad 'hora' -- distinto de precio_hora
+    # cuando la modalidad activa es 'dia'/'semana'. Es el que usa
+    # vig_devolver() (precio_hora_display) para el recargo por demora sin
+    # importar la modalidad del segmento abierto; si el JS usara el precio
+    # de 'dia'/'semana' para el recargo, el numero en vivo no coincidiria
+    # con lo que se cobra de verdad.
+    precio_hora_recargo = 0.0
+    subtotal_segmentos_cerrados = 0.0
     try:
         pb = _pb()
         res = pb.list_records("estaciones", filter='activa = true', sort="nombre", per_page=50)
@@ -740,7 +751,20 @@ async def viaje_activo(request: Request, viaje_id: str):
         bici = pb.get_record("bicicletas", viaje.get("bicicleta_id", ""))
         tipo_bicicleta = bici.get("tipo") or "classic_bike"
         tipo_membresia = membresias_repo.tipo_membresia_real(user.get("email", ""))
-        precio_hora = _tarifa_hora(bici.get("codigo", ""), tipo_membresia)
+
+        modalidad_actual = viaje.get("modalidad_actual") or "hora"
+        codigo_bici_viaje = viaje.get("bicicleta_codigo", "")
+        # Con promocion aplicable ya descontada (mismo hallazgo/fix que
+        # vig_devolver(), 17-ago-2026) -- para que el numero en vivo
+        # coincida con lo que se cobrara de verdad. precio_hora_recargo
+        # SIEMPRE via _tarifa_hora() (sin promo, sin importar la
+        # modalidad activa): nunca se descuenta el multiplicador del
+        # recargo por demora, "no tiene sentido descontar una
+        # penalizacion" (mismo criterio de siempre).
+        resultado_precio = tarifas_repo.precio_modalidad_con_promocion(codigo_bici_viaje, tipo_membresia, modalidad_actual)
+        precio_hora = resultado_precio[0] if resultado_precio else 0.0
+        precio_hora_recargo = _tarifa_hora(codigo_bici_viaje, tipo_membresia)
+        subtotal_segmentos_cerrados = alquileres_repo.total_segmentos_cerrados(viaje_id)
     except Exception:
         pass
 
@@ -750,7 +774,9 @@ async def viaje_activo(request: Request, viaje_id: str):
         estaciones=estaciones,
         estaciones_json=json.dumps(estaciones),
         tipo_bicicleta=tipo_bicicleta,
-        precio_hora=precio_hora,
+        precio_hora=precio_hora,  # precio de la modalidad actual del viaje (nombre de variable ya existente en el template)
+        precio_hora_recargo=precio_hora_recargo,
+        subtotal_segmentos_cerrados=subtotal_segmentos_cerrados,
     ))
 
 
@@ -819,6 +845,94 @@ async def finalizar(
     except Exception as e:
         request.session["flash"] = {"type": "error", "msg": f"Error al reportar la devolución: {e}"}
         return RedirectResponse(f"/ciclista/viaje-activo/{viaje_id}", status_code=302)
+
+
+@router.post("/cambiar-modalidad")
+async def cambiar_modalidad(
+    request: Request,
+    viaje_id:        str = Form(...),
+    modalidad_nueva: str = Form(...),
+):
+    if modalidad_nueva not in ("hora", "dia", "semana"):
+        request.session["flash"] = {"type": "error", "msg": "Modalidad no válida."}
+        return RedirectResponse(f"/ciclista/viaje-activo/{viaje_id}", status_code=302)
+
+    user = getattr(request.state, "user", {})
+    try:
+        pb = _pb()
+        viaje = pb.get_record("viajes", viaje_id)
+        if viaje.get("estado") != "activo":
+            request.session["flash"] = {"type": "error", "msg":
+                "Solo puedes cambiar la modalidad mientras el viaje sigue activo."}
+            return RedirectResponse(f"/ciclista/viaje-activo/{viaje_id}", status_code=302)
+
+        bici = pb.get_record("bicicletas", viaje.get("bicicleta_id", ""))
+        bicicleta_codigo = bici.get("codigo", viaje.get("bicicleta_codigo", ""))
+        tipo_membresia = membresias_repo.tipo_membresia_real(user.get("email", ""))
+
+        modalidad_actual = viaje.get("modalidad_actual") or "hora"
+        inicio_actual = viaje.get("inicio_segmento_actual") or viaje.get("fecha_inicio")
+        ahora = _ahora()
+
+        # Se resuelve el precio del segmento SALIENTE antes de escribir nada
+        # en ninguna base -- si esto falla, el viaje queda exactamente
+        # como estaba. Con promocion aplicable (si hay alguna) ya
+        # descontada -- mismo hallazgo/fix que vig_devolver() (17-ago-2026):
+        # este es el SUBTOTAL real del segmento, nunca lleva recargo (los
+        # segmentos intermedios siempre cierran con recargo=0.0), asi que
+        # no hace falta separar un precio "sin promo" aca.
+        resultado_actual = tarifas_repo.precio_modalidad_con_promocion(bicicleta_codigo, tipo_membresia, modalidad_actual)
+        subtotal_segmento = None
+        id_tarifa_actual = None
+        if resultado_actual:
+            precio_actual, id_tarifa_actual = resultado_actual
+            if modalidad_actual == "hora":
+                # Piso de 1 minuto (decidido con Washington, 16-ago-2026,
+                # tras encontrar la discrepancia real en la Tarea 7): mismo
+                # criterio que vig_devolver() -- nunca cobra menos de 1
+                # minuto por segmento, ni siquiera si el cambio de
+                # modalidad fue casi instantaneo.
+                minutos_segmento = max(1, int((datetime.now(timezone.utc) - datetime.fromisoformat(
+                    inicio_actual.replace("Z", "+00:00"))).total_seconds() / 60))
+                subtotal_segmento = round(minutos_segmento / 60 * precio_actual, 2)
+            else:
+                subtotal_segmento = precio_actual
+
+        # PocketBase PRIMERO -- es la fuente real del estado del viaje. Si
+        # esto falla, no se llega a tocar ClickHouse: el viaje queda
+        # exactamente como estaba, sin inconsistencia posible (decisión
+        # confirmada con Washington: entre "cobrar de más" y "no cobrar
+        # ese tramo" ante un fallo a mitad de camino, se prefiere lo
+        # segundo -- más seguro para el ciclista que para UrbanBike, pero
+        # nunca duplica un cobro).
+        pb.update_record("viajes", viaje_id, {
+            "modalidad_actual": modalidad_nueva,
+            "inicio_segmento_actual": ahora,
+        })
+
+        # ClickHouse DESPUES: si esto falla, la modalidad YA cambió (el
+        # paso anterior ya se comiteó) -- se avisa con un mensaje que
+        # refleja la realidad, no un "no se pudo cambiar la modalidad"
+        # generico que sugeriria que nada pasó cuando sí pasó.
+        if subtotal_segmento is not None:
+            try:
+                alquileres_repo.cerrar_segmento(
+                    viaje_id=viaje_id, ciclista_id=viaje.get("ciclista_id", ""),
+                    bicicleta_codigo=bicicleta_codigo, modalidad=modalidad_actual,
+                    id_tarifa=id_tarifa_actual, fecha_inicio=inicio_actual, fecha_fin=ahora,
+                    subtotal=subtotal_segmento, recargo=0.0,
+                )
+            except Exception:
+                request.session["flash"] = {"type": "info", "msg":
+                    f"Modalidad cambiada a {modalidad_nueva}, pero hubo un problema registrando "
+                    "el cobro del tramo anterior -- contacta a soporte si el monto final no coincide."}
+                return RedirectResponse(f"/ciclista/viaje-activo/{viaje_id}", status_code=302)
+
+        request.session["flash"] = {"type": "success", "msg":
+            f"Modalidad cambiada a {modalidad_nueva}. El tramo anterior ya quedó cobrado."}
+    except Exception as e:
+        request.session["flash"] = {"type": "error", "msg": f"No se pudo cambiar la modalidad: {e}"}
+    return RedirectResponse(f"/ciclista/viaje-activo/{viaje_id}", status_code=302)
 
 
 # ── Pago ─────────────────────────────────────────────────────────────────────
@@ -1041,7 +1155,47 @@ def _construir_factura_pago(registro: dict, viaje: dict, user: dict) -> DatosFac
     if registro.get("tipo") == "cargo_danos":
         lineas = [LineaFactura(registro.get("descripcion_cargo") or "Cargo por daños", 1, subtotal_base, subtotal_base)]
     else:
-        lineas = [LineaFactura("Tarifa base (alquiler de bicicleta)", 1, subtotal_base, subtotal_base)]
+        # Obtener segmentos de modalidad del viaje (Important #2: envoltura
+        # try/except para que una falla de ClickHouse no rompa la pantalla de
+        # comprobante; si falla la query, caemos al fallback seguro de
+        # "Tarifa base" usando el monto confiable de pagos.subtotal).
+        segmentos = []
+        try:
+            segmentos = ch.query(
+                "SELECT modalidad, subtotal FROM urbanbike_operativa.alquileres "
+                "WHERE id_origen_pocketbase = %(viaje_id)s AND origen = 'segmento_modalidad' "
+                "ORDER BY fecha_inicio",
+                {"viaje_id": viaje.get("id", "")},
+            )
+        except Exception:
+            # Si ClickHouse falla, segmentos queda [], caemos al else
+            pass
+
+        # Important #1: reconciliación contra pagos.subtotal. El último
+        # segmento de cada viaje se inserta en ClickHouse best-effort en
+        # vig_devolver() -- si ese INSERT falla, pagos.subtotal es correcto
+        # pero la fila del último segmento nunca llega a alquileres. Como
+        # segmentos.size < segmento_count_real, la suma no va a coincidir
+        # con subtotal_base. En ese caso, mostrar la factura con segmentos
+        # incompletos sería engañoso (el cliente suma las líneas y obtiene
+        # menos del TOTAL real), así que caemos al fallback confiable.
+        segmentos_sum = sum(float(s["subtotal"]) for s in segmentos) if segmentos else 0.0
+        segmentos_reconciliados = segmentos and abs(segmentos_sum - subtotal_base) <= 0.01
+
+        if segmentos_reconciliados:
+            # ReplacingMergeTree sin FINAL: cada fila (uuid4() nuevo) se
+            # inserta exactamente una sola vez, nunca se duplica la clave de
+            # orden, así que no hace falta deduplicar en la lectura.
+            etiquetas = {"hora": "Tarifa por hora", "dia": "Tarifa por día", "semana": "Tarifa por semana"}
+            lineas = [
+                LineaFactura(etiquetas.get(s["modalidad"], "Tarifa"), 1, float(s["subtotal"]), float(s["subtotal"]))
+                for s in segmentos
+            ]
+        else:
+            # Pago anterior a este cambio, sin segmentos en alquileres, o
+            # segmentos inconsistentes respecto a subtotal_base -- mostrar
+            # "Tarifa base" confiable usando el monto de pagos.subtotal.
+            lineas = [LineaFactura("Tarifa base (alquiler de bicicleta)", 1, subtotal_base, subtotal_base)]
     if recargo_demora > 0:
         lineas.append(LineaFactura("Recargo por demora en la devolución (>5h)", 1, recargo_demora, recargo_demora))
     if cargo_danos > 0:

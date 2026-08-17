@@ -8,6 +8,36 @@
 
 {% block content %}
 
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header">
+    <span class="card-title">Catálogo de bicicletas <span class="text-muted text-sm">({{ catalogo_bicicletas | length }})</span></span>
+    <div class="flex gap-2 header-controles" style="align-items:center;">
+      <div class="modalidad-selector" id="catalogo-modalidad">
+        <button type="button" class="modalidad-btn activo" data-modalidad="dia">Por día</button>
+        <button type="button" class="modalidad-btn" data-modalidad="hora">Por hora</button>
+        <button type="button" class="modalidad-btn" data-modalidad="semana">Por semana</button>
+      </div>
+      <select id="catalogo-filtro-marca" class="form-input" style="width:auto;font-size:0.8rem;padding:6px 10px;">
+        <option value="">Todas las marcas</option>
+        {% for marca in catalogo_bicicletas | map(attribute='marca') | unique | list %}
+        <option value="{{ marca }}">{{ marca }}</option>
+        {% endfor %}
+      </select>
+      <select id="catalogo-filtro-enfoque" class="form-input" style="width:auto;font-size:0.8rem;padding:6px 10px;">
+        <option value="">Todos los enfoques</option>
+        {% for enfoque in catalogo_bicicletas | map(attribute='enfoque') | unique | list %}
+        <option value="{{ enfoque }}">{{ enfoque | capitalize }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+  <div class="catalogo-grid" id="catalogo-grid" style="padding:20px;">
+    {% for bici in catalogo_bicicletas %}
+      {% include "componentes/tarjeta_bicicleta.html" %}
+    {% endfor %}
+  </div>
+</div>
+
 <div class="card" style="padding:0;overflow:hidden;margin-bottom:20px;">
   <div class="card-header" style="border-bottom:1px solid var(--border);">
     <span class="card-title">Estaciones disponibles</span>
@@ -33,19 +63,22 @@
 </div>
 
 <form id="form-reservar" method="post" action="/ciclista/reservar" style="display:none;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
   <input type="hidden" name="bicicleta_id" id="rv-bicicleta-id">
   <input type="hidden" name="bicicleta_codigo" id="rv-bicicleta-codigo">
   <input type="hidden" name="estacion_inicio_id" id="rv-estacion-id">
   <input type="hidden" name="estacion_inicio_nombre" id="rv-estacion-nombre">
   <input type="hidden" name="latitud" id="rv-lat">
   <input type="hidden" name="longitud" id="rv-lng">
+  <input type="hidden" name="codigo_descuento" id="rv-codigo-descuento">
+  <input type="hidden" name="modalidad" id="rv-modalidad">
 </form>
 
 <dialog id="modal-resumen" style="max-width:420px;width:100%;border:none;border-radius:14px;padding:0;">
   <div style="padding:22px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
       <span style="font-family:'Sora',sans-serif;font-weight:700;font-size:1.05rem;color:var(--text);">Resumen de la reserva</span>
-      <button type="button" class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-resumen').close()">✕</button>
+      <button type="button" class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-resumen').close()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:20px;">
       <div style="display:flex;justify-content:space-between;">
@@ -61,9 +94,13 @@
         <span style="font-weight:600;color:var(--text);" id="rs-estacion">—</span>
       </div>
       <div style="display:flex;justify-content:space-between;">
-        <span style="color:var(--text-muted);font-size:0.85rem;">Tarifa por hora</span>
+        <span style="color:var(--text-muted);font-size:0.85rem;">Tarifa</span>
         <span style="font-family:'Sora',sans-serif;font-weight:700;color:var(--primary);" id="rs-tarifa">—</span>
       </div>
+    </div>
+    <div class="form-group" style="margin-bottom:20px;">
+      <label class="form-label" for="rs-codigo-descuento">Código de descuento (opcional)</label>
+      <input class="form-input" type="text" id="rs-codigo-descuento" placeholder="UB-XXXXXX" maxlength="12" style="text-transform:uppercase;">
     </div>
     <div style="display:flex;gap:10px;justify-content:flex-end;">
       <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-resumen').close()">Cancelar</button>
@@ -75,11 +112,64 @@
 {% endblock %}
 
 {% block scripts %}
+<script>
+function aplicarFiltroCatalogo() {
+  const marca   = document.getElementById('catalogo-filtro-marca').value;
+  const enfoque = document.getElementById('catalogo-filtro-enfoque').value;
+  document.querySelectorAll('#catalogo-grid .tarjeta-bicicleta').forEach(function (tarjeta) {
+    const coincideMarca   = !marca   || tarjeta.dataset.marca   === marca;
+    const coincideEnfoque = !enfoque || tarjeta.dataset.enfoque === enfoque;
+    tarjeta.classList.toggle('catalogo-filtro-oculta', !(coincideMarca && coincideEnfoque));
+  });
+}
+document.getElementById('catalogo-filtro-marca').addEventListener('change', aplicarFiltroCatalogo);
+document.getElementById('catalogo-filtro-enfoque').addEventListener('change', aplicarFiltroCatalogo);
+
+const CAMPO_POR_MODALIDAD = {hora: 'precioHora', dia: 'precioDia', semana: 'precioSemana'};
+const ETIQUETA_POR_MODALIDAD = {hora: 'por hora', dia: 'por día', semana: 'por semana'};
+const CAMPO_PROMO_POR_MODALIDAD = {hora: 'promoHora', dia: 'promoDia', semana: 'promoSemana'};
+const CAMPO_AHORRO_POR_MODALIDAD = {hora: 'ahorroHora', dia: 'ahorroDia', semana: 'ahorroSemana'};
+
+function aplicarModalidadCatalogo(modalidad) {
+  const campo = CAMPO_POR_MODALIDAD[modalidad];
+  const etiqueta = ETIQUETA_POR_MODALIDAD[modalidad];
+  document.querySelectorAll('#catalogo-grid .tarjeta-bicicleta-precio').forEach(function (el) {
+    el.textContent = 'USD ' + parseFloat(el.dataset[campo]).toFixed(2);
+  });
+  document.querySelectorAll('#catalogo-grid .tarjeta-bicicleta-precio-periodo').forEach(function (el) {
+    el.textContent = etiqueta;
+  });
+  document.querySelectorAll('#catalogo-grid .tarjeta-bicicleta-precio-casual').forEach(function (el) {
+    el.querySelector('.tarjeta-bicicleta-precio-tachado').textContent = 'USD ' + parseFloat(el.dataset[campo]).toFixed(2);
+  });
+  const campoPromo = CAMPO_PROMO_POR_MODALIDAD[modalidad];
+  const campoAhorro = CAMPO_AHORRO_POR_MODALIDAD[modalidad];
+  document.querySelectorAll('#catalogo-grid .tarjeta-bicicleta-precio-promo').forEach(function (el) {
+    const nombrePromo = el.dataset[campoPromo];
+    if (nombrePromo) {
+      el.style.display = '';
+      el.querySelector('.tarjeta-bicicleta-promo-nombre').textContent = nombrePromo;
+      el.querySelector('.tarjeta-bicicleta-precio-tachado').textContent = 'USD ' + parseFloat(el.dataset[campo]).toFixed(2);
+      el.querySelector('.tarjeta-bicicleta-ahorro').textContent =
+        'Ahorras USD ' + parseFloat(el.dataset[campoAhorro]).toFixed(2) + ' con ' + nombrePromo;
+    } else {
+      el.style.display = 'none';
+    }
+  });
+}
+document.querySelectorAll('#catalogo-modalidad .modalidad-btn').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    document.querySelectorAll('#catalogo-modalidad .modalidad-btn').forEach(function (b) { b.classList.remove('activo'); });
+    btn.classList.add('activo');
+    aplicarModalidadCatalogo(btn.dataset.modalidad);
+  });
+});
+</script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-const ESTACIONES  = {{ estaciones_json | safe }};
-const BICICLETAS  = {{ bicicletas_json | safe }};
-const TARIFAS     = {{ tarifas_json | safe }};
+const ESTACIONES  = {{ estaciones_json | jsonseguro }};
+const BICICLETAS  = {{ bicicletas_json | jsonseguro }};
+const CATALOGO    = {{ catalogo_bicicletas | tojson }};
 const PB_URL      = {{ pb_url | tojson }};
 
 const ICONO_BICI_SVG = `
@@ -91,14 +181,35 @@ const ICONO_BICI_SVG = `
 function fotoBici(bici) {
   if (bici.foto) {
     const url = `${PB_URL}/api/files/bicicletas/${bici.id}/${bici.foto}?thumb=400x300`;
-    return `<img src="${url}" alt="${bici.codigo}" style="width:100%;height:150px;max-width:200px;object-fit:cover;border-radius:8px;display:block;">`;
+    const urlFull = `${PB_URL}/api/files/bicicletas/${bici.id}/${bici.foto}`;
+    return `<img src="${url}" alt="${bici.codigo}" data-lightbox data-full="${urlFull}" style="width:100%;height:150px;max-width:200px;object-fit:cover;border-radius:8px;display:block;">`;
   }
   return `<div style="width:100%;max-width:200px;height:150px;display:flex;align-items:center;justify-content:center;background:var(--bg-soft);border-radius:8px;color:var(--text-muted);opacity:0.5;">${ICONO_BICI_SVG}</div>`;
 }
 
-function tarifaPara(tipoBicicleta) {
-  const t = TARIFAS.find(x => x.tipo_bicicleta === tipoBicicleta && x.tipo_usuario === 'member');
-  return t ? Number(t.precio_hora) : 0;
+const CAMPO_PRECIO_CATALOGO_POR_MODALIDAD = {
+  hora: 'precio_hora_member', dia: 'precio_dia_member', semana: 'precio_semana_member',
+};
+const ETIQUETA_MODAL_POR_MODALIDAD = {hora: 'hora', dia: 'día', semana: 'semana'};
+
+function tarifaPara(codigoBici, modalidad) {
+  const b = CATALOGO.find(x => x.codigo === codigoBici);
+  if (!b) return 0;
+  const campo = CAMPO_PRECIO_CATALOGO_POR_MODALIDAD[modalidad] || 'precio_hora_member';
+  return Number(b[campo]) || 0;
+}
+
+// Modalidad real de la reserva: la misma que el toggle del catalogo de
+// arriba (#catalogo-modalidad) ya tiene activa -- antes este toggle solo
+// cambiaba el precio mostrado en las tarjetas del catalogo, sin afectar la
+// reserva real desde el mapa (bug real encontrado en la revision final del
+// plan de modalidad de tarifa real, 17-ago-2026: el panel del mapa
+// reservaba siempre en 'hora', sin importar la modalidad elegida). Se lee
+// del DOM en el momento de reservar, en vez de un estado JS aparte -- una
+// sola fuente de verdad, sin arriesgar que se desincronicen.
+function modalidadSeleccionada() {
+  const btn = document.querySelector('#catalogo-modalidad .modalidad-btn.activo');
+  return btn ? btn.dataset.modalidad : 'hora';
 }
 
 const map = L.map('map-alquilar').setView([-1.5, -78.5], 6.4);
@@ -148,19 +259,24 @@ function reservar(bici, estacion) {
   document.getElementById('rv-lat').value               = estacion.latitud;
   document.getElementById('rv-lng').value               = estacion.longitud;
 
+  const modalidad = modalidadSeleccionada();
+  document.getElementById('rv-modalidad').value = modalidad;
+
   const esElectrica = bici.tipo === 'electric_bike';
-  const precio = tarifaPara(bici.tipo);
+  const precio = tarifaPara(bici.codigo, modalidad);
   document.getElementById('rs-bici').textContent     = bici.codigo;
   document.getElementById('rs-tipo').innerHTML       = esElectrica
     ? '<span class="badge badge-green">Eléctrica</span>'
     : '<span class="badge badge-blue">Clásica</span>';
   document.getElementById('rs-estacion').textContent = estacion.nombre;
-  document.getElementById('rs-tarifa').textContent   = `$${precio.toFixed(2)} / hora`;
+  document.getElementById('rs-tarifa').textContent   = `$${precio.toFixed(2)} / ${ETIQUETA_MODAL_POR_MODALIDAD[modalidad] || 'hora'}`;
+  document.getElementById('rs-codigo-descuento').value = '';
 
   document.getElementById('modal-resumen').showModal();
 }
 
 document.getElementById('btn-confirmar-reserva').addEventListener('click', () => {
+  document.getElementById('rv-codigo-descuento').value = document.getElementById('rs-codigo-descuento').value.trim().toUpperCase();
   document.getElementById('modal-resumen').close();
   document.getElementById('form-reservar').submit();
 });
@@ -196,7 +312,7 @@ function mostrarEstacion(estacion) {
 
 function iconoConContador(cantidad) {
   const badge = cantidad > 0
-    ? `<div style="position:absolute;top:-6px;right:-8px;min-width:16px;height:16px;padding:0 3px;border-radius:8px;background:#10B981;border:2px solid #fff;color:#fff;font-size:0.62rem;font-weight:700;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Sans',sans-serif;">${cantidad}</div>`
+    ? `<div style="position:absolute;top:-6px;right:-8px;min-width:16px;height:16px;padding:0 3px;border-radius:8px;background:#10B981;border:2px solid #fff;color:#fff;font-size:0.8rem;font-weight:700;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Sans',sans-serif;">${cantidad}</div>`
     : '';
   return L.divIcon({
     className: '',

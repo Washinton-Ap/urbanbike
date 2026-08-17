@@ -2,7 +2,7 @@
 
 import json
 import math
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -1474,7 +1474,31 @@ async def vig_devoluciones(request: Request):
                 tipo_membresia = membresias_repo.tipo_membresia_real(ciclista_pb.get("email", ""))
             except Exception:
                 pass
-        v["precio_hora"] = _tarifa_hora(v.get("bicicleta_codigo", ""), tipo_membresia) if pb is not None else 0.0
+        modalidad_v = v.get("modalidad_actual") or "hora"
+        # Igual que _tarifa_hora() ("nunca levanta excepcion hacia el
+        # llamador") y que el bloque analogo de ciclista.py:viaje_activo()
+        # de esta misma tarea -- categoria_de_bicicleta()/precio_modalidad()/
+        # total_segmentos_cerrados() son consultas directas a ClickHouse
+        # (ch.query_one()/ch.query()) sin try/except propio; sin este
+        # try/except, un blip transitorio de ClickHouse tumbaria con un 500
+        # sin manejar TODA la pagina de devoluciones (no solo el numero en
+        # vivo), bloqueando el flujo operativo completo de Vigilancia.
+        v["precio_hora"] = 0.0
+        v["precio_hora_recargo"] = 0.0
+        v["subtotal_segmentos_cerrados"] = 0.0
+        try:
+            # Con promocion aplicable ya descontada (mismo hallazgo/fix que
+            # vig_devolver(), 17-ago-2026) -- para que el numero en vivo
+            # coincida con lo que se cobrara de verdad. precio_hora_recargo
+            # SIEMPRE via _tarifa_hora() (sin promo, sin importar la
+            # modalidad activa): nunca se descuenta el multiplicador del
+            # recargo por demora.
+            resultado_v = tarifas_repo.precio_modalidad_con_promocion(v.get("bicicleta_codigo", ""), tipo_membresia, modalidad_v)
+            v["precio_hora"] = resultado_v[0] if resultado_v else 0.0
+            v["precio_hora_recargo"] = _tarifa_hora(v.get("bicicleta_codigo", ""), tipo_membresia) if pb is not None else 0.0
+            v["subtotal_segmentos_cerrados"] = alquileres_repo.total_segmentos_cerrados(v["id"])
+        except Exception:
+            pass
 
     return templates.TemplateResponse(request, "empleado/vigilancia/devoluciones.html", _ctx(request,
         title="Registrar Devoluciones", flash=flash,
@@ -1516,28 +1540,80 @@ async def vig_devolver(
         if origen_pendiente_validacion:
             motivo = "reportada por el ciclista, validada"
 
-        # Recargo por demora >5h (punto 13, punto 10): las primeras 5h desde
-        # que el ciclista REPORTO la devolucion (no desde que Vigilancia la
-        # confirma) van al cobro normal; de ahi en adelante es un recargo
-        # aparte, nunca mezclado en el mismo numero. Solo aplica cuando el
-        # origen es 'pendiente_validacion' -- si Vigilancia recibe la
-        # bicicleta en persona, el ciclista esta presente, no hay espera
-        # posible.
+        # Cierre del ULTIMO segmento (punto 4 del spec) -- con la hora
+        # REAL de confirmacion de Vigilancia, nunca con la hora que
+        # reporto el ciclista (mismo criterio de siempre). Todo esto es
+        # solo calculo en Python, sin escribir nada todavia -- si algo
+        # falla aca, el viaje queda exactamente como estaba.
         ahora = datetime.now(timezone.utc)
-        inicio_str = viaje.get("fecha_inicio", "")
-        fecha_fin_reportada_str = viaje.get("fecha_fin", "") if origen_pendiente_validacion else ""
-        duracion = 0
-        retraso_min = 0.0
+        ahora_str = _ahora()
+        modalidad_final = viaje.get("modalidad_actual") or "hora"
+        inicio_segmento_final = viaje.get("inicio_segmento_actual") or viaje.get("fecha_inicio", "")
+
+        tipo_membresia = "casual"
         try:
-            inicio = datetime.fromisoformat(inicio_str.replace("Z", "+00:00"))
-            if fecha_fin_reportada_str:
-                fecha_fin_reportada = datetime.fromisoformat(fecha_fin_reportada_str.replace("Z", "+00:00"))
-                duracion = max(1, int((fecha_fin_reportada - inicio).total_seconds() / 60))
-                retraso_min = max(0.0, (ahora - fecha_fin_reportada).total_seconds() / 60 - 300)
-            else:
-                duracion = max(1, int((ahora - inicio).total_seconds() / 60))
+            ciclista_pb = pb.get_record("users", viaje.get("ciclista_id", ""))
+            tipo_membresia = membresias_repo.tipo_membresia_real(ciclista_pb.get("email", ""))
         except Exception:
             pass
+
+        bici_codigo_para_tarifa = viaje.get("bicicleta_codigo", "")
+        id_categoria = tarifas_repo.categoria_de_bicicleta(bici_codigo_para_tarifa)
+        resultado = tarifas_repo.precio_modalidad(id_categoria, tipo_membresia, modalidad_final) if id_categoria else None
+        # Promocion aplicable (si hay alguna) ya descontada -- SOLO para el
+        # SUBTOTAL real del segmento (hallazgo/fix de la revision final del
+        # plan de modalidad de tarifa real, 17-ago-2026: el cobro real
+        # ignoraba promociones por completo, aunque la ficha SI las
+        # mostraba con descuento). `resultado` (sin promo) se mantiene
+        # aparte porque precio_hora_display (el multiplicador del recargo
+        # por demora) nunca debe llevar descuento -- "no tiene sentido
+        # descontar una penalizacion", mismo criterio ya aplicado a
+        # descuento_monto.
+        resultado_con_promo = (
+            tarifas_repo.precio_modalidad_con_promocion(bici_codigo_para_tarifa, tipo_membresia, modalidad_final)
+            if id_categoria else None
+        )
+        precio_hora_display = 0.0  # para el campo precio_hora de 'pagos', compatibilidad con facturas viejas
+        id_tarifa_final = None
+
+        retraso_min = 0.0
+        subtotal_ultimo_segmento = 0.0
+        if resultado and resultado_con_promo:
+            precio_modalidad_final, id_tarifa_final = resultado
+            precio_modalidad_final_con_promo, _ = resultado_con_promo
+            inicio_dt = datetime.fromisoformat(inicio_segmento_final.replace("Z", "+00:00"))
+
+            if modalidad_final == "hora":
+                # Piso de 1 minuto (decidido con Washington, 16-ago-2026):
+                # mismo criterio que el codigo original (duracion = max(1,
+                # int(...))) -- restaura la paridad exacta con la seccion 70.
+                minutos_ultimo_segmento = max(1, int((ahora - inicio_dt).total_seconds() / 60))
+                subtotal_ultimo_segmento = round(minutos_ultimo_segmento / 60 * precio_modalidad_final_con_promo, 2)
+                # Gracia de 5h desde que el ciclista reporto la devolucion
+                # (fecha_fin del viaje), NO desde el inicio del segmento --
+                # igual que antes de este cambio (ver seccion 70).
+                fecha_fin_reportada = viaje.get("fecha_fin", "")
+                if fecha_fin_reportada:
+                    fin_dt = datetime.fromisoformat(fecha_fin_reportada.replace("Z", "+00:00"))
+                    retraso_min = max(0.0, (ahora - fin_dt).total_seconds() / 60 - 300)
+                precio_hora_display = precio_modalidad_final  # SIN promo -- multiplicador del recargo
+            else:
+                subtotal_ultimo_segmento = precio_modalidad_final_con_promo
+                # Gracia de 5h desde que TERMINA la ventana comprada
+                # (dia=24h, semana=7d), no desde el reporte -- con
+                # tarifa plana, "demora" es exceder lo pagado (spec).
+                horas_ventana = 24 if modalidad_final == "dia" else 24 * 7
+                fin_ventana = inicio_dt + timedelta(hours=horas_ventana)
+                retraso_min = max(0.0, (ahora - fin_ventana).total_seconds() / 60 - 300)
+                precio_hora_resultado = tarifas_repo.precio_modalidad(id_categoria, tipo_membresia, "hora")
+                precio_hora_display = precio_hora_resultado[0] if precio_hora_resultado else 0.0
+
+            recargo_demora = round(retraso_min / 60 * precio_hora_display, 2)
+        else:
+            recargo_demora = 0.0
+
+        duracion = max(1, int((ahora - datetime.fromisoformat(
+            viaje.get("fecha_inicio", "").replace("Z", "+00:00"))).total_seconds() / 60))
 
         actualizar_viaje = {
             "estado":           "completado",
@@ -1550,7 +1626,7 @@ async def vig_devolver(
             # sobreescribe con la hora de confirmacion de Vigilancia (bug real
             # corregido: antes se pisaba siempre, perdiendo el dato real de
             # cuando el ciclista terminó el viaje).
-            actualizar_viaje["fecha_fin"] = _ahora()
+            actualizar_viaje["fecha_fin"] = ahora_str
         pb.update_record("viajes", viaje_id, actualizar_viaje)
 
         bici_id = viaje.get("bicicleta_id", "")
@@ -1571,20 +1647,10 @@ async def vig_devolver(
         # si por algún motivo ya existe uno para este viaje, no duplica.
         existentes = pb.list_records("pagos", filter=f'viaje_id = {filter_literal(viaje_id)}', per_page=1).get("items", [])
         if not existentes:
-            # El ciclista de este viaje no es el usuario de la sesion (aca
-            # esta logueado el empleado de vigilancia), asi que hay que
-            # resolver su email real desde PocketBase antes de poder
-            # preguntar por su membresia -- mismo patron ya usado para
-            # infracciones (pb.get_record("users", ciclista_id)).
-            tipo_membresia = "casual"
-            try:
-                ciclista_pb = pb.get_record("users", viaje.get("ciclista_id", ""))
-                tipo_membresia = membresias_repo.tipo_membresia_real(ciclista_pb.get("email", ""))
-            except Exception:
-                pass
-            precio_hora = _tarifa_hora(viaje.get("bicicleta_codigo", ""), tipo_membresia)
-            subtotal = round(duracion / 60 * precio_hora, 2)
-            recargo_demora = round(retraso_min / 60 * precio_hora, 2)
+            # tipo_membresia/recargo_demora ya se resolvieron arriba (con la
+            # modalidad real del ultimo segmento, no siempre 'hora') --
+            # reusados aca, sin recalcular por segunda vez.
+            subtotal = round(alquileres_repo.total_segmentos_cerrados(viaje_id) + subtotal_ultimo_segmento, 2)
 
             # Descuento personal canjeado al iniciar este viaje (ver
             # ciclista.py:reservar()) -- solo sobre el subtotal, nunca sobre
@@ -1601,7 +1667,7 @@ async def vig_devolver(
                 "duracion_minutos":  duracion,
                 "tipo_bicicleta":    tipo_bicicleta,
                 "tipo_membresia":    tipo_membresia,
-                "precio_hora":       precio_hora,
+                "precio_hora":       precio_hora_display,
                 "subtotal":          subtotal,
                 "recargo_demora":    recargo_demora,
                 "cargo_danos":       0,
@@ -1640,6 +1706,25 @@ async def vig_devolver(
         detalle = f"Devolución {motivo} en {estacion_fin_nombre} (duración real: {duracion} min) — bicicleta retenida para inspección"
         if observaciones:
             detalle += f" — {observaciones}"
+
+        # INSERT del ultimo segmento en ClickHouse -- al final a proposito
+        # (ver nota de ordenamiento arriba): si esto falla, el viaje ya
+        # esta completado, la bici ya esta en mantenimiento y el pago ya
+        # se creo con el monto correcto (subtotal_ultimo_segmento no
+        # depende de que este INSERT tenga exito). Solo faltaria esa fila
+        # en el historial de alquileres -- se deja rastro real en la
+        # auditoria para que no quede invisible del todo.
+        if resultado and not existentes:
+            try:
+                alquileres_repo.cerrar_segmento(
+                    viaje_id=viaje_id, ciclista_id=viaje.get("ciclista_id", ""),
+                    bicicleta_codigo=bici_codigo_para_tarifa, modalidad=modalidad_final,
+                    id_tarifa=id_tarifa_final, fecha_inicio=inicio_segmento_final,
+                    fecha_fin=ahora_str, subtotal=subtotal_ultimo_segmento, recargo=recargo_demora,
+                )
+            except Exception as e:
+                detalle += f" — AVISO: no se pudo registrar el último segmento en el historial ({e})"
+
         registrar_auditoria(
             user.get("pb_token", ""), user.get("id", ""), user.get("name") or user.get("email", ""),
             user.get("email", ""), "editar", "viajes", detalle, request,
