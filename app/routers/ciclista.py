@@ -1,6 +1,7 @@
 """Rutas para el rol Ciclista — reservas, viaje activo, historial."""
 
 import json
+import uuid
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
@@ -512,6 +513,39 @@ async def alquilar(request: Request):
     ))
 
 
+def _crear_viaje(
+    pb, user: dict, user_id: str, bicicleta_id: str, bicicleta_codigo: str,
+    estacion_inicio_id: str, estacion_inicio_nombre: str, modalidad: str,
+    lat: float, lng: float, codigo_valido: dict | None, grupo_reserva_id: str = "",
+) -> dict:
+    """Crea UN viaje real + marca la bicicleta en_uso + registra auditoria --
+    logica compartida entre reservar() (una bicicleta) y reservar_grupo()
+    (varias a la vez, Tarea C2 del plan de factura unica). El codigo de
+    descuento, si viene, solo se marca usado por el LLAMADOR (una sola vez
+    por reserva, nunca una vez por bicicleta del grupo)."""
+    nuevo_viaje = pb.create_record("viajes", {
+        "ciclista_id":            user_id,
+        "ciclista_nombre":        user.get("name") or user.get("email", ""),
+        "bicicleta_id":           bicicleta_id,
+        "bicicleta_codigo":       bicicleta_codigo,
+        "estacion_inicio_id":     estacion_inicio_id,
+        "estacion_inicio_nombre": estacion_inicio_nombre,
+        "latitud_inicio":         lat,
+        "longitud_inicio":        lng,
+        "latitud_actual":         lat,
+        "longitud_actual":        lng,
+        "estado":                 "activo",
+        "fecha_inicio":           _ahora(),
+        "descuento_codigo":       codigo_valido["codigo"] if codigo_valido else "",
+        "descuento_porcentaje":   codigo_valido["porcentaje"] if codigo_valido else 0,
+        "modalidad_actual":       modalidad,
+        "inicio_segmento_actual": _ahora(),
+        "grupo_reserva_id":       grupo_reserva_id,
+    })
+    pb.update_record("bicicletas", bicicleta_id, {"estado": "en_uso"})
+    return nuevo_viaje
+
+
 @router.post("/reservar")
 async def reservar(
     request: Request,
@@ -600,30 +634,12 @@ async def reservar(
         lat = float(latitud)
         lng = float(longitud)
 
-        # Crear viaje
-        nuevo_viaje = pb.create_record("viajes", {
-            "ciclista_id":            user_id,
-            "ciclista_nombre":        user.get("name") or user.get("email", ""),
-            "bicicleta_id":           bicicleta_id,
-            "bicicleta_codigo":       bicicleta_codigo,
-            "estacion_inicio_id":     estacion_inicio_id,
-            "estacion_inicio_nombre": estacion_inicio_nombre,
-            "latitud_inicio":         lat,
-            "longitud_inicio":        lng,
-            "latitud_actual":         lat,
-            "longitud_actual":        lng,
-            "estado":                 "activo",
-            "fecha_inicio":           _ahora(),
-            "descuento_codigo":       codigo_valido["codigo"] if codigo_valido else "",
-            "descuento_porcentaje":   codigo_valido["porcentaje"] if codigo_valido else 0,
-            "modalidad_actual":       modalidad,
-            "inicio_segmento_actual": _ahora(),
-        })
+        nuevo_viaje = _crear_viaje(
+            pb, user, user_id, bicicleta_id, bicicleta_codigo,
+            estacion_inicio_id, estacion_inicio_nombre, modalidad, lat, lng, codigo_valido,
+        )
         if codigo_valido:
             codigos_descuento_repo.marcar_usado(codigo_valido["id"], nuevo_viaje["id"])
-
-        # Marcar bicicleta como en_uso
-        pb.update_record("bicicletas", bicicleta_id, {"estado": "en_uso"})
 
         registrar_auditoria(
             user.get("pb_token", ""), user_id, user.get("name") or user.get("email", ""),
@@ -644,6 +660,133 @@ async def reservar(
 
     except Exception as e:
         request.session["flash"] = {"type": "error", "msg": f"Error al iniciar viaje: {e}"}
+        return RedirectResponse("/ciclista/alquilar", status_code=302)
+
+
+@router.post("/reservar-grupo")
+async def reservar_grupo(
+    request: Request,
+    bicicleta_ids:          list[str] = Form(...),
+    bicicleta_codigos:      list[str] = Form(...),
+    estaciones_ids:         list[str] = Form(...),
+    estaciones_nombres:     list[str] = Form(...),
+    latitudes:              list[str] = Form(...),
+    longitudes:             list[str] = Form(...),
+    modalidad:              str = Form("hora"),
+    codigo_descuento:       str = Form(""),
+):
+    """Reserva de varias bicicletas en una sola accion (punto 0.3): crea N
+    viajes reales, todos con el mismo grupo_reserva_id, todo-o-nada -- si
+    cualquier validacion falla para cualquier bicicleta del lote, no se
+    crea ninguno (mismo criterio que el codigo de descuento en reservar():
+    "sin dejar un viaje a medias"). El codigo de descuento, si viene, se
+    aplica y se marca usado en el PRIMER viaje del grupo unicamente (es de
+    un solo uso, no tiene sentido duplicarlo N veces)."""
+    user = getattr(request.state, "user", {})
+    user_id = user.get("id", "")
+
+    n = len(bicicleta_ids)
+    if n < 2:
+        request.session["flash"] = {"type": "error", "msg": "Selecciona al menos 2 bicicletas para una reserva grupal."}
+        return RedirectResponse("/ciclista/alquilar", status_code=302)
+    if not (len(bicicleta_codigos) == len(estaciones_ids) == len(estaciones_nombres) == len(latitudes) == len(longitudes) == n):
+        request.session["flash"] = {"type": "error", "msg": "Datos de la reserva grupal incompletos."}
+        return RedirectResponse("/ciclista/alquilar", status_code=302)
+
+    if modalidad not in ("hora", "dia", "semana"):
+        request.session["flash"] = {"type": "error", "msg": "Modalidad no válida."}
+        return RedirectResponse("/ciclista/alquilar", status_code=302)
+
+    viajes_activos_actuales = _viajes_activos(user_id)
+    if len(viajes_activos_actuales) + n > MAX_VIAJES_ACTIVOS:
+        request.session["flash"] = {"type": "error", "msg":
+            f"No puedes tener más de {MAX_VIAJES_ACTIVOS} bicicletas alquiladas a la vez "
+            f"(ya tienes {len(viajes_activos_actuales)}, intentas agregar {n})."}
+        return RedirectResponse("/ciclista/alquilar", status_code=302)
+
+    exclusivas_nuevas = _bicicletas_exclusivas_nuevas()
+    tipo_membresia_actual = membresias_repo.tipo_membresia_real(user.get("email", ""))
+    for codigo in bicicleta_codigos:
+        if codigo in exclusivas_nuevas and tipo_membresia_actual != "member":
+            fecha_liberacion = exclusivas_nuevas[codigo].strftime("%d/%m/%Y")
+            request.session["flash"] = {"type": "error", "msg":
+                f"{codigo} es una bicicleta nueva con acceso anticipado exclusivo para "
+                f"suscriptores hasta el {fecha_liberacion}."}
+            return RedirectResponse("/ciclista/alquilar", status_code=302)
+
+    if _infracciones_activas(user_id) > 0:
+        request.session["flash"] = {"type": "error", "msg":
+            "Tienes infracciones pendientes de resolución. No puedes reservar hasta que sean resueltas."}
+        return RedirectResponse("/ciclista/alquilar", status_code=302)
+
+    try:
+        pb_check = _pb()
+        pendientes = pb_check.list_records(
+            "pagos",
+            filter=f'ciclista_id = {filter_literal(user_id)} && (estado = "pendiente_efectivo" || estado = "verificacion_pendiente")',
+            per_page=1,
+        )
+        if pendientes.get("totalItems", 0) > 0:
+            request.session["flash"] = {"type": "error", "msg":
+                "Tienes pagos pendientes. Regula tu situación antes de hacer una nueva reserva."}
+            return RedirectResponse("/ciclista/alquilar", status_code=302)
+
+        rechazados = pb_check.list_records(
+            "pagos", filter=f'ciclista_id = {filter_literal(user_id)} && estado = "rechazado"', per_page=1,
+        )
+        if rechazados.get("totalItems", 0) > 2:
+            request.session["flash"] = {"type": "error", "msg":
+                "Tu cuenta ha sido bloqueada temporalmente por pagos rechazados. Contacta a soporte."}
+            return RedirectResponse("/ciclista/alquilar", status_code=302)
+    except Exception:
+        pass
+
+    codigo_valido = None
+    if codigo_descuento.strip():
+        codigo_valido = codigos_descuento_repo.obtener_valido(codigo_descuento, user_id)
+        if not codigo_valido:
+            request.session["flash"] = {"type": "error", "msg":
+                "El código de descuento no es válido, ya fue usado, o no te pertenece."}
+            return RedirectResponse("/ciclista/alquilar", status_code=302)
+
+    grupo_reserva_id = uuid.uuid4().hex
+    try:
+        pb = _pb()
+        viajes_creados = []
+        for i in range(n):
+            viaje = _crear_viaje(
+                pb, user, user_id, bicicleta_ids[i], bicicleta_codigos[i],
+                estaciones_ids[i], estaciones_nombres[i], modalidad,
+                float(latitudes[i]), float(longitudes[i]),
+                codigo_valido if i == 0 else None,
+                grupo_reserva_id=grupo_reserva_id,
+            )
+            viajes_creados.append(viaje)
+            notificaciones_repo.notificar_usuario(
+                pb, user_id, tipo="viaje_iniciado",
+                titulo="Viaje iniciado",
+                mensaje=f"Iniciaste un viaje con la bicicleta {bicicleta_codigos[i]} "
+                        f"(reserva grupal de {n} bicicletas).",
+                enlace=f"/ciclista/viaje-activo/{viaje['id']}",
+            )
+
+        if codigo_valido:
+            codigos_descuento_repo.marcar_usado(codigo_valido["id"], viajes_creados[0]["id"])
+
+        registrar_auditoria(
+            user.get("pb_token", ""), user_id, user.get("name") or user.get("email", ""),
+            user.get("email", ""), "crear", "viajes",
+            f"Reserva grupal de {n} bicicletas iniciada: {', '.join(bicicleta_codigos)} "
+            f"(grupo {grupo_reserva_id})", request,
+            usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
+        )
+
+        request.session["flash"] = {"type": "success", "msg":
+            f"Reserva grupal de {n} bicicletas iniciada. Al devolver y pagar todas, recibirás una sola factura."}
+        return RedirectResponse(f"/ciclista/viaje-activo/{viajes_creados[0]['id']}", status_code=302)
+
+    except Exception as e:
+        request.session["flash"] = {"type": "error", "msg": f"Error al iniciar la reserva grupal: {e}"}
         return RedirectResponse("/ciclista/alquilar", status_code=302)
 
 
