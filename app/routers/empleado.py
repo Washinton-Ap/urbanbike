@@ -819,6 +819,12 @@ async def op_pagos_cobrar_confirmar(
                 f"Comprobante de transferencia presencial subido para verificación: {comprobante}", request,
                 usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
             )
+            notificaciones_repo.notificar_rol(
+                "empleado-operacion", tipo="cobro_pendiente",
+                titulo="Transferencia presencial pendiente de verificar",
+                mensaje=f"Se subió un comprobante de transferencia presencial (código {comprobante}) que espera verificación.",
+                enlace="/empleado/operacion/pagos",
+            )
             return _flash(request, "/empleado/operacion/pagos", "info",
                           "Comprobante recibido. Queda pendiente de verificación.")
 

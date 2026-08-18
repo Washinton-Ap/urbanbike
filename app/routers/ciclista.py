@@ -1030,6 +1030,12 @@ async def confirmar_pago(
                 f"Pago marcado para efectivo: código {comprobante}", request,
                 usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
             )
+            notificaciones_repo.notificar_rol(
+                "empleado-operacion", tipo="cobro_pendiente",
+                titulo="Cobro en efectivo pendiente",
+                mensaje=f"Un ciclista se acercará a pagar en efectivo con el código {comprobante}.",
+                enlace="/empleado/operacion/pagos",
+            )
             request.session["flash"] = {"type": "info", "msg":
                 f"Dirígete al empleado de operación más cercano con el código de pago: {comprobante} para completar el pago."}
             return RedirectResponse(f"/ciclista/pago/{pago_id}", status_code=302)
@@ -1098,6 +1104,12 @@ async def confirmar_pago(
                 user.get("email", ""), "editar", "pagos",
                 f"Comprobante de transferencia subido para verificación: {comprobante}", request,
                 usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
+            )
+            notificaciones_repo.notificar_rol(
+                "empleado-operacion", tipo="cobro_pendiente",
+                titulo="Transferencia pendiente de verificar",
+                mensaje=f"Un ciclista subió un comprobante de transferencia (código {comprobante}) que espera verificación.",
+                enlace="/empleado/operacion/pagos",
             )
             request.session["flash"] = {"type": "info", "msg":
                 "Tu pago está en verificación. El empleado de operación lo confirmará en breve."}
