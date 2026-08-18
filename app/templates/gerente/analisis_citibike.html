@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+{% block title %}Análisis Histórico — Dataset Citibike{% endblock %}
+{% block page_title %}Análisis Histórico — Dataset Citibike{% endblock %}
+
+{% block content %}
+
+<!-- Aviso bien visible: dataset academico, NO el negocio real de UrbanBike.
+     Estilo deliberadamente distinto (ambar, borde punteado) para que no se
+     confunda con gerente/reportes.html o gerente/informe.html (esas dos
+     usan urbanbike_tactica, datos reales). -->
+<div style="background:rgba(245,158,11,0.10);border:2px dashed #F59E0B;border-radius:12px;padding:18px 22px;margin-bottom:20px;display:flex;align-items:center;gap:16px;">
+  <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2" style="flex-shrink:0;"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c0 2 3 3 6 3s6-1 6-3v-5"/></svg>
+  <div>
+    <div style="font-family:'Sora',sans-serif;font-weight:800;font-size:1.05rem;color:#B45309;">
+      Análisis Histórico — Dataset Académico Citibike (Nueva York, 2023)
+    </div>
+    <div style="font-size:0.85rem;color:var(--text-muted);margin-top:2px;">
+      Este panel analiza el dataset histórico de Citibike (Nueva York, 2023), usado en el proyecto académico de arquitectura de datos a gran escala.
+      Los reportes de la operación diaria de UrbanBike están en <a href="/gerente/reportes" style="color:#1E86BD;">Reportes</a> e <a href="/gerente/informe" style="color:#1E86BD;">Informe</a>.
+    </div>
+  </div>
+</div>
+
+<!-- Filtros -->
+<div class="card no-print" style="margin-bottom:20px;">
+  <div class="card-header">
+    <span class="card-title">Filtros</span>
+  </div>
+  <form method="get" action="/gerente/analisis-citibike" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:14px;align-items:end;">
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label">Fecha inicio</label>
+      <input class="form-input" type="date" name="fecha_inicio" value="{{ fecha_inicio }}">
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label">Fecha fin</label>
+      <input class="form-input" type="date" name="fecha_fin" value="{{ fecha_fin }}">
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label">Día de la semana</label>
+      <select class="form-input" name="dia_semana">
+        <option value="" {% if not dia_semana %}selected{% endif %}>Todos</option>
+        {% for num, nombre in dias_semana.items() %}
+        <option value="{{ num }}" {% if dia_semana == num %}selected{% endif %}>{{ nombre }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label">Membresía</label>
+      <select class="form-input" name="membresia">
+        <option value="all"    {% if membresia == 'all'    %}selected{% endif %}>Todos</option>
+        <option value="member" {% if membresia == 'member' %}selected{% endif %}>Miembros</option>
+        <option value="casual" {% if membresia == 'casual' %}selected{% endif %}>Casuales</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label">Tipo de bicicleta</label>
+      <select class="form-input" name="tipo_bici">
+        <option value="all"           {% if tipo_bici == 'all'           %}selected{% endif %}>Todos</option>
+        <option value="classic_bike"  {% if tipo_bici == 'classic_bike'  %}selected{% endif %}>Clásica</option>
+        <option value="electric_bike" {% if tipo_bici == 'electric_bike' %}selected{% endif %}>Eléctrica</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button type="submit" class="btn btn-primary" style="flex:1;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        Filtrar
+      </button>
+      <a href="/gerente/analisis-citibike" class="btn btn-ghost">Limpiar</a>
+    </div>
+  </form>
+</div>
+
+{% if not ch_ok %}
+<div class="flash error" style="margin-bottom:20px;">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  ClickHouse no disponible — no se pueden cargar los datos.
+</div>
+{% endif %}
+
+<!-- KPI Grid -->
+<div class="kpi-grid" style="margin-bottom:16px;">
+  <div class="kpi-card">
+    <div class="kpi-label">Total Viajes (dataset)</div>
+    <div class="kpi-value">{{ kpis.get('total_viajes', 0) | num }}</div>
+    <div class="kpi-delta">Citibike NYC — Octubre 2023</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Estaciones Únicas</div>
+    <div class="kpi-value">{{ kpis.get('total_estaciones', 0) | num }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Duración Promedio</div>
+    <div class="kpi-value">{{ kpis.get('dur_prom_min', 0) }} min</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Distancia Promedio</div>
+    <div class="kpi-value">{{ kpis.get('dist_prom_km', 0) }} km</div>
+  </div>
+</div>
+
+<!-- Gráficas -->
+<div class="charts-section" style="display:grid;grid-template-columns:3fr 2fr;gap:16px;margin-bottom:16px;">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Viajes por Día de la Semana</span>
+    </div>
+    <div style="position:relative;height:220px;">
+      <canvas id="chartDow"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Membresía</span>
+    </div>
+    <div style="position:relative;height:220px;display:flex;align-items:center;justify-content:center;">
+      <canvas id="chartMembresia"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Tabla paginada real (misma estructura que gerente/reportes.html) sobre
+     las ~2,150 estaciones del dataset, no solo un top-10 -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Estaciones por Viajes Iniciados</span>
+    <span style="font-size:0.8rem;color:var(--text-muted);">Página {{ pagina }} de {{ total_paginas }}</span>
+    <div class="no-print" style="display:flex;gap:8px;">
+      <a href="/gerente/analisis-citibike/excel?fecha_inicio={{ fecha_inicio }}&fecha_fin={{ fecha_fin }}&dia_semana={{ dia_semana }}&membresia={{ membresia }}&tipo_bici={{ tipo_bici }}" class="btn btn-ghost" style="font-size:0.82rem;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        Exportar Excel
+      </a>
+      <a href="/gerente/analisis-citibike/pdf?fecha_inicio={{ fecha_inicio }}&fecha_fin={{ fecha_fin }}&dia_semana={{ dia_semana }}&membresia={{ membresia }}&tipo_bici={{ tipo_bici }}" class="btn btn-ghost" style="font-size:0.82rem;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+        Exportar PDF
+      </a>
+    </div>
+  </div>
+
+  {% if estaciones %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th style="width:36px;">#</th>
+          <th>Estación</th>
+          <th style="text-align:right;">Viajes</th>
+          <th style="text-align:right;">Dur. Prom.</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set offset_n = (pagina - 1) * 25 %}
+        {% for est in estaciones %}
+        <tr>
+          <td style="color:var(--text-muted);font-size:0.8rem;">{{ offset_n + loop.index }}</td>
+          <td style="font-weight:500;font-size:0.88rem;color:var(--text);">{{ est.nombre or "—" }}</td>
+          <td style="text-align:right;font-weight:600;font-size:0.9rem;">{{ est.viajes | num }}</td>
+          <td style="text-align:right;color:var(--text-muted);font-size:0.85rem;">{{ est.dur_prom }} min</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Paginación -->
+  {% if total_paginas > 1 %}
+  <div class="no-print" style="display:flex;align-items:center;justify-content:space-between;padding:14px 0 0;border-top:1px solid var(--border);margin-top:8px;">
+    <div style="font-size:0.82rem;color:var(--text-muted);">
+      Mostrando {{ ((pagina-1)*25)+1 }}–{{ [pagina*25, total_filas] | min }} de {{ total_filas | num }}
+    </div>
+    <div style="display:flex;gap:6px;">
+      {% if pagina > 1 %}
+      <a href="?fecha_inicio={{ fecha_inicio }}&fecha_fin={{ fecha_fin }}&dia_semana={{ dia_semana }}&membresia={{ membresia }}&tipo_bici={{ tipo_bici }}&pagina={{ pagina - 1 }}"
+         class="btn btn-ghost" style="padding:6px 12px;font-size:0.8rem;">← Anterior</a>
+      {% endif %}
+      {% for p in range([1, pagina-2]|max, [total_paginas+1, pagina+3]|min) %}
+        {% if p == pagina %}
+        <span class="btn btn-primary" style="padding:6px 12px;font-size:0.8rem;cursor:default;">{{ p }}</span>
+        {% else %}
+        <a href="?fecha_inicio={{ fecha_inicio }}&fecha_fin={{ fecha_fin }}&dia_semana={{ dia_semana }}&membresia={{ membresia }}&tipo_bici={{ tipo_bici }}&pagina={{ p }}"
+           class="btn btn-ghost" style="padding:6px 12px;font-size:0.8rem;">{{ p }}</a>
+        {% endif %}
+      {% endfor %}
+      {% if pagina < total_paginas %}
+      <a href="?fecha_inicio={{ fecha_inicio }}&fecha_fin={{ fecha_fin }}&dia_semana={{ dia_semana }}&membresia={{ membresia }}&tipo_bici={{ tipo_bici }}&pagina={{ pagina + 1 }}"
+         class="btn btn-ghost" style="padding:6px 12px;font-size:0.8rem;">Siguiente →</a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% else %}
+  <div style="text-align:center;padding:48px 24px;color:var(--text-muted);">
+    <div style="font-size:0.9rem;">Sin datos para los filtros seleccionados</div>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const dowLabels = {{ dow_labels | jsonseguro }};
+const dowValues = {{ dow_values | jsonseguro }};
+const memberVal = {{ kpis.get('viajes_member', 0) }};
+const casualVal = {{ kpis.get('viajes_casual', 0) }};
+
+new Chart(document.getElementById('chartDow'), {
+  type: 'bar',
+  data: {
+    labels: dowLabels,
+    datasets: [{ label: 'Viajes', data: dowValues, backgroundColor: '#F59E0B', borderRadius: 6, borderSkipped: false }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: (ctx) => ' ' + ctx.raw.toLocaleString('es') } }
+    },
+    scales: {
+      y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { callback: v => (v/1000).toFixed(0)+'K', font: { family: 'IBM Plex Sans', size: 10 } }, beginAtZero: true },
+      x: { grid: { display: false }, ticks: { font: { family: 'IBM Plex Sans', size: 10 } } }
+    }
+  }
+});
+
+new Chart(document.getElementById('chartMembresia'), {
+  type: 'doughnut',
+  data: {
+    labels: ['Miembros', 'Casuales'],
+    datasets: [{ data: [memberVal, casualVal], backgroundColor: ['#F59E0B', '#94A3B8'], borderWidth: 0, hoverOffset: 6 }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false, cutout: '62%',
+    plugins: {
+      legend: { position: 'bottom', labels: { font: { family: 'IBM Plex Sans', size: 11 }, boxWidth: 10, padding: 10 } },
+      tooltip: { callbacks: { label: (ctx) => ' ' + ctx.raw.toLocaleString('es') } }
+    }
+  }
+});
+
+</script>
+{% endblock %}

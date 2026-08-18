@@ -5,12 +5,20 @@
 {% block content %}
 {% if error %}<div class="flash error" style="margin-bottom:20px;">
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-  Error PocketBase: {{ error }}</div>{% endif %}
+  {{ error }}</div>{% endif %}
 
 <div class="card">
   <div class="card-header">
     <span class="card-title">Flota de bicicletas <span class="text-muted text-sm">({{ items | length }})</span></span>
-    <div class="flex gap-2" style="align-items:center;">
+    <div class="flex gap-2 header-controles" style="align-items:center;">
+      <a href="/admin/bicicletas/excel" class="btn btn-ghost" style="font-size:0.8rem;padding:7px 14px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
+        Excel
+      </a>
+      <a href="/admin/bicicletas/pdf" class="btn btn-ghost" style="font-size:0.8rem;padding:7px 14px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+        PDF
+      </a>
       <input type="search" class="form-input" placeholder="Buscar..." style="width:auto;font-size:0.8rem;padding:6px 10px;" oninput="filtrarTabla(this, 'tabla-bicicletas')">
     <button class="btn btn-primary" onclick="document.getElementById('modal-crear').showModal()">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -20,13 +28,13 @@
   </div>
   <div class="table-wrap">
     <table id="tabla-bicicletas">
-      <thead><tr><th></th><th>Código</th><th>Tipo</th><th>Estado</th><th>Estación</th><th>Notas</th><th style="width:130px;"></th></tr></thead>
+      <thead><tr><th></th><th>Código</th><th>Marca</th><th>Modelo</th><th>Categoría</th><th>Estado</th><th>Estación</th><th style="width:130px;"></th></tr></thead>
       <tbody>
         {% for b in items %}
         <tr>
           <td>
-            {% if b.foto %}
-            <img src="{{ file_url('bicicletas', b.id, b.foto, '64x48') }}" alt="{{ b.codigo }}" style="width:64px;height:48px;object-fit:cover;border-radius:6px;border:1px solid var(--border);">
+            {% if b.foto_url %}
+            <img src="{{ b.foto_url }}?thumb=64x48" alt="{{ b.codigo }}" data-lightbox data-full="{{ b.foto_url }}" style="width:64px;height:48px;object-fit:cover;border-radius:6px;border:1px solid var(--border);">
             {% else %}
             <div style="width:64px;height:48px;display:flex;align-items:center;justify-content:center;background:var(--bg-soft);border-radius:6px;border:1px solid var(--border);color:var(--text-muted);">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm-9.5 11.5L9 10l4 4 4-4 4 7.5M9 10l-1-3h-3"/></svg>
@@ -34,34 +42,37 @@
             {% endif %}
           </td>
           <td class="font-semibold" style="font-family:'Sora',sans-serif;">{{ b.codigo or "—" }}</td>
-          <td>{% if b.tipo == "electric_bike" %}<span class="badge badge-blue">Eléctrica</span>{% else %}<span class="badge badge-gray">Clásica</span>{% endif %}</td>
+          <td>{{ b.marca }}</td>
+          <td>{{ b.modelo }}</td>
+          <td><span class="badge {% if b.es_premium %}badge-blue{% else %}badge-gray{% endif %}">{{ b.categoria }}</span></td>
           <td>
             {% if b.estado == "disponible" %}<span class="badge badge-green">Disponible</span>
             {% elif b.estado == "en_uso" %}<span class="badge badge-blue">En uso</span>
             {% elif b.estado == "mantenimiento" %}<span class="badge badge-yellow">Mantenimiento</span>
             {% else %}<span class="badge badge-red">Retirada</span>{% endif %}
           </td>
-          <td class="text-muted text-sm">{{ b.estacion or "—" }}</td>
-          <td class="text-muted text-xs">{{ b.notas or "—" }}</td>
+          <td class="text-muted text-sm">{{ b.estacion_nombre or "—" }}</td>
           <td>
             <div class="flex gap-2">
-              <button class="btn btn-ghost" style="padding:4px 10px;font-size:0.75rem;"
+              <button class="btn btn-ghost" style="padding:4px 10px;font-size:0.8rem;"
                 data-id="{{ b.id }}"
                 data-codigo="{{ b.codigo | default('') | e }}"
-                data-tipo="{{ b.tipo | default('classic_bike') | e }}"
+                data-id_modelo="{{ b.id_modelo | default('') | e }}"
                 data-estado="{{ b.estado | default('disponible') | e }}"
-                data-estacion="{{ b.estacion | default('') | e }}"
-                data-notas="{{ b.notas | default('') | e }}"
-                data-foto="{{ file_url('bicicletas', b.id, b.foto) }}"
+                data-id_estacion="{{ b.id_estacion | default('') | e }}"
+                data-numero_serie="{{ b.numero_serie | default('') | e }}"
+                data-fecha_adquisicion="{{ b.fecha_adquisicion | default('') | e }}"
+                data-observacion="{{ b.observacion | default('') | e }}"
+                data-foto="{{ b.foto_url | default('') | e }}"
                 onclick="openEdit(this)">Editar</button>
-              <button class="btn btn-ghost" style="padding:4px 10px;font-size:0.75rem;color:#EF4444;border-color:rgba(239,68,68,0.35);"
+              <button class="btn btn-ghost" style="padding:4px 10px;font-size:0.8rem;color:#EF4444;border-color:rgba(239,68,68,0.35);"
                 data-id="{{ b.id }}" data-label="{{ b.codigo | default(b.id) | e }}"
                 onclick="openDel(this)">Eliminar</button>
             </div>
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="7" style="text-align:center;padding:48px;color:var(--text-muted);">No hay bicicletas registradas.</td></tr>
+        <tr><td colspan="8" style="text-align:center;padding:48px;color:var(--text-muted);">No hay bicicletas registradas.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -71,30 +82,36 @@
 <dialog id="modal-crear">
   <div class="modal-card">
     <div class="modal-header"><span class="card-title">Nueva bicicleta</span>
-      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-crear').close()">✕</button></div>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-crear').close()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <form method="post" action="/admin/bicicletas/crear" enctype="multipart/form-data">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-        <div class="form-group"><label class="form-label">Código *</label>
-          <input class="form-input" type="text" name="codigo" required placeholder="UB-001"></div>
-        <div class="form-group"><label class="form-label">Tipo *</label>
-          <select class="form-input" name="tipo" required>
-            <option value="classic_bike">Clásica</option>
-            <option value="electric_bike">Eléctrica</option></select></div>
-      </div>
-      <div class="form-group"><label class="form-label">Estado *</label>
-        <select class="form-input" name="estado" required>
-          <option value="disponible">Disponible</option><option value="en_uso">En uso</option>
-          <option value="mantenimiento">Mantenimiento</option><option value="retirada">Retirada</option></select></div>
-      <div class="form-group"><label class="form-label">Estación</label>
-        <select class="form-input" name="estacion">
-          <option value="">Sin asignar</option>
-          {% for e in estaciones %}<option value="{{ e.nombre }}">{{ e.nombre }}</option>{% endfor %}
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <div class="form-group"><label class="form-label">Modelo *</label>
+        <select class="form-input" name="id_modelo" required>
+          {% for m in modelos %}<option value="{{ m.id }}">{{ m.label }}</option>{% endfor %}
         </select></div>
-      <div class="form-group"><label class="form-label">Notas</label>
-        <input class="form-input" type="text" name="notas" placeholder="Observaciones opcionales"></div>
+      <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group"><label class="form-label">Estado *</label>
+          <select class="form-input" name="estado" required>
+            <option value="disponible">Disponible</option><option value="en_uso">En uso</option>
+            <option value="mantenimiento">Mantenimiento</option><option value="retirada">Retirada</option></select></div>
+        <div class="form-group"><label class="form-label">Estación</label>
+          <select class="form-input" name="id_estacion">
+            <option value="">Sin asignar</option>
+            {% for e in estaciones %}<option value="{{ e.id }}">{{ e.nombre }}</option>{% endfor %}
+          </select></div>
+      </div>
+      <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group"><label class="form-label">Número de serie</label>
+          <input class="form-input" type="text" name="numero_serie"></div>
+        <div class="form-group"><label class="form-label">Fecha de adquisición</label>
+          <input class="form-input" type="date" name="fecha_adquisicion"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Observación</label>
+        <input class="form-input" type="text" name="observacion" placeholder="Observaciones opcionales"></div>
       <div class="form-group"><label class="form-label">Foto (JPG/PNG, máx. 3MB)</label>
         <input class="form-input" type="file" name="foto" accept="image/jpeg,image/png"></div>
-      <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;">
+      <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;">El código se genera automáticamente (UB-###).</div>
+      <div class="flex gap-2" style="justify-content:flex-end;margin-top:16px;">
         <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-crear').close()">Cancelar</button>
         <button type="submit" class="btn btn-primary">Crear</button></div>
     </form>
@@ -104,33 +121,41 @@
 <dialog id="modal-editar">
   <div class="modal-card">
     <div class="modal-header"><span class="card-title">Editar bicicleta</span>
-      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-editar').close()">✕</button></div>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-editar').close()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <form method="post" id="form-editar" enctype="multipart/form-data">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-        <div class="form-group"><label class="form-label">Código</label>
-          <input class="form-input" type="text" name="codigo" id="edit-codigo"></div>
-        <div class="form-group"><label class="form-label">Tipo</label>
-          <select class="form-input" name="tipo" id="edit-tipo">
-            <option value="classic_bike">Clásica</option><option value="electric_bike">Eléctrica</option></select></div>
-      </div>
-      <div class="form-group"><label class="form-label">Estado</label>
-        <select class="form-input" name="estado" id="edit-estado">
-          <option value="disponible">Disponible</option><option value="en_uso">En uso</option>
-          <option value="mantenimiento">Mantenimiento</option><option value="retirada">Retirada</option></select></div>
-      <div class="form-group"><label class="form-label">Estación</label>
-        <select class="form-input" name="estacion" id="edit-estacion">
-          <option value="">Sin asignar</option>
-          {% for e in estaciones %}<option value="{{ e.nombre }}">{{ e.nombre }}</option>{% endfor %}
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <div class="form-group"><label class="form-label">Código</label>
+        <input class="form-input" type="text" name="codigo" id="edit-codigo"></div>
+      <div class="form-group"><label class="form-label">Modelo</label>
+        <select class="form-input" name="id_modelo" id="edit-id_modelo">
+          {% for m in modelos %}<option value="{{ m.id }}">{{ m.label }}</option>{% endfor %}
         </select></div>
-      <div class="form-group"><label class="form-label">Notas</label>
-        <input class="form-input" type="text" name="notas" id="edit-notas"></div>
+      <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group"><label class="form-label">Estado</label>
+          <select class="form-input" name="estado" id="edit-estado">
+            <option value="disponible">Disponible</option><option value="en_uso">En uso</option>
+            <option value="mantenimiento">Mantenimiento</option><option value="retirada">Retirada</option></select></div>
+        <div class="form-group"><label class="form-label">Estación</label>
+          <select class="form-input" name="id_estacion" id="edit-id_estacion">
+            <option value="">Sin asignar</option>
+            {% for e in estaciones %}<option value="{{ e.id }}">{{ e.nombre }}</option>{% endfor %}
+          </select></div>
+      </div>
+      <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group"><label class="form-label">Número de serie</label>
+          <input class="form-input" type="text" name="numero_serie" id="edit-numero_serie"></div>
+        <div class="form-group"><label class="form-label">Fecha de adquisición</label>
+          <input class="form-input" type="date" name="fecha_adquisicion" id="edit-fecha_adquisicion"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Observación</label>
+        <input class="form-input" type="text" name="observacion" id="edit-observacion"></div>
       <div class="form-group">
         <label class="form-label">Foto actual</label>
         <div id="edit-foto-preview" style="margin-bottom:8px;"></div>
         <label class="form-label">Reemplazar foto (JPG/PNG, máx. 3MB)</label>
         <input class="form-input" type="file" name="foto" id="edit-foto" accept="image/jpeg,image/png">
       </div>
-      <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;">
+      <div class="flex gap-2" style="justify-content:flex-end;margin-top:16px;">
         <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-editar').close()">Cancelar</button>
         <button type="submit" class="btn btn-primary">Guardar cambios</button></div>
     </form>
@@ -140,8 +165,9 @@
 <dialog id="modal-eliminar">
   <div class="modal-card">
     <div class="modal-header"><span class="card-title" style="color:#EF4444;">Eliminar bicicleta</span></div>
-    <p style="color:var(--text-muted);margin-bottom:20px;">¿Eliminar la bicicleta <strong id="del-label" style="color:var(--text);"></strong>? Esta acción no se puede deshacer.</p>
+    <p style="color:var(--text-muted);margin-bottom:20px;">¿Eliminar la bicicleta <strong id="del-label" style="color:var(--text);"></strong>? Si tiene alquileres reales asociados, la eliminación será rechazada.</p>
     <form method="post" id="form-eliminar">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
       <div class="flex gap-2" style="justify-content:flex-end;">
         <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-eliminar').close()">Cancelar</button>
         <button type="submit" class="btn btn-primary" style="background:#EF4444;border-color:#EF4444;">Eliminar</button></div>
@@ -154,16 +180,18 @@
 <script>
 function openEdit(btn) {
   const d = btn.dataset;
-  document.getElementById('form-editar').action  = '/admin/bicicletas/' + d.id + '/editar';
-  document.getElementById('edit-codigo').value   = d.codigo;
-  document.getElementById('edit-tipo').value     = d.tipo;
-  document.getElementById('edit-estado').value   = d.estado;
-  document.getElementById('edit-estacion').value = d.estacion;
-  document.getElementById('edit-notas').value    = d.notas;
-  document.getElementById('edit-foto').value     = '';
+  document.getElementById('form-editar').action     = '/admin/bicicletas/' + d.id + '/editar';
+  document.getElementById('edit-codigo').value       = d.codigo;
+  document.getElementById('edit-id_modelo').value    = d.id_modelo;
+  document.getElementById('edit-estado').value       = d.estado;
+  document.getElementById('edit-id_estacion').value  = d.id_estacion;
+  document.getElementById('edit-numero_serie').value = d.numero_serie;
+  document.getElementById('edit-fecha_adquisicion').value = d.fecha_adquisicion;
+  document.getElementById('edit-observacion').value  = d.observacion;
+  document.getElementById('edit-foto').value = '';
   const preview = document.getElementById('edit-foto-preview');
   preview.innerHTML = d.foto
-    ? '<img src="' + d.foto + '?thumb=120x90" style="width:120px;height:90px;object-fit:cover;border-radius:6px;border:1px solid var(--border);">'
+    ? '<img src="' + d.foto + '?thumb=120x90" data-lightbox data-full="' + d.foto + '" style="width:120px;height:90px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:zoom-in;">'
     : '<span class="text-muted text-sm">Sin foto asignada</span>';
   document.getElementById('modal-editar').showModal();
 }

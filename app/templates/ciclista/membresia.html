@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Membresía{% endblock %}
+{% block page_title %}Membresía{% endblock %}
+
+{% block content %}
+
+<div class="card" style="max-width:480px;">
+  <div class="card-header">
+    <span class="card-title">Tu membresía</span>
+  </div>
+
+  {% if not ch_ok %}
+  <div style="text-align:center;padding:40px 24px;">
+    <div style="font-size:0.88rem;color:var(--text-muted);">No se pudo cargar el estado de tu membresía. Intenta de nuevo en un momento.</div>
+  </div>
+  {% else %}
+
+  <div style="margin-bottom:20px;">
+    {% if activa %}
+      <span class="badge badge-green">Activa</span>
+      <div style="margin-top:10px;font-size:0.9rem;color:var(--text);">
+        Vence el <strong>{{ estado.fecha_fin }}</strong>. Mientras esté activa, pagas precio member en todo el catálogo.
+      </div>
+    {% elif estado and estado.estado == 'cancelada' %}
+      <span class="badge badge-gray">Cancelada</span>
+      <div style="margin-top:10px;font-size:0.9rem;color:var(--text);">
+        Cancelaste tu membresía. Ahora mismo estás pagando precio casual — actívala de nuevo cuando quieras.
+      </div>
+    {% elif estado %}
+      <span class="badge badge-yellow">Vencida</span>
+      <div style="margin-top:10px;font-size:0.9rem;color:var(--text);">
+        Tu membresía venció el {{ estado.fecha_fin }}. Ahora mismo estás pagando precio casual — actívala de nuevo cuando quieras.
+      </div>
+    {% else %}
+      <span class="badge badge-gray">Sin membresía</span>
+      <div style="margin-top:10px;font-size:0.9rem;color:var(--text);">
+        Nunca has tenido una membresía. Actívala para pagar precio member en cada alquiler.
+      </div>
+    {% endif %}
+  </div>
+
+  <div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:20px;">
+    <div style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:4px;">Precio de la membresía mensual</div>
+    <div style="font-family:'Sora',sans-serif;font-weight:700;font-size:1.4rem;color:var(--text);">USD {{ "%.2f" | format(precio) }}<span style="font-size:0.8125rem;font-weight:500;color:var(--text-muted);"> / 30 días</span></div>
+  </div>
+
+  {% if not activa %}
+  <a href="/ciclista/membresia/pagar" class="btn btn-primary w-full">
+    {% if estado %}Renovar membresía — USD {{ "%.2f" | format(precio) }}{% else %}Activar membresía — USD {{ "%.2f" | format(precio) }}{% endif %}
+  </a>
+  <div style="font-size:0.8125rem;color:var(--text-muted);margin-top:10px;text-align:center;">
+    Sistema de pago simulado con fines académicos — ningún cargo real se procesa.
+  </div>
+  {% else %}
+  <form method="post" action="/ciclista/membresia/cancelar"
+        data-ub-confirm="¿Cancelar tu membresía? Si el cobro fue hace 48 horas o menos, se simula un reembolso. El beneficio se quita de inmediato."
+        data-ub-titulo="Cancelar membresía" data-ub-peligro>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <button type="submit" class="btn btn-ghost w-full" style="color:#EF4444;border-color:rgba(239,68,68,0.35);">
+      Cancelar membresía
+    </button>
+  </form>
+  <div style="font-size:0.8125rem;color:var(--text-muted);margin-top:10px;text-align:center;">
+    Reembolso simulado solo si cancelas dentro de las 48 horas desde el cobro.
+  </div>
+  {% endif %}
+
+  {% endif %}
+</div>
+
+{% endblock %}

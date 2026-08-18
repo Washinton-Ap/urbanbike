@@ -1,0 +1,110 @@
+{# ─────────────────────────────────────────────────────────────────────────
+   Componente: checklist de devolución por categoría (línea de ruta vertical)
+   Ver docs/REDISENO_UI.md → "Componente 2: checklist de devolución por
+   categoría". Mismo lenguaje visual que componentes/flujo_alquiler.html.
+
+   Variables esperadas en el contexto al incluir este parcial:
+     categorias        — lista de 6 dicts: {slug, etiqueta, estado}
+                          estado: completa | en_revision | pendiente
+     categoria_activa  — slug de la categoría mostrada en la columna derecha
+     items_por_categoria — dict slug -> lista de items:
+                          {codigo, nombre, resultado}
+                          resultado: ok | dano_leve | dano_grave | faltante
+     items_revisados   — int, para el anillo de progreso
+     items_totales      — int, para el anillo de progreso
+   ───────────────────────────────────────────────────────────────────────── #}
+
+{% set porcentaje = ((items_revisados / items_totales * 100) | round | int) if items_totales else 0 %}
+{% set circunferencia = 2 * 3.14159265 * 46 %}
+{% set avance_offset = circunferencia - (circunferencia * porcentaje / 100) %}
+
+<div class="checklist-devolucion">
+
+  <div class="checklist-columna-izq">
+    <div class="checklist-anillo">
+      <svg width="120" height="120" viewBox="0 0 120 120">
+        <circle cx="60" cy="60" r="46" fill="none" stroke="var(--border)" stroke-width="10"/>
+        <circle cx="60" cy="60" r="46" fill="none" stroke="var(--primary)" stroke-width="10"
+                stroke-linecap="round" stroke-dasharray="{{ circunferencia }}"
+                stroke-dashoffset="{{ avance_offset }}"
+                transform="rotate(-90 60 60)"/>
+      </svg>
+      <div class="checklist-anillo-texto">
+        <span class="checklist-anillo-pct">{{ porcentaje }}%</span>
+        <span class="checklist-anillo-label">avance</span>
+      </div>
+    </div>
+
+    <div class="checklist-categorias">
+      {% for cat in categorias %}
+      <a class="checklist-categoria {% if cat.slug == categoria_activa %}activa{% endif %}"
+         href="#{{ cat.slug }}" data-categoria="{{ cat.slug }}">
+        <span class="checklist-categoria-nodo {{ cat.estado }}">
+          {% if cat.slug == "frenos" %}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>
+          {% elif cat.slug == "transmision" %}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          {% elif cat.slug == "ruedas" %}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2"/></svg>
+          {% elif cat.slug == "luces" %}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="6"/><line x1="9" y1="21" x2="15" y2="21"/><line x1="10" y1="17" x2="10" y2="21"/><line x1="14" y1="17" x2="14" y2="21"/></svg>
+          {% elif cat.slug == "cuadro" %}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z"/></svg>
+          {% else %}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8V6a6 6 0 0 1 12 0v2"/><rect x="3" y="8" width="18" height="13" rx="2"/></svg>
+          {% endif %}
+        </span>
+        <span class="checklist-categoria-etiqueta">{{ cat.etiqueta }}</span>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="checklist-columna-der">
+    <div class="checklist-items-cabecera">
+      <span>Ítem</span>
+      <span>Resultado</span>
+    </div>
+    {% for cat in categorias %}
+    <div class="checklist-panel-items {% if cat.slug != categoria_activa %}oculto{% endif %}" data-panel="{{ cat.slug }}">
+      {% for item in items_por_categoria.get(cat.slug, []) %}
+      <div class="checklist-item-fila">
+        <div>
+          <span class="checklist-item-codigo">{{ item.codigo }}</span>
+          <span class="checklist-item-nombre">{{ item.nombre }}</span>
+        </div>
+        {% if item.resultado == "ok" %}
+        <span class="badge badge-green">Correcto</span>
+        {% elif item.resultado == "dano_leve" %}
+        <span class="badge badge-yellow">Daño leve</span>
+        {% elif item.resultado == "dano_grave" %}
+        <span class="badge badge-red">Daño grave</span>
+        {% else %}
+        <span class="badge badge-red">Faltante</span>
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="checklist-items-vacio">Esta categoría todavía no se ha revisado.</div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+
+</div>
+
+<script>
+(function () {
+  document.querySelectorAll('.checklist-categoria').forEach(function (link) {
+    link.addEventListener('click', function (e) {
+      e.preventDefault();
+      var slug = link.dataset.categoria;
+      var raiz = link.closest('.checklist-devolucion');
+      raiz.querySelectorAll('.checklist-categoria').forEach(function (l) { l.classList.remove('activa'); });
+      link.classList.add('activa');
+      raiz.querySelectorAll('.checklist-panel-items').forEach(function (p) {
+        p.classList.toggle('oculto', p.dataset.panel !== slug);
+      });
+    });
+  });
+})();
+</script>

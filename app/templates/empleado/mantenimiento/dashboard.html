@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Dashboard — Mantenimiento{% endblock %}
 {% block page_title %}Dashboard — Mantenimiento{% endblock %}
+{% block back_url %}{% endblock %}
 
 {% block content %}
 
@@ -28,58 +29,58 @@
   </div>
 </div>
 
-<!-- Gráfica tipo de bicicleta en mantenimiento -->
+<!-- Patron F: banda 2 (grafica + tabla), cada una en su propia fila -->
 {% if total_mnt > 0 %}
-<div style="display:grid;grid-template-columns:1fr 2fr;gap:16px;margin-bottom:16px;">
-  <div class="card">
-    <div class="card-header">
-      <span class="card-title">Por Tipo</span>
-    </div>
-    <div style="position:relative;height:160px;display:flex;align-items:center;justify-content:center;">
-      <canvas id="chartTipo"></canvas>
-    </div>
-  </div>
+<div style="font-size:0.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">Bicicletas en mantenimiento</div>
 
-  <div class="card">
-    <div class="card-header">
-      <span class="card-title">Bicicletas pendientes</span>
-      <a href="/empleado/mantenimiento/bicicletas" style="font-size:0.8rem;color:#1E86BD;text-decoration:none;">Ver todas</a>
-    </div>
-    <div class="table-wrap">
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Código</th>
-            <th>Tipo</th>
-            <th>Estación</th>
-            <th>Notas</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for b in en_mnt[:6] %}
-          <tr>
-            <td style="font-weight:600;font-family:monospace;color:var(--text);">{{ b.codigo }}</td>
-            <td>
-              {% if b.tipo == 'electric_bike' %}
-                <span class="badge badge-green">Eléctrica</span>
-              {% else %}
-                <span class="badge badge-blue">Clásica</span>
-              {% endif %}
-            </td>
-            <td style="color:var(--text-muted);font-size:0.85rem;">{{ b.estacion or '—' }}</td>
-            <td style="color:var(--text-muted);font-size:0.82rem;">{{ b.notas or '—' }}</td>
-          </tr>
-          {% endfor %}
-          {% if en_mnt | length > 6 %}
-          <tr>
-            <td colspan="4" style="text-align:center;font-size:0.8rem;color:var(--text-muted);padding:10px;">
-              + {{ en_mnt | length - 6 }} más — <a href="/empleado/mantenimiento/bicicletas" style="color:#1E86BD;">ver todas</a>
-            </td>
-          </tr>
-          {% endif %}
-        </tbody>
-      </table>
-    </div>
+<div class="card" style="margin-bottom:16px;">
+  <div class="card-header">
+    <span class="card-title">Por Tipo</span>
+  </div>
+  <div style="position:relative;height:160px;display:flex;align-items:center;justify-content:center;">
+    <canvas id="chartTipo"></canvas>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:16px;">
+  <div class="card-header">
+    <span class="card-title">Bicicletas pendientes</span>
+    <a href="/empleado/mantenimiento/bicicletas" style="font-size:0.8rem;color:#1E86BD;text-decoration:none;">Ver todas</a>
+  </div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Código</th>
+          <th>Tipo</th>
+          <th>Estación</th>
+          <th>Notas</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in en_mnt[:6] %}
+        <tr>
+          <td style="font-weight:600;font-family:monospace;color:var(--text);">{{ b.codigo }}</td>
+          <td>
+            {% if b.tipo == 'electric_bike' %}
+              <span class="badge badge-green">Eléctrica</span>
+            {% else %}
+              <span class="badge badge-blue">Clásica</span>
+            {% endif %}
+          </td>
+          <td style="color:var(--text-muted);font-size:0.85rem;">{{ b.estacion or '—' }}</td>
+          <td style="color:var(--text-muted);font-size:0.82rem;">{{ b.notas or '—' }}</td>
+        </tr>
+        {% endfor %}
+        {% if en_mnt | length > 6 %}
+        <tr>
+          <td colspan="4" style="text-align:center;font-size:0.8rem;color:var(--text-muted);padding:10px;">
+            + {{ en_mnt | length - 6 }} más — <a href="/empleado/mantenimiento/bicicletas" style="color:#1E86BD;">ver todas</a>
+          </td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
   </div>
 </div>
 {% else %}
@@ -94,9 +95,11 @@
 </div>
 {% endif %}
 
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px;">
+<!-- Patron F: banda final (accesos) -->
+<div style="font-size:0.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;margin-top:8px;">Accesos rápidos</div>
+<div class="dashboard-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
   <a href="/empleado/mantenimiento/ordenes" style="text-decoration:none;">
-    <div class="card" style="cursor:pointer;transition:box-shadow 0.15s,transform 0.15s;" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 16px rgba(30,134,189,0.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
+    <div class="card card-clickeable">
       <div style="display:flex;align-items:center;gap:14px;">
         <div style="width:40px;height:40px;border-radius:10px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -109,7 +112,7 @@
     </div>
   </a>
   <a href="/empleado/mantenimiento/bicicletas" style="text-decoration:none;">
-    <div class="card" style="cursor:pointer;transition:box-shadow 0.15s,transform 0.15s;" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 16px rgba(30,134,189,0.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
+    <div class="card card-clickeable">
       <div style="display:flex;align-items:center;gap:14px;">
         <div style="width:40px;height:40px;border-radius:10px;background:rgba(245,158,11,0.12);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 0 0 0-2h-3l-1 5.5M5.5 17.5 9 8l3 5h6"/></svg>
@@ -129,8 +132,8 @@
 {% if total_mnt > 0 %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-const tipoLabels = {{ chart_labels | safe }};
-const tipoValues = {{ chart_values | safe }};
+const tipoLabels = {{ chart_labels | jsonseguro }};
+const tipoValues = {{ chart_values | jsonseguro }};
 
 if (tipoValues.some(v => v > 0)) {
   new Chart(document.getElementById('chartTipo'), {

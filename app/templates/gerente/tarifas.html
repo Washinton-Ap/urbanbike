@@ -3,14 +3,19 @@
 {% block page_title %}Gestión de Tarifas{% endblock %}
 
 {% block content %}
-{% if error %}<div class="flash error" style="margin-bottom:20px;">
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-  Error PocketBase: {{ error }}</div>{% endif %}
 
 <div class="card">
   <div class="card-header">
     <span class="card-title">Tabla de tarifas <span class="text-muted text-sm">({{ items | length }})</span></span>
-    <div class="flex gap-2" style="align-items:center;">
+    <div class="flex gap-2 header-controles" style="align-items:center;">
+      <a href="/gerente/tarifas/excel" class="btn btn-ghost" style="font-size:0.8rem;padding:7px 14px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
+        Excel
+      </a>
+      <a href="/gerente/tarifas/pdf" class="btn btn-ghost" style="font-size:0.8rem;padding:7px 14px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+        PDF
+      </a>
       <input type="search" class="form-input" placeholder="Buscar..." style="width:auto;font-size:0.8rem;padding:6px 10px;" oninput="filtrarTabla(this, 'tabla-tarifas')">
       <button class="btn btn-primary" onclick="document.getElementById('modal-crear').showModal()">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -20,38 +25,39 @@
   </div>
   <div class="table-wrap">
     <table id="tabla-tarifas">
-      <thead><tr><th>Tipo bicicleta</th><th>Tipo usuario</th><th>Precio / hora</th><th>Estado</th><th>Creado</th><th style="width:220px;"></th></tr></thead>
+      <thead><tr><th>Categoría</th><th>Membresía</th><th>Modalidad</th><th>Precio</th><th>Vigencia</th><th>Estado</th><th style="width:220px;"></th></tr></thead>
       <tbody>
         {% for t in items %}
         <tr>
-          <td>{% if t.tipo_bicicleta == "electric_bike" %}<span class="badge badge-blue">Eléctrica</span>{% else %}<span class="badge badge-gray">Clásica</span>{% endif %}</td>
-          <td>{% if t.tipo_usuario == "member" %}<span class="badge badge-green">Miembro</span>{% else %}<span class="badge badge-yellow">Casual</span>{% endif %}</td>
-          <td class="font-semibold" style="font-family:'Sora',sans-serif;">${{ "%.2f" | format(t.precio_hora | float) }}</td>
-          <td>{% if t.activa %}<span class="badge badge-green">Activa</span>{% else %}<span class="badge badge-gray">Inactiva</span>{% endif %}</td>
-          <td class="text-muted text-xs">{{ t.created[:10] if t.created else "—" }}</td>
+          <td><span class="badge {% if t.categoria == 'Premium' %}badge-blue{% else %}badge-gray{% endif %}">{{ t.categoria }}</span></td>
+          <td>{% if t.tipo_membresia == "member" %}<span class="badge badge-green">Miembro</span>{% else %}<span class="badge badge-yellow">Casual</span>{% endif %}</td>
+          <td style="text-transform:capitalize;">{{ t.modalidad }}</td>
+          <td class="font-semibold" style="font-family:'Sora',sans-serif;">${{ "%.2f" | format(t.precio) }}</td>
+          <td class="text-muted text-xs">{{ t.vigente_desde }} → {{ t.vigente_hasta }}</td>
+          <td>{% if t.estado == 'vigente' %}<span class="badge badge-green">Vigente</span>{% else %}<span class="badge badge-gray">Histórica</span>{% endif %}</td>
           <td>
             <div class="flex gap-2">
-              <button class="btn btn-ghost" style="padding:4px 10px;font-size:0.75rem;"
+              <button class="btn btn-ghost" style="padding:4px 10px;font-size:0.8rem;"
                 data-id="{{ t.id }}"
-                data-tipo-bicicleta="{{ t.tipo_bicicleta | default('classic_bike') | e }}"
-                data-tipo-usuario="{{ t.tipo_usuario | default('casual') | e }}"
-                data-precio="{{ t.precio_hora | default('0') }}"
-                data-activa="{{ 'true' if t.activa else 'false' }}"
+                data-id-categoria="{{ t.id_categoria }}"
+                data-tipo-membresia="{{ t.tipo_membresia }}"
+                data-modalidad="{{ t.modalidad }}"
+                data-precio="{{ t.precio }}"
+                data-minutos-gracia="{{ t.minutos_gracia }}"
+                data-recargo-minuto="{{ t.recargo_minuto }}"
+                data-vigente-desde="{{ t.vigente_desde }}"
+                data-vigente-hasta="{{ t.vigente_hasta }}"
+                data-estado="{{ t.estado }}"
                 onclick="openEdit(this)">Editar</button>
-              <form method="post" action="/gerente/tarifas/{{ t.id }}/toggleactiva" style="display:inline;">
-                <button type="submit" class="btn btn-ghost" style="padding:4px 10px;font-size:0.75rem;">
-                  {{ "Desactivar" if t.activa else "Activar" }}
-                </button>
-              </form>
-              <button class="btn btn-ghost" style="padding:4px 10px;font-size:0.75rem;color:#EF4444;border-color:rgba(239,68,68,0.35);"
+              <button class="btn btn-ghost" style="padding:4px 10px;font-size:0.8rem;color:#EF4444;border-color:rgba(239,68,68,0.35);"
                 data-id="{{ t.id }}"
-                data-label="{{ (t.tipo_bicicleta ~ ' / ' ~ t.tipo_usuario) | e }}"
+                data-label="{{ (t.categoria ~ ' / ' ~ t.tipo_membresia ~ ' / ' ~ t.modalidad) | e }}"
                 onclick="openDel(this)">Eliminar</button>
             </div>
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="6" style="text-align:center;padding:48px;color:var(--text-muted);">No hay tarifas configuradas.</td></tr>
+        <tr><td colspan="7" style="text-align:center;padding:48px;color:var(--text-muted);">No hay tarifas configuradas.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -61,21 +67,34 @@
 <dialog id="modal-crear">
   <div class="modal-card">
     <div class="modal-header"><span class="card-title">Nueva tarifa</span>
-      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-crear').close()">✕</button></div>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-crear').close()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <form method="post" action="/gerente/tarifas/crear">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-        <div class="form-group"><label class="form-label">Tipo de bicicleta *</label>
-          <select class="form-input" name="tipo_bicicleta" required>
-            <option value="classic_bike">Clásica</option><option value="electric_bike">Eléctrica</option></select></div>
-        <div class="form-group"><label class="form-label">Tipo de usuario *</label>
-          <select class="form-input" name="tipo_usuario" required>
-            <option value="casual">Casual</option><option value="member">Miembro</option></select></div>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group"><label class="form-label">Categoría *</label>
+          <select class="form-input" name="id_categoria" required>
+            {% for c in categorias %}<option value="{{ c.id }}">{{ c.nombre }}</option>{% endfor %}
+          </select></div>
+        <div class="form-group"><label class="form-label">Membresía *</label>
+          <select class="form-input" name="tipo_membresia" required>
+            <option value="member">Miembro</option><option value="casual">Casual</option></select></div>
+        <div class="form-group"><label class="form-label">Modalidad *</label>
+          <select class="form-input" name="modalidad" required>
+            <option value="hora">Hora</option><option value="dia">Día</option><option value="semana">Semana</option></select></div>
+        <div class="form-group"><label class="form-label">Precio (USD) *</label>
+          <input class="form-input" type="number" name="precio" required min="0.01" step="0.01" placeholder="3.50"></div>
+        <div class="form-group"><label class="form-label">Minutos de gracia</label>
+          <input class="form-input" type="number" name="minutos_gracia" min="0" value="0"></div>
+        <div class="form-group"><label class="form-label">Recargo por minuto excedente</label>
+          <input class="form-input" type="number" name="recargo_minuto" min="0" step="0.01" value="0"></div>
+        <div class="form-group"><label class="form-label">Vigente desde *</label>
+          <input class="form-input" type="date" name="vigente_desde" required></div>
+        <div class="form-group"><label class="form-label">Vigente hasta</label>
+          <input class="form-input" type="date" name="vigente_hasta" value="2099-12-31"></div>
+        <div class="form-group"><label class="form-label">Estado</label>
+          <select class="form-input" name="estado">
+            <option value="vigente">Vigente</option><option value="historica">Histórica</option></select></div>
       </div>
-      <div class="form-group"><label class="form-label">Precio por hora (USD) *</label>
-        <input class="form-input" type="number" name="precio_hora" required min="0.01" step="0.01" placeholder="3.50"></div>
-      <div class="form-group"><label class="form-label">Estado</label>
-        <select class="form-input" name="activa">
-          <option value="true">Activa</option><option value="false">Inactiva</option></select></div>
       <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;">
         <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-crear').close()">Cancelar</button>
         <button type="submit" class="btn btn-primary">Crear</button></div>
@@ -86,21 +105,34 @@
 <dialog id="modal-editar">
   <div class="modal-card">
     <div class="modal-header"><span class="card-title">Editar tarifa</span>
-      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-editar').close()">✕</button></div>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-editar').close()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <form method="post" id="form-editar">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-        <div class="form-group"><label class="form-label">Tipo de bicicleta</label>
-          <select class="form-input" name="tipo_bicicleta" id="edit-tipo-bicicleta">
-            <option value="classic_bike">Clásica</option><option value="electric_bike">Eléctrica</option></select></div>
-        <div class="form-group"><label class="form-label">Tipo de usuario</label>
-          <select class="form-input" name="tipo_usuario" id="edit-tipo-usuario">
-            <option value="casual">Casual</option><option value="member">Miembro</option></select></div>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group"><label class="form-label">Categoría</label>
+          <select class="form-input" name="id_categoria" id="edit-id-categoria">
+            {% for c in categorias %}<option value="{{ c.id }}">{{ c.nombre }}</option>{% endfor %}
+          </select></div>
+        <div class="form-group"><label class="form-label">Membresía</label>
+          <select class="form-input" name="tipo_membresia" id="edit-tipo-membresia">
+            <option value="member">Miembro</option><option value="casual">Casual</option></select></div>
+        <div class="form-group"><label class="form-label">Modalidad</label>
+          <select class="form-input" name="modalidad" id="edit-modalidad">
+            <option value="hora">Hora</option><option value="dia">Día</option><option value="semana">Semana</option></select></div>
+        <div class="form-group"><label class="form-label">Precio (USD)</label>
+          <input class="form-input" type="number" name="precio" id="edit-precio" min="0.01" step="0.01"></div>
+        <div class="form-group"><label class="form-label">Minutos de gracia</label>
+          <input class="form-input" type="number" name="minutos_gracia" id="edit-minutos-gracia" min="0"></div>
+        <div class="form-group"><label class="form-label">Recargo por minuto excedente</label>
+          <input class="form-input" type="number" name="recargo_minuto" id="edit-recargo-minuto" min="0" step="0.01"></div>
+        <div class="form-group"><label class="form-label">Vigente desde</label>
+          <input class="form-input" type="date" name="vigente_desde" id="edit-vigente-desde"></div>
+        <div class="form-group"><label class="form-label">Vigente hasta</label>
+          <input class="form-input" type="date" name="vigente_hasta" id="edit-vigente-hasta"></div>
+        <div class="form-group"><label class="form-label">Estado</label>
+          <select class="form-input" name="estado" id="edit-estado">
+            <option value="vigente">Vigente</option><option value="historica">Histórica</option></select></div>
       </div>
-      <div class="form-group"><label class="form-label">Precio por hora (USD)</label>
-        <input class="form-input" type="number" name="precio_hora" id="edit-precio" min="0.01" step="0.01"></div>
-      <div class="form-group"><label class="form-label">Estado</label>
-        <select class="form-input" name="activa" id="edit-activa">
-          <option value="true">Activa</option><option value="false">Inactiva</option></select></div>
       <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;">
         <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-editar').close()">Cancelar</button>
         <button type="submit" class="btn btn-primary">Guardar cambios</button></div>
@@ -111,8 +143,9 @@
 <dialog id="modal-eliminar">
   <div class="modal-card">
     <div class="modal-header"><span class="card-title" style="color:#EF4444;">Eliminar tarifa</span></div>
-    <p style="color:var(--text-muted);margin-bottom:20px;">¿Eliminar la tarifa <strong id="del-label" style="color:var(--text);"></strong>? Esta acción no se puede deshacer.</p>
+    <p style="color:var(--text-muted);margin-bottom:20px;">¿Eliminar la tarifa <strong id="del-label" style="color:var(--text);"></strong>? Si tiene alquileres reales asociados, la eliminación va a ser rechazada; considera cambiar su estado a "Histórica" en su lugar.</p>
     <form method="post" id="form-eliminar">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
       <div class="flex gap-2" style="justify-content:flex-end;">
         <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-eliminar').close()">Cancelar</button>
         <button type="submit" class="btn btn-primary" style="background:#EF4444;border-color:#EF4444;">Eliminar</button></div>
@@ -125,11 +158,16 @@
 <script>
 function openEdit(btn) {
   const d = btn.dataset;
-  document.getElementById('form-editar').action             = '/gerente/tarifas/' + d.id + '/editar';
-  document.getElementById('edit-tipo-bicicleta').value      = d.tipoBicicleta;
-  document.getElementById('edit-tipo-usuario').value        = d.tipoUsuario;
-  document.getElementById('edit-precio').value              = d.precio;
-  document.getElementById('edit-activa').value              = d.activa;
+  document.getElementById('form-editar').action        = '/gerente/tarifas/' + d.id + '/editar';
+  document.getElementById('edit-id-categoria').value    = d.idCategoria;
+  document.getElementById('edit-tipo-membresia').value  = d.tipoMembresia;
+  document.getElementById('edit-modalidad').value       = d.modalidad;
+  document.getElementById('edit-precio').value          = d.precio;
+  document.getElementById('edit-minutos-gracia').value  = d.minutosGracia;
+  document.getElementById('edit-recargo-minuto').value  = d.recargoMinuto;
+  document.getElementById('edit-vigente-desde').value   = d.vigenteDesde;
+  document.getElementById('edit-vigente-hasta').value   = d.vigenteHasta;
+  document.getElementById('edit-estado').value          = d.estado;
   document.getElementById('modal-editar').showModal();
 }
 function openDel(btn) {

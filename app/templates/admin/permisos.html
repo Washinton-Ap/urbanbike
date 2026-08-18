@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Roles y Permisos{% endblock %}
+{% block page_title %}Roles y Permisos{% endblock %}
+
+{% block content %}
+
+<div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:16px;">
+  Cada casilla es real: se lee y se escribe directo contra <code>rol_permisos</code>.
+  Marcar otorga el permiso al rol de esa columna; desmarcar lo revoca. El cambio
+  aplica de inmediato en todo el sistema (ver <code>docs/HOJA_DE_RUTA.md</code>
+  secciones 29, 30, 38-41).
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Matriz de permisos</span>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="min-width:220px;">Permiso</th>
+          {% for rol in roles %}
+          <th style="text-align:center;white-space:nowrap;">{{ rol.nombre }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for recurso, permisos in grupos.items() %}
+        <tr style="background:var(--bg-soft);">
+          <td colspan="{{ roles | length + 1 }}" style="font-weight:700;color:var(--text);font-family:'Sora',sans-serif;font-size:0.85rem;">
+            {{ recurso_label.get(recurso, recurso) }}
+          </td>
+        </tr>
+        {% for permiso in permisos %}
+        <tr>
+          <td>
+            <span style="font-family:monospace;font-size:0.82rem;color:var(--text);">{{ permiso.codigo }}</span>
+            {% if permiso.descripcion %}
+            <div class="text-muted text-sm">{{ permiso.descripcion }}</div>
+            {% endif %}
+          </td>
+          {% for rol in roles %}
+          <td style="text-align:center;">
+            <form method="post" action="/admin/permisos/toggle" style="display:inline-block;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+              <input type="hidden" name="id_rol" value="{{ rol.id }}">
+              <input type="hidden" name="id_permiso" value="{{ permiso.id }}">
+              <input
+                type="checkbox"
+                onchange="this.form.submit()"
+                {% if (rol.id, permiso.id) in grant_set %}checked{% endif %}
+                style="width:18px;height:18px;cursor:pointer;accent-color:#1E86BD;"
+                aria-label="{{ permiso.codigo }} para {{ rol.nombre }}"
+              >
+            </form>
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}

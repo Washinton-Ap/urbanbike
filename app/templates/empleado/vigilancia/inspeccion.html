@@ -7,13 +7,23 @@
 <div class="card" style="max-width:640px;margin:0 auto 20px;">
   <div class="card-header">
     <span class="card-title">Contexto de la devolución</span>
-    {% if ctx.tiene_pago_pendiente %}<span class="badge badge-yellow">Pago pendiente</span>
-    {% elif ctx %}<span class="badge badge-green">Pago al día</span>{% endif %}
+    {% if tiene_pago_pendiente %}<span class="badge badge-yellow">Pago pendiente</span>
+    {% elif viaje %}<span class="badge badge-green">Pago al día</span>{% endif %}
   </div>
   <div style="display:flex;flex-direction:column;gap:12px;padding:20px;">
-    <div style="display:flex;justify-content:space-between;">
-      <span style="color:var(--text-muted);font-size:0.85rem;">Bicicleta</span>
-      <span style="font-family:'Sora',sans-serif;font-weight:700;color:var(--text);">{{ bici.codigo or ctx.bici_codigo or "—" }}</span>
+    {% set foto_bici = file_url("bicicletas", bici.id, bici.foto) if bici and bici.foto else "" %}
+    <div style="display:flex;align-items:center;gap:14px;{% if foto_bici %}margin-bottom:4px;{% endif %}">
+      {% if foto_bici %}
+      <img src="{{ foto_bici }}?thumb=100x75" alt="{{ bici.codigo }}" data-lightbox data-full="{{ foto_bici }}" style="width:72px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--border);flex-shrink:0;">
+      {% else %}
+      <div style="width:72px;height:56px;border-radius:8px;background:var(--border);display:flex;align-items:center;justify-content:center;flex-shrink:0;opacity:0.5;">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 0 0 0-2h-3l-1 5.5M5.5 17.5 9 8l3 5h6"/></svg>
+      </div>
+      {% endif %}
+      <div style="display:flex;justify-content:space-between;flex:1;">
+        <span style="color:var(--text-muted);font-size:0.85rem;">Bicicleta</span>
+        <span style="font-family:'Sora',sans-serif;font-weight:700;color:var(--text);">{{ bici.codigo or "—" }}</span>
+      </div>
     </div>
     <div style="display:flex;justify-content:space-between;">
       <span style="color:var(--text-muted);font-size:0.85rem;">Tipo</span>
@@ -24,16 +34,27 @@
     </div>
     <div style="display:flex;justify-content:space-between;">
       <span style="color:var(--text-muted);font-size:0.85rem;">Ciclista</span>
-      <span style="font-weight:600;color:var(--text);">{{ ctx.ciclista_nombre or "—" }}</span>
+      <span style="font-weight:600;color:var(--text);">{{ viaje.ciclista_nombre or "—" }}</span>
     </div>
     <div style="display:flex;justify-content:space-between;">
       <span style="color:var(--text-muted);font-size:0.85rem;">Duración del viaje</span>
-      <span>{{ ctx.duracion_minutos or 0 }} min</span>
+      <span>{{ viaje.duracion_minutos or 0 }} min</span>
     </div>
   </div>
 </div>
 
-{% if ctx.tiene_pago_pendiente %}
+<div class="card" style="max-width:960px;margin:0 auto 20px;">
+  <div class="card-header">
+    <span class="card-title" style="display:flex;align-items:center;gap:10px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><polyline points="8 13 9.5 14.5 12 12"/><line x1="8" y1="17" x2="14" y2="17"/></svg>
+      Inspección de devolución · {{ bici.codigo or "—" }}
+    </span>
+    <span class="badge badge-yellow">{{ items_revisados }} de {{ items_totales }} revisados</span>
+  </div>
+  {% include "componentes/checklist_devolucion.html" %}
+</div>
+
+{% if tiene_pago_pendiente %}
 <div class="flash info" style="max-width:640px;margin:0 auto 20px;">
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
   Este ciclista tiene un pago pendiente de este viaje. La aprobación de la inspección no depende del pago, pero recuerda informarlo a operación.
@@ -44,7 +65,8 @@
   <div class="card-header">
     <span class="card-title">Checklist de inspección</span>
   </div>
-  <form method="post" action="/empleado/vigilancia/inspeccion/{{ bici.id or ctx.bici_id }}/registrar" style="padding:20px;display:flex;flex-direction:column;gap:18px;" id="form-inspeccion">
+  <form method="post" action="/empleado/vigilancia/inspeccion/{{ bici.id }}/registrar" style="padding:20px;display:flex;flex-direction:column;gap:18px;" id="form-inspeccion">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
 
     <div>
       <div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:10px;">Marca el estado de cada componente</div>
@@ -70,7 +92,7 @@
     <div class="form-group">
       <label class="form-label">Cargo por daños (USD)</label>
       <input class="form-input" type="number" name="cargo_danos" min="0" step="0.01" placeholder="0.00 — dejar en 0 si no aplica">
-      <div style="font-size:0.78rem;color:var(--text-muted);margin-top:6px;">Si hay daños, ingresa el monto adicional a cobrar al ciclista además del viaje.</div>
+      <div style="font-size:0.8rem;color:var(--text-muted);margin-top:6px;">Si hay daños, ingresa el monto adicional a cobrar al ciclista además del viaje.</div>
     </div>
 
     {% if bici.tipo == "electric_bike" %}

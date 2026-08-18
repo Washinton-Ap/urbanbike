@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Misión y Visión{% endblock %}
+{% block page_title %}Misión y Visión{% endblock %}
+{% block back_url %}{% endblock %}
+
+{% block content %}
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px;margin-bottom:18px;">
+  <div class="card" style="border-top:3px solid var(--primary);">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
+      <div style="width:40px;height:40px;border-radius:10px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
+      </div>
+      <span style="font-family:'Sora',sans-serif;font-weight:700;font-size:1.1rem;color:var(--text);">Misión</span>
+    </div>
+    <p style="color:var(--text-muted);line-height:1.7;font-size:0.92rem;margin:0;">{{ mision }}</p>
+  </div>
+
+  <div class="card" style="border-top:3px solid var(--primary);">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">
+      <div style="width:40px;height:40px;border-radius:10px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      </div>
+      <span style="font-family:'Sora',sans-serif;font-weight:700;font-size:1.1rem;color:var(--text);">Visión</span>
+    </div>
+    <p style="color:var(--text-muted);line-height:1.7;font-size:0.92rem;margin:0;">{{ vision }}</p>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header"><span class="card-title">Nuestros valores</span></div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;padding:0 20px 20px;">
+    {% for nombre, descripcion in valores %}
+    <div>
+      <div style="font-family:'Sora',sans-serif;font-weight:700;font-size:0.92rem;color:var(--text);margin-bottom:4px;">{{ nombre }}</div>
+      <div style="font-size:0.82rem;color:var(--text-muted);line-height:1.5;">{{ descripcion }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+{% endblock %}

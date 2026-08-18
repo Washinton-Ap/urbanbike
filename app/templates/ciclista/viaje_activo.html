@@ -8,27 +8,47 @@
 
 {% block content %}
 
+{% if otros_viajes_activos %}
+<div class="flash info" style="margin-bottom:16px;display:flex;flex-wrap:wrap;align-items:center;gap:8px;">
+  <span>También tienes {{ otros_viajes_activos | length }} bicicleta{{ "s" if otros_viajes_activos | length != 1 else "" }} más alquilada{{ "s" if otros_viajes_activos | length != 1 else "" }}:</span>
+  {% for v in otros_viajes_activos %}
+  <a href="/ciclista/viaje-activo/{{ v.id }}" class="btn btn-ghost" style="padding:4px 10px;font-size:0.8rem;">{{ v.bicicleta_codigo }}</a>
+  {% endfor %}
+</div>
+{% endif %}
+
 <div class="card" style="margin-bottom:20px;">
-  <div class="card-header">
+  <div class="card-header" style="flex-wrap:wrap;gap:12px;">
     <span class="card-title">Detalles del viaje</span>
+    {% with paso = 2 if viaje.estado == 'pendiente_validacion' else 1 %}{% include "componentes/pasos_viaje.html" %}{% endwith %}
+    {% if viaje.estado == 'pendiente_validacion' %}
+    <span class="badge badge-yellow">Pendiente de validación</span>
+    {% else %}
     <span class="badge badge-blue">En curso</span>
+    {% endif %}
   </div>
+  {% if viaje.estado == 'pendiente_validacion' %}
+  <div class="flash info" id="banner-gracia" style="margin:0 20px 4px;">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+    <span id="banner-gracia-texto">Reportaste la devolución. Un empleado de Vigilancia confirmará la entrega física pronto.</span>
+  </div>
+  {% endif %}
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:20px;padding:20px;">
     <div>
-      <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:4px;">Bicicleta</div>
+      <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:4px;">Bicicleta</div>
       <div style="font-family:'Sora',sans-serif;font-weight:700;font-size:1rem;color:var(--text);">{{ viaje.bicicleta_codigo }}</div>
     </div>
     <div>
-      <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:4px;">Estación de inicio</div>
+      <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:4px;">Estación de inicio</div>
       <div style="font-weight:600;color:var(--text);">{{ viaje.estacion_inicio_nombre }}</div>
     </div>
     <div>
-      <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:4px;">Inicio del viaje</div>
+      <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:4px;">Inicio del viaje</div>
       <div style="font-weight:600;color:var(--text);" id="hora-inicio" data-inicio="{{ viaje.fecha_inicio }}">{{ viaje.fecha_inicio }}</div>
     </div>
     <div>
-      <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:4px;">Tarifa</div>
-      <div style="font-weight:600;color:var(--text);">${{ "%.2f" | format(precio_hora) }} / hora</div>
+      <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:4px;">Tarifa</div>
+      <div style="font-weight:600;color:var(--text);">${{ "%.2f" | format(precio_hora) }} / {{ viaje.modalidad_actual or "hora" }}</div>
     </div>
   </div>
 </div>
@@ -39,9 +59,15 @@
     <div class="kpi-value" id="tiempo-transcurrido" style="font-family:'Sora',sans-serif;">00:00:00</div>
   </div>
   <div class="kpi-card">
-    <div class="kpi-label">Costo acumulado</div>
+    <div class="kpi-label">Costo del viaje</div>
     <div class="kpi-value" id="costo-acumulado" style="color:var(--primary);">$0.00</div>
   </div>
+  {% if viaje.estado == 'pendiente_validacion' %}
+  <div class="kpi-card" id="kpi-recargo" style="display:none;">
+    <div class="kpi-label">Recargo por demora</div>
+    <div class="kpi-value" id="costo-recargo" style="color:#EF4444;">$0.00</div>
+  </div>
+  {% endif %}
 </div>
 
 <div class="card" style="padding:0;overflow:hidden;margin-bottom:20px;">
@@ -51,11 +77,26 @@
   <div id="map-viaje" style="height:340px;width:100%;"></div>
 </div>
 
+{% if viaje.estado != 'pendiente_validacion' %}
+<div class="card" style="margin-bottom:20px;padding:20px;">
+  <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:10px;">Modalidad actual: <strong>{{ viaje.modalidad_actual or "hora" }}</strong></div>
+  <form method="post" action="/ciclista/cambiar-modalidad" style="display:flex;gap:8px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <input type="hidden" name="viaje_id" value="{{ viaje.id }}">
+    <select class="form-input" name="modalidad_nueva">
+      <option value="hora" {{ "selected" if viaje.modalidad_actual == "hora" or not viaje.modalidad_actual }}>Por hora</option>
+      <option value="dia" {{ "selected" if viaje.modalidad_actual == "dia" }}>Por día</option>
+      <option value="semana" {{ "selected" if viaje.modalidad_actual == "semana" }}>Por semana</option>
+    </select>
+    <button type="submit" class="btn btn-ghost">Cambiar modalidad</button>
+  </form>
+</div>
 <div class="card">
   <div class="card-header">
-    <span class="card-title">Finalizar viaje</span>
+    <span class="card-title">Devolver bicicleta</span>
   </div>
   <form method="post" action="/ciclista/finalizar" style="padding:20px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
     <input type="hidden" name="viaje_id" value="{{ viaje.id }}">
     <div class="form-group">
       <label class="form-label">Estación de devolución</label>
@@ -67,12 +108,16 @@
       </select>
     </div>
     <input type="hidden" name="estacion_fin_nombre" id="input-estacion-fin-nombre">
+    <div style="font-size:0.8rem;color:var(--text-muted);margin-top:6px;">
+      Esto reporta que dejaste la bicicleta -- el costo se congela con la hora de este reporte. Tienes 5h sin cargo adicional para que Vigilancia confirme la entrega física; pasado ese tiempo se aplica un recargo por demora aparte.
+    </div>
     <button type="submit" class="btn btn-primary" style="margin-top:8px;">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-      Finalizar viaje
+      Devolver bicicleta
     </button>
   </form>
 </div>
+{% endif %}
 
 {% endblock %}
 
@@ -103,30 +148,60 @@ L.marker([lat, lng], { icon: biciIcon })
   .openPopup();
 
 // Sincronizar nombre de estación de devolución con el id seleccionado
+// -- el formulario no existe si el viaje ya está en pendiente_validacion
+// (ver viaje_activo.html), así que este bloque es opcional.
 const selectFin = document.getElementById('select-estacion-fin');
 const inputFinNombre = document.getElementById('input-estacion-fin-nombre');
-selectFin.addEventListener('change', () => {
-  const opt = selectFin.options[selectFin.selectedIndex];
-  inputFinNombre.value = opt.dataset.nombre || '';
-});
+if (selectFin) {
+  selectFin.addEventListener('change', () => {
+    const opt = selectFin.options[selectFin.selectedIndex];
+    inputFinNombre.value = opt.dataset.nombre || '';
+  });
+}
 
-// Cronómetro y costo acumulado en tiempo real
-const PRECIO_HORA = {{ precio_hora }};
-const elTiempo = document.getElementById('tiempo-transcurrido');
-const elCosto  = document.getElementById('costo-acumulado');
+// Cronómetro y costo en tiempo real -- misma fórmula compartida que usa
+// devoluciones.html del lado de Vigilancia (ver
+// /static/js/costo-en-vivo.js, costoDetallado()): el subtotal es la
+// suma de los segmentos de modalidad ya cerrados (SUBTOTAL_CERRADOS,
+// fijo) + el segmento abierto actual -- para 'hora' este último sigue
+// el reloj REAL (ya NO se congela al reportar la devolución, ver
+// Tarea 7/9), para 'dia'/'semana' es tarifa plana. El recargo por
+// demora solo aparece pasadas las 5h de gracia desde el punto de
+// referencia según la modalidad del segmento abierto -- mismo cálculo
+// exacto que usa empleado.py:vig_devolver() para el cobro real.
+const PRECIO_MODALIDAD    = {{ precio_hora }};
+const PRECIO_HORA_RECARGO = {{ precio_hora_recargo }};
+const SUBTOTAL_CERRADOS   = {{ subtotal_segmentos_cerrados }};
+const elTiempo   = document.getElementById('tiempo-transcurrido');
+const elCosto    = document.getElementById('costo-acumulado');
+const elKpiRecargo = document.getElementById('kpi-recargo');
+const elRecargo  = document.getElementById('costo-recargo');
+const elBanner   = document.getElementById('banner-gracia-texto');
 
 function actualizarTiempo() {
-  const inicio = new Date(VIAJE.fecha_inicio);
-  const ahora  = new Date();
-  const segs   = Math.max(0, Math.floor((ahora - inicio) / 1000));
-  const h = Math.floor(segs / 3600);
-  const m = Math.floor((segs % 3600) / 60);
-  const s = segs % 60;
-  elTiempo.textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  const segs = segundosTranscurridos(VIAJE.fecha_inicio);
+  elTiempo.textContent = formatearDuracion(segs);
   elTiempo.style.color = (segs / 60 > 120) ? '#EF4444' : '';
 
-  const costo = (segs / 3600) * PRECIO_HORA;
-  elCosto.textContent = `$${costo.toFixed(2)}`;
+  const c = costoDetallado(
+    VIAJE.inicio_segmento_actual || VIAJE.fecha_inicio, VIAJE.fecha_fin,
+    PRECIO_MODALIDAD, VIAJE.modalidad_actual || 'hora', SUBTOTAL_CERRADOS, PRECIO_HORA_RECARGO,
+  );
+  elCosto.textContent = `$${c.subtotal.toFixed(2)}`;
+
+  if (elKpiRecargo) {
+    elKpiRecargo.style.display = c.recargoDemora > 0 ? '' : 'none';
+    elRecargo.textContent = `$${c.recargoDemora.toFixed(2)}`;
+  }
+  if (elBanner) {
+    if (c.enGracia) {
+      const h = Math.floor(c.minutosParaRecargo / 60);
+      const m = Math.floor(c.minutosParaRecargo % 60);
+      elBanner.textContent = `Reportaste la devolución. Tienes ${h}h ${m}min sin cargo adicional para que Vigilancia confirme la entrega física.`;
+    } else {
+      elBanner.textContent = 'Reportaste la devolución hace más de 5h -- se está aplicando un recargo por demora mientras Vigilancia confirma la entrega física.';
+    }
+  }
 }
 actualizarTiempo();
 setInterval(actualizarTiempo, 1000);

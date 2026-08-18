@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Dashboard — Operación{% endblock %}
 {% block page_title %}Dashboard — Operación{% endblock %}
+{% block back_url %}{% endblock %}
 
 {% block content %}
 
@@ -50,46 +51,47 @@
   </div>
 </div>
 
-<!-- Gráfica + accesos -->
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
-  <div class="card">
-    <div class="card-header">
-      <span class="card-title">Estado de la Flota</span>
-      <span style="font-size:0.78rem;color:var(--text-muted);">Total: {{ stats.total }}</span>
-    </div>
-    <div style="position:relative;height:180px;">
-      <canvas id="chartFlota"></canvas>
-    </div>
+<!-- Patron F: banda 2 (grafica), en su propia fila -->
+<div style="font-size:0.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">Estado de la flota</div>
+<div class="card" style="margin-bottom:24px;">
+  <div class="card-header">
+    <span class="card-title">Estado de la Flota</span>
+    <span style="font-size:0.8rem;color:var(--text-muted);">Total: {{ stats.total }}</span>
   </div>
+  <div style="position:relative;height:200px;">
+    <canvas id="chartFlota"></canvas>
+  </div>
+</div>
 
-  <div style="display:flex;flex-direction:column;gap:12px;">
-    <a href="/empleado/operacion/inventario" style="text-decoration:none;flex:1;">
-      <div class="card" style="height:100%;cursor:pointer;transition:box-shadow 0.15s,transform 0.15s;" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 16px rgba(30,134,189,0.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
-        <div style="display:flex;align-items:center;gap:14px;">
-          <div style="width:40px;height:40px;border-radius:10px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 0 0 0-2h-3l-1 5.5M5.5 17.5 9 8l3 5h6"/></svg>
-          </div>
-          <div>
-            <div style="font-family:'Sora',sans-serif;font-weight:600;font-size:0.95rem;color:var(--text);">Inventario</div>
-            <div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px;">Ver todas las bicicletas</div>
-          </div>
+<!-- Patron F: banda final (accesos), separada de la grafica -->
+<div style="font-size:0.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">Accesos rápidos</div>
+<div class="dashboard-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+  <a href="/empleado/operacion/inventario" style="text-decoration:none;">
+    <div class="card card-clickeable" style="height:100%;">
+      <div style="display:flex;align-items:center;gap:14px;">
+        <div style="width:40px;height:40px;border-radius:10px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 0 0 0-2h-3l-1 5.5M5.5 17.5 9 8l3 5h6"/></svg>
+        </div>
+        <div>
+          <div style="font-family:'Sora',sans-serif;font-weight:600;font-size:0.95rem;color:var(--text);">Inventario</div>
+          <div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px;">Ver todas las bicicletas</div>
         </div>
       </div>
-    </a>
-    <a href="/empleado/operacion/alquileres" style="text-decoration:none;flex:1;">
-      <div class="card" style="height:100%;cursor:pointer;transition:box-shadow 0.15s,transform 0.15s;" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 16px rgba(30,134,189,0.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
-        <div style="display:flex;align-items:center;gap:14px;">
-          <div style="width:40px;height:40px;border-radius:10px;background:rgba(16,185,129,0.12);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 5v3h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
-          </div>
-          <div>
-            <div style="font-family:'Sora',sans-serif;font-weight:600;font-size:0.95rem;color:var(--text);">Alquileres Activos</div>
-            <div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px;">Gestión de alquileres</div>
-          </div>
+    </div>
+  </a>
+  <a href="/empleado/operacion/alquileres" style="text-decoration:none;">
+    <div class="card card-clickeable" style="height:100%;">
+      <div style="display:flex;align-items:center;gap:14px;">
+        <div style="width:40px;height:40px;border-radius:10px;background:rgba(16,185,129,0.12);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 5v3h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+        </div>
+        <div>
+          <div style="font-family:'Sora',sans-serif;font-weight:600;font-size:0.95rem;color:var(--text);">Alquileres Activos</div>
+          <div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px;">Gestión de alquileres</div>
         </div>
       </div>
-    </a>
-  </div>
+    </div>
+  </a>
 </div>
 
 {% endblock %}
@@ -97,9 +99,9 @@
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-const bikeLabels = {{ chart_labels | safe }};
-const bikeValues = {{ chart_values | safe }};
-const bikeColors = {{ chart_colors | safe }};
+const bikeLabels = {{ chart_labels | jsonseguro }};
+const bikeValues = {{ chart_values | jsonseguro }};
+const bikeColors = {{ chart_colors | jsonseguro }};
 
 if (bikeValues.some(v => v > 0)) {
   new Chart(document.getElementById('chartFlota'), {

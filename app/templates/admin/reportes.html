@@ -27,7 +27,7 @@
   </div>
 </div>
 
-<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;">
+<div class="dashboard-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;">
 
   <div class="card">
     <div class="card-header"><span class="card-title">Usuarios por Rol</span></div>
@@ -62,12 +62,12 @@
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-const rolLabels  = {{ rol_labels | safe }};
-const rolValues  = {{ rol_values | safe }};
-const biciLabels = {{ bici_labels | safe }};
-const biciValues = {{ bici_values | safe }};
-const estLabels  = {{ est_labels | safe }};
-const estValues  = {{ est_values | safe }};
+const rolLabels  = {{ rol_labels | jsonseguro }};
+const rolValues  = {{ rol_values | jsonseguro }};
+const biciLabels = {{ bici_labels | jsonseguro }};
+const biciValues = {{ bici_values | jsonseguro }};
+const estLabels  = {{ est_labels | jsonseguro }};
+const estValues  = {{ est_values | jsonseguro }};
 
 new Chart(document.getElementById('chartRoles'), {
   type: 'doughnut',

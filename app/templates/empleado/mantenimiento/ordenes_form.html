@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block page_title %}{{ title }}{% endblock %}
+{% block back_url %}/empleado/mantenimiento/ordenes{% endblock %}
+
+{% block content %}
+
+{% if modo == "ver" %}
+<div class="card" style="margin-bottom:16px;">
+  <div class="card-header">
+    <span class="card-title">{{ orden.codigo }}</span>
+    <div class="flex gap-2">
+      <a href="/empleado/mantenimiento/ordenes/{{ orden.id }}?modo=editar" class="btn btn-primary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        Actualizar
+      </a>
+      <button type="button" class="btn btn-ghost" style="color:#EF4444;border-color:rgba(239,68,68,0.35);" onclick="document.getElementById('modal-eliminar').showModal()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        Eliminar
+      </button>
+    </div>
+  </div>
+  {% include "componentes/flujo_orden.html" %}
+</div>
+
+<div class="card">
+  <div class="form-grid" style="padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+    <div>
+      <div class="form-label">Bicicleta</div>
+      <div style="margin-bottom:16px;color:var(--text);font-family:monospace;font-weight:600;">{{ orden.bicicleta_codigo }}</div>
+      <div class="form-label">Origen</div>
+      <div style="margin-bottom:16px;color:var(--text);">{{ origen_label.get(orden.origen, orden.origen) }}</div>
+      <div class="form-label">Tipo de falla</div>
+      <div style="margin-bottom:16px;color:var(--text);">{{ tipo_falla_label.get(orden.tipo_falla, orden.tipo_falla) }}</div>
+      <div class="form-label">Prioridad</div>
+      <div style="margin-bottom:16px;">
+        {% if orden.prioridad == 'alta' %}<span class="badge badge-red">Alta</span>
+        {% elif orden.prioridad == 'baja' %}<span class="badge badge-gray">Baja</span>
+        {% else %}<span class="badge badge-yellow">Media</span>{% endif %}
+      </div>
+    </div>
+    <div>
+      <div class="form-label">Técnico asignado</div>
+      <div style="margin-bottom:16px;color:var(--text);">{{ orden.tecnico_nombre }}</div>
+      <div class="form-label">Estado</div>
+      <div style="margin-bottom:16px;">
+        {% if orden.estado_reparacion == 'abierta' %}<span class="badge badge-gray">Abierta</span>
+        {% elif orden.estado_reparacion == 'diagnostico' %}<span class="badge badge-blue">Diagnóstico</span>
+        {% elif orden.estado_reparacion == 'en_reparacion' %}<span class="badge badge-blue">En reparación</span>
+        {% elif orden.estado_reparacion == 'espera_repuesto' %}<span class="badge badge-yellow">Espera repuesto</span>
+        {% else %}<span class="badge badge-green">Cerrada</span>{% endif %}
+      </div>
+      <div class="form-label">Apertura / Cierre</div>
+      <div style="margin-bottom:16px;color:var(--text);">
+        {{ orden.fecha_apertura.strftime('%Y-%m-%d %H:%M') }}
+        {% if orden.estado_reparacion == 'cerrada' %} &rarr; {{ orden.fecha_cierre.strftime('%Y-%m-%d %H:%M') }}{% endif %}
+      </div>
+      <div class="form-label">Costo repuestos / mano de obra</div>
+      <div style="margin-bottom:16px;color:var(--text);">${{ "%.2f" | format(orden.costo_repuestos | float) }} / ${{ "%.2f" | format(orden.costo_mano_obra | float) }}</div>
+    </div>
+    <div style="grid-column:1 / -1;">
+      <div class="form-label">Diagnóstico</div>
+      <div style="color:var(--text);">{{ orden.diagnostico or "—" }}</div>
+    </div>
+    <div style="grid-column:1 / -1;">
+      <div class="form-label">Repuestos reales consumidos</div>
+      <div style="color:var(--text);">{{ n_repuestos }}</div>
+    </div>
+  </div>
+</div>
+
+<dialog id="modal-eliminar">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title" style="color:#EF4444;">Eliminar orden</span></div>
+    <p style="color:var(--text-muted);margin-bottom:20px;">
+      ¿Eliminar la orden <strong style="color:var(--text);">{{ orden.codigo }}</strong>?
+      {% if orden.estado_reparacion != 'abierta' %}
+      La orden ya está en estado "{{ estado_label.get(orden.estado_reparacion, orden.estado_reparacion) }}" — la eliminación va a ser rechazada. Solo se puede borrar una orden que sigue "Abierta".
+      {% elif n_repuestos > 0 %}
+      Tiene {{ n_repuestos }} repuesto(s) real(es) consumido(s) — la eliminación va a ser rechazada.
+      {% else %}
+      Esta acción no se puede deshacer.
+      {% endif %}
+    </p>
+    <form method="post" action="/empleado/mantenimiento/ordenes/{{ orden.id }}/eliminar">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <div class="flex gap-2" style="justify-content:flex-end;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-eliminar').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary" style="background:#EF4444;border-color:#EF4444;">Eliminar</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+{% else %}
+{# modo == "editar" o "crear" #}
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">{% if modo == "crear" %}Nueva orden de mantenimiento{% else %}Actualizar {{ orden.codigo }}{% endif %}</span>
+  </div>
+  <form method="post" action="{% if modo == 'crear' %}/empleado/mantenimiento/ordenes/crear{% else %}/empleado/mantenimiento/ordenes/{{ orden.id }}/editar{% endif %}" style="padding:20px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="form-group"><label class="form-label">Bicicleta *</label>
+        <select class="form-input" name="id_bicicleta" required {% if modo != 'crear' %}disabled{% endif %}>
+          {% for b in bicicletas %}
+          <option value="{{ b.id }}" {% if orden and orden.id_bicicleta == b.id %}selected{% endif %}>{{ b.codigo }} — {{ b.marca }} {{ b.modelo }}</option>
+          {% endfor %}
+        </select>
+        {% if modo != 'crear' %}<input type="hidden" name="id_bicicleta" value="{{ orden.id_bicicleta }}">{% endif %}
+      </div>
+      <div class="form-group"><label class="form-label">Técnico *</label>
+        <select class="form-input" name="id_tecnico" required>
+          {% for t in tecnicos %}
+          <option value="{{ t.id }}" {% if orden and orden.id_tecnico == t.id %}selected{% endif %}>{{ t.nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Origen *</label>
+        <select class="form-input" name="origen" required>
+          {% for o in origenes %}
+          <option value="{{ o }}" {% if orden and orden.origen == o %}selected{% endif %}>{{ origen_label[o] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Tipo de falla *</label>
+        <select class="form-input" name="tipo_falla" required>
+          {% for tf in tipos_falla %}
+          <option value="{{ tf }}" {% if orden and orden.tipo_falla == tf %}selected{% endif %}>{{ tipo_falla_label[tf] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Prioridad *</label>
+        <select class="form-input" name="prioridad" required>
+          {% for p in prioridades %}
+          <option value="{{ p }}" {% if (orden and orden.prioridad == p) or (not orden and p == 'media') %}selected{% endif %}>{{ prioridad_label[p] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% if modo != "crear" %}
+      <div class="form-group"><label class="form-label">Estado *</label>
+        <select class="form-input" name="estado_reparacion" required>
+          {% for e in estados %}
+          <option value="{{ e }}" {% if orden and orden.estado_reparacion == e %}selected{% endif %}>{{ estado_label[e] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Costo repuestos</label>
+        <input class="form-input" type="number" step="0.01" min="0" name="costo_repuestos" value="{{ orden.costo_repuestos if orden else '0' }}"></div>
+      <div class="form-group"><label class="form-label">Costo mano de obra</label>
+        <input class="form-input" type="number" step="0.01" min="0" name="costo_mano_obra" value="{{ orden.costo_mano_obra if orden else '0' }}"></div>
+      {% endif %}
+    </div>
+    <div class="form-group"><label class="form-label">Diagnóstico</label>
+      <textarea class="form-input" name="diagnostico" rows="3" placeholder="Diagnóstico o descripción de la falla">{{ orden.diagnostico if orden else '' }}</textarea></div>
+    <div class="flex gap-2" style="justify-content:flex-end;margin-top:20px;">
+      <a href="{% if modo == 'crear' %}/empleado/mantenimiento/ordenes{% else %}/empleado/mantenimiento/ordenes/{{ orden.id }}{% endif %}" class="btn btn-ghost">Cancelar</a>
+      <button type="submit" class="btn btn-primary">{% if modo == "crear" %}Crear{% else %}Guardar cambios{% endif %}</button>
+    </div>
+  </form>
+</div>
+{% endif %}
+
+{% endblock %}

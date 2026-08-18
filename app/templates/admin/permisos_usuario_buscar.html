@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Excepciones por Usuario{% endblock %}
+{% block page_title %}Roles y Permisos — Excepciones por Usuario{% endblock %}
+
+{% block content %}
+
+<div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:16px;">
+  Selecciona un usuario real para ver y modificar sus excepciones individuales de
+  permiso, encima del permiso que ya le da su rol. Ver la
+  <a href="/admin/permisos">matriz de permisos por rol</a> para el caso general.
+</div>
+
+{% if error %}
+<div class="flash error" style="margin-bottom:16px;">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  {{ error }}
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Usuarios <span class="text-muted text-sm">({{ resultados | length }})</span></span>
+    <input type="search" class="form-input" placeholder="Buscar por nombre o correo..." style="width:auto;min-width:240px;font-size:0.85rem;" oninput="filtrarTabla(this, 'tabla-usuarios-permisos')">
+  </div>
+  {% if resultados %}
+  <div class="table-wrap">
+    <table id="tabla-usuarios-permisos">
+      <thead>
+        <tr><th>Nombre</th><th>Correo</th><th>Rol</th><th style="width:60px;"></th></tr>
+      </thead>
+      <tbody>
+        {% for u in resultados %}
+        <tr class="fila-clickeable" onclick="window.location='/admin/permisos-usuario/{{ u.id }}'">
+          <td style="font-weight:600;color:var(--text);">{{ u.name or "—" }}</td>
+          <td class="text-muted">{{ u.email }}</td>
+          <td><span class="badge badge-blue">{{ u.rol_nombre }}</span></td>
+          <td style="text-align:right;color:var(--text-muted);">→</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:48px 24px;color:var(--text-muted);">
+    No se encontraron usuarios reales.
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

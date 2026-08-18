@@ -9,6 +9,7 @@
     <span class="card-title">Registrar traslado entre estaciones</span>
   </div>
   <form method="post" action="/empleado/operacion/rebalanceo/trasladar" style="padding:20px;display:flex;flex-direction:column;gap:16px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
     <div class="form-group">
       <label class="form-label">Bicicleta</label>
       <select class="form-input" name="bicicleta_id" id="select-bici" required>

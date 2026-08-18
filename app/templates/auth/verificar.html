@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verifica tu correo — UrbanBike</title>
+  <link rel="icon" type="image/png" href="/static/img/logo-urbanbike.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" media="print" onload="this.media='all'">
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap"></noscript>
+  <link rel="stylesheet" href="/static/css/main.css">
+  <script src="/static/js/theme.js"></script>
+  <script src="/static/js/usabilidad.js"></script>
+  <script src="/static/js/loading.js"></script>
+  <script src="/static/js/solo-numeros.js" defer></script>
+</head>
+<body>
+
+<!-- Theme toggle flotante -->
+<button id="theme-toggle" class="theme-toggle"
+        style="position:fixed; top:16px; right:16px; z-index:200;"
+        title="Cambiar tema" aria-label="Cambiar tema"></button>
+
+<div class="login-page">
+  <div class="login-card">
+
+    <!-- Logo -->
+    <div class="login-logo">
+      <div style="display:inline-flex; align-items:center; gap:10px; margin-bottom:6px;">
+        <img src="/static/img/logo-urbanbike.png" alt="" width="36" height="27">
+        <span class="login-logo-name">Urban<span>Bike</span></span>
+      </div>
+      <p class="login-subtitle">Verifica tu correo</p>
+    </div>
+
+    <!-- Error -->
+    {% if error %}
+    <div class="flash error" style="margin-bottom: 16px;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+      {{ error }}
+    </div>
+    {% endif %}
+
+    <!-- Flash (ej. codigo reenviado) -->
+    {% if flash %}
+    <div class="flash {{ flash.type }}" style="margin-bottom: 16px;">
+      {% if flash.type == 'success' %}
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+      {% else %}
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      {% endif %}
+      {{ flash.msg }}
+    </div>
+    {% endif %}
+
+    <p style="font-size:0.88rem;color:var(--text-muted);margin-bottom:16px;">
+      Enviamos un código de 6 dígitos a <strong style="color:var(--text);">{{ email }}</strong>.
+      Ingresa el código para activar tu cuenta.
+    </p>
+
+    <!-- Formulario -->
+    <form method="post" action="/auth/verificar">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+
+      <div class="form-group">
+        <label class="form-label" for="codigo">Código de verificación</label>
+        <input
+          id="codigo"
+          name="codigo"
+          type="text"
+          class="form-input"
+          placeholder="000000"
+          inputmode="numeric"
+          pattern="[0-9]{6}"
+          maxlength="6"
+          autocomplete="one-time-code"
+          required
+          autofocus
+          style="letter-spacing:0.3em;text-align:center;font-family:'IBM Plex Mono',monospace;font-size:1.2rem;"
+        >
+      </div>
+
+      <button type="submit" class="btn btn-primary w-full mt-4" style="justify-content:center; padding:11px;">
+        Verificar
+      </button>
+    </form>
+
+    <form method="post" action="/auth/verificar/reenviar" style="margin-top:12px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <button type="submit" class="btn btn-ghost w-full" style="justify-content:center;">
+        Reenviar código
+      </button>
+    </form>
+
+    <div style="text-align:center;margin-top:18px;font-size:0.85rem;color:var(--text-muted);">
+      <a href="/auth/login" style="color:var(--primary);font-weight:600;">Volver a iniciar sesión</a>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

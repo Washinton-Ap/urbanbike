@@ -40,8 +40,8 @@
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-const devLabels = {{ dev_labels | safe }};
-const devValues = {{ dev_values | safe }};
+const devLabels = {{ dev_labels | jsonseguro }};
+const devValues = {{ dev_values | jsonseguro }};
 
 if (devValues.reduce((a, b) => a + b, 0) > 0) {
   new Chart(document.getElementById('chartDevoluciones'), {

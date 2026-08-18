@@ -5,19 +5,23 @@ from pathlib import Path
 
 from fastapi import FastAPI, Form, Request, UploadFile
 from fastapi import File
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import settings
-from app.db import clickhouse as ch
+from app.db import clickhouse as ch, notificaciones_repo
 from app.db.pocketbase import PocketBaseClient, PocketBaseError, get_admin_client
 from app.middleware.auth import AuthMiddleware
+from app.middleware.csrf import CSRFMiddleware
+from app.middleware.permisos import PermisoDenegadoError
+from app.reportes.comun import ReporteVacioError
 from app.routers import auth as auth_router
 from app.routers import admin as admin_router
 from app.routers import gerente as gerente_router
 from app.routers import ciclista as ciclista_router
 from app.routers import empleado as empleado_router
+from app.routers import institucional as institucional_router
 from app.templating import templates
 
 BASE_DIR = Path(__file__).parent
@@ -25,22 +29,54 @@ BASE_DIR = Path(__file__).parent
 app = FastAPI(title="UrbanBike", docs_url=None, redoc_url=None)
 
 app.add_middleware(AuthMiddleware)
+app.add_middleware(CSRFMiddleware)
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.secret_key,
     session_cookie="ub_session",
     max_age=60 * 60 * 8,
     same_site="lax",
-    https_only=False,
+    https_only=settings.is_production,
 )
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+@app.exception_handler(PermisoDenegadoError)
+async def permiso_denegado_handler(request: Request, exc: PermisoDenegadoError):
+    """Mismo comportamiento (redirect + flash) que AuthMiddleware ya usa
+    para su verificacion de rol por prefijo -- una ruta migrada a
+    requiere_permiso() se ve identica al usuario final, cambia solo el
+    mecanismo interno (ver docs/HOJA_DE_RUTA.md secciones 29/30)."""
+    request.session["flash"] = {"type": "error", "msg": exc.mensaje}
+    return RedirectResponse("/dashboard", status_code=302)
+
+
+@app.exception_handler(ReporteVacioError)
+async def reporte_vacio_handler(request: Request, exc: ReporteVacioError):
+    """Mismo patrón que permiso_denegado_handler: flash + redirect en vez
+    de dejar que el StreamingResponse se genere vacío. El redirect vuelve
+    a la página desde la que se pidió el export (Referer) -- solo si es
+    del mismo origen, para no abrir un open-redirect con un Referer
+    falsificado."""
+    import urllib.parse
+    request.session["flash"] = {"type": "error", "msg": "No hay datos para exportar. El reporte está vacío."}
+    referer = request.headers.get("referer", "")
+    destino = "/dashboard"
+    if referer:
+        partes = urllib.parse.urlparse(referer)
+        if partes.netloc == request.url.netloc:
+            destino = partes.path or "/dashboard"
+            if partes.query:
+                destino += f"?{partes.query}"
+    return RedirectResponse(destino, status_code=302)
+
 
 app.include_router(auth_router.router)
 app.include_router(admin_router.router)
 app.include_router(gerente_router.router)
 app.include_router(ciclista_router.router)
 app.include_router(empleado_router.router)
+app.include_router(institucional_router.router)
 
 
 # ── Rutas principales ───────────────────────────────────────────────────────
@@ -233,3 +269,47 @@ def perfil_borrar_avatar(request: Request):
     except Exception as e:
         request.session["flash"] = {"type": "error", "msg": f"Error al eliminar el avatar: {e}"}
     return RedirectResponse("/perfil", status_code=302)
+
+
+# ── Campana de notificaciones (punto 13/11.1) — compartida por los 3 actores,
+# igual que /dashboard y /perfil de arriba, ver app/static/js/campana-notificaciones.js ──
+
+@app.get("/notificaciones")
+def notificaciones_listar(request: Request):
+    user = request.state.user
+    usuario_id, rol_slug = user.get("id", ""), user.get("rol_slug", "")
+    items = notificaciones_repo.listar_no_leidas(usuario_id, rol_slug, limite=15)
+    return JSONResponse({
+        "total": notificaciones_repo.contar_no_leidas(usuario_id, rol_slug),
+        "items": [
+            {
+                "id": n.get("id", ""),
+                "tipo": n.get("tipo", ""),
+                "titulo": n.get("titulo", ""),
+                "mensaje": n.get("mensaje", ""),
+                "enlace": n.get("enlace", ""),
+                "fecha": n.get("fecha", ""),
+            }
+            for n in items
+        ],
+    })
+
+
+@app.post("/notificaciones/{nid}/marcar-leida")
+def notificaciones_marcar_leida(request: Request, nid: str):
+    user = request.state.user
+    n = notificaciones_repo.obtener(nid)
+    # Solo el dueño puntual o alguien con el rol al que se difundio puede
+    # marcarla leida -- mismo criterio de propiedad que ya usa
+    # ciclista.py para pagos/comprobantes ajenos.
+    if n and (n.get("usuario_id") == user.get("id", "") or
+              (n.get("rol_destino") and n.get("rol_destino") == user.get("rol_slug", ""))):
+        notificaciones_repo.marcar_leida(nid)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/notificaciones/marcar-todas")
+def notificaciones_marcar_todas(request: Request):
+    user = request.state.user
+    tocadas = notificaciones_repo.marcar_todas_leidas(user.get("id", ""), user.get("rol_slug", ""))
+    return JSONResponse({"ok": True, "tocadas": tocadas})

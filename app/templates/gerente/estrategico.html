@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}Informe Estratégico{% endblock %}
+{% block page_title %}Informe Estratégico — Evolución Mensual{% endblock %}
+
+{% block content %}
+
+{% if not ch_ok %}
+<div class="flash error" style="margin-bottom:20px;">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  ClickHouse no disponible — no se pudo cargar el informe estratégico.
+</div>
+{% endif %}
+
+<div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:16px;">
+  Datos precalculados por el ETL (<code>urbanbike_estrategica</code>) — esta pantalla no agrega nada en vivo,
+  solo lee los meses ya cerrados y resumidos.
+</div>
+
+<!-- Resumen + botones export -->
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
+  <div style="font-size:0.85rem;color:var(--text-muted);">
+    <strong style="color:var(--text);">{{ meses | length }}</strong> mes{{ "es" if meses | length != 1 else "" }} cerrado{{ "s" if meses | length != 1 else "" }} con resumen real
+  </div>
+  <div class="no-print" style="display:flex;gap:8px;">
+    <a href="/gerente/estrategico/excel" class="btn btn-ghost" style="font-size:0.82rem;">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
+      Exportar Excel
+    </a>
+    <a href="/gerente/estrategico/pdf" class="btn btn-ghost" style="font-size:0.82rem;">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+      Exportar PDF
+    </a>
+  </div>
+</div>
+
+{% if not meses %}
+<div class="card" style="padding:40px;text-align:center;color:var(--text-muted);font-size:0.9rem;">
+  Todavía no hay ningún mes cerrado con resumen calculado. El ETL (<code>etl/09_calcular_estrategica.py</code>)
+  solo calcula un mes cuando ya terminó por completo.
+</div>
+{% else %}
+
+<!-- Gráficas -->
+<div class="dashboard-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;margin-bottom:16px;">
+  <div class="card" style="padding:20px;">
+    <div class="card-title" style="margin-bottom:14px;">Ganancia neta por mes*</div>
+    <div style="height:260px;"><canvas id="chartGanancia"></canvas></div>
+  </div>
+  <div class="card" style="padding:20px;">
+    <div class="card-title" style="margin-bottom:14px;">Viajes por mes</div>
+    <div style="height:260px;"><canvas id="chartViajes"></canvas></div>
+  </div>
+</div>
+
+<!-- Tabla mensual -->
+<div class="card" style="margin-bottom:16px;">
+  <div class="card-header"><span class="card-title">Detalle por mes</span></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Período</th>
+          <th style="text-align:right;">Alquileres</th>
+          <th style="text-align:right;">Ingresos brutos</th>
+          <th style="text-align:right;">Descuentos</th>
+          <th style="text-align:right;">Recargos</th>
+          <th style="text-align:right;">Ganancia neta*</th>
+          <th style="text-align:right;">Viajes</th>
+          <th style="text-align:right;">Duración prom. (min)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in meses %}
+        <tr>
+          <td style="font-weight:600;color:var(--text);">{{ m.periodo_label }}</td>
+          <td style="text-align:right;">{{ m.total_alquileres | num }}</td>
+          <td style="text-align:right;">${{ "%.2f" | format(m.ingresos_brutos) }}</td>
+          <td style="text-align:right;">${{ "%.2f" | format(m.descuentos) }}</td>
+          <td style="text-align:right;">${{ "%.2f" | format(m.recargos) }}</td>
+          <td style="text-align:right;font-weight:600;color:#1E86BD;">${{ "%.2f" | format(m.ganancia_neta) }}</td>
+          <td style="text-align:right;">{{ m.total_viajes | num }}</td>
+          <td style="text-align:right;">{{ m.duracion_prom_min }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div style="padding:10px 16px;font-size:0.78rem;color:var(--text-muted);border-top:1px solid var(--border);">
+    * Ganancia neta sin gastos reales todavía (<code>urbanbike_operativa.gastos</code> sin datos migrados) —
+    hoy es un techo de ingresos, no una ganancia neta real. Ver <code>docs/HOJA_DE_RUTA.md</code>.
+  </div>
+</div>
+{% endif %}
+
+<!-- Flota — pendiente, nota visible en vez de omitir en silencio -->
+<div class="card" style="padding:18px 20px;border-left:3px solid #F59E0B;">
+  <div style="display:flex;gap:12px;align-items:flex-start;">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2" style="flex-shrink:0;margin-top:2px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <div style="min-width:0;">
+      <div style="font-weight:700;color:var(--text);font-size:0.9rem;">Estado de la flota por mes — pendiente</div>
+      <div style="font-size:0.84rem;color:var(--text-muted);margin-top:4px;">
+        <code style="overflow-wrap:break-word;">resumen_mensual_flota</code> todavía no tiene datos: requiere un historial real de cambios de
+        estado de la flota por fecha, y ese historial recién empezó a acumularse el 07-ago-2026
+        (<code style="overflow-wrap:break-word;">urbanbike_operativa.bicicleta_eventos</code>). No se calcula para ningún mes hasta acumular
+        al menos un mes completo real — no se fuerza el snapshot actual como si fuera "el estado de junio".
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const chartLabels   = {{ chart_labels | jsonseguro }};
+const chartGanancia = {{ chart_ganancia | jsonseguro }};
+const chartViajes   = {{ chart_viajes | jsonseguro }};
+
+if (document.getElementById('chartGanancia')) {
+  new Chart(document.getElementById('chartGanancia'), {
+    type: 'line',
+    data: {
+      labels: chartLabels,
+      datasets: [{
+        data: chartGanancia, borderColor: '#1E86BD', backgroundColor: 'rgba(30,134,189,0.12)',
+        fill: true, tension: 0.25, pointRadius: 5, pointBackgroundColor: '#1E86BD', borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { callback: v => '$' + v, font: { family: 'IBM Plex Sans', size: 10 } } },
+        x: { grid: { display: false }, ticks: { font: { family: 'IBM Plex Sans', size: 10 } } }
+      }
+    }
+  });
+
+  new Chart(document.getElementById('chartViajes'), {
+    type: 'bar',
+    data: {
+      labels: chartLabels,
+      datasets: [{ data: chartViajes, backgroundColor: '#6366F1', borderRadius: 6, borderSkipped: false, maxBarThickness: 60 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { family: 'IBM Plex Sans', size: 10 } } },
+        x: { grid: { display: false }, ticks: { font: { family: 'IBM Plex Sans', size: 10 } } }
+      }
+    }
+  });
+}
+</script>
+{% endblock %}

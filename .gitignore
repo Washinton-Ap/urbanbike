@@ -2,8 +2,14 @@
 data/raw/*.csv
 data/parquet/*.parquet
 
+# Datos del ETL Airflow (carpeta datos/, ver docs/datos_README.md)
+datos/*/*.parquet
+
 # Variables de entorno
 .env
+
+# Logs del servidor local (uvicorn, etc.)
+*.log
 
 # Entornos virtuales
 .venv/
@@ -20,6 +26,10 @@ build/
 
 # PocketBase datos
 pocketbase/pb_data/
+
+# Airflow (runtime, ver docker-compose.yml)
+airflow/logs/*
+!airflow/logs/.gitkeep
 
 # IDE
 .vscode/

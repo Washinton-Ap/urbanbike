@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block page_title %}{{ title }}{% endblock %}
+{% block back_url %}/empleado/operacion/inventario{% endblock %}
+
+{% block content %}
+
+{% if modo == "ver" %}
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">{{ bici.codigo }}</span>
+    <div class="flex gap-2">
+      {% if puede_actualizar %}
+      <a href="/empleado/operacion/inventario/{{ bici.id }}?modo=editar" class="btn btn-primary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        Actualizar
+      </a>
+      {% endif %}
+      {% if puede_eliminar %}
+      <button type="button" class="btn btn-ghost" style="color:#EF4444;border-color:rgba(239,68,68,0.35);" onclick="document.getElementById('modal-eliminar').showModal()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        Eliminar
+      </button>
+      {% endif %}
+    </div>
+  </div>
+  <div class="form-grid" style="padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+    <div>
+      <div class="form-label">Marca / Modelo</div>
+      <div style="margin-bottom:16px;color:var(--text);">{{ bici.marca }} {{ bici.modelo }}</div>
+      <div class="form-label">Categoría</div>
+      <div style="margin-bottom:16px;"><span class="badge {% if bici.es_premium %}badge-blue{% else %}badge-gray{% endif %}">{{ bici.categoria }}</span></div>
+      <div class="form-label">Estado</div>
+      <div style="margin-bottom:16px;">
+        {% if bici.estado == 'disponible' %}<span class="badge badge-green">Disponible</span>
+        {% elif bici.estado == 'en_uso' %}<span class="badge badge-blue">En uso</span>
+        {% elif bici.estado == 'mantenimiento' %}<span class="badge badge-yellow">Mantenimiento</span>
+        {% else %}<span class="badge badge-gray">Retirada</span>{% endif %}
+      </div>
+      <div class="form-label">Estación</div>
+      <div style="margin-bottom:16px;color:var(--text);">{{ bici.estacion_nombre or "Sin asignar" }}</div>
+    </div>
+    <div>
+      <div class="form-label">Número de serie</div>
+      <div style="margin-bottom:16px;color:var(--text);">{{ bici.numero_serie or "—" }}</div>
+      <div class="form-label">Fecha de adquisición</div>
+      <div style="margin-bottom:16px;color:var(--text);">{{ bici.fecha_adquisicion }}</div>
+      <div class="form-label">Kilómetros acumulados / minutos de uso</div>
+      <div style="margin-bottom:16px;color:var(--text);">{{ bici.km_acumulados }} km &middot; {{ bici.minutos_uso }} min</div>
+      <div class="form-label">Alquileres reales registrados</div>
+      <div style="margin-bottom:16px;color:var(--text);">{{ n_alquileres }}</div>
+    </div>
+    <div style="grid-column:1 / -1;">
+      <div class="form-label">Observación</div>
+      <div style="color:var(--text);">{{ bici.observacion or "—" }}</div>
+    </div>
+  </div>
+</div>
+
+{% if puede_eliminar %}
+<dialog id="modal-eliminar">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title" style="color:#EF4444;">Eliminar bicicleta</span></div>
+    <p style="color:var(--text-muted);margin-bottom:20px;">
+      ¿Eliminar la bicicleta <strong style="color:var(--text);">{{ bici.codigo }}</strong>?
+      {% if n_alquileres > 0 %}
+      Tiene <strong>{{ n_alquileres }}</strong> alquiler(es) real(es) asociado(s) — la eliminación va a ser rechazada; considera cambiar su estado a "Retirada" en su lugar.
+      {% else %}
+      Esta acción no se puede deshacer.
+      {% endif %}
+    </p>
+    <form method="post" action="/empleado/operacion/inventario/{{ bici.id }}/eliminar">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <div class="flex gap-2" style="justify-content:flex-end;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-eliminar').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary" style="background:#EF4444;border-color:#EF4444;">Eliminar</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+{% endif %}
+
+{% else %}
+{# modo == "editar" o "crear" #}
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">{% if modo == "crear" %}Nueva bicicleta{% else %}Actualizar {{ bici.codigo }}{% endif %}</span>
+  </div>
+  <form method="post" action="{% if modo == 'crear' %}/empleado/operacion/inventario/crear{% else %}/empleado/operacion/inventario/{{ bici.id }}/editar{% endif %}" style="padding:20px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      {% if modo != "crear" %}
+      <div class="form-group"><label class="form-label">Código *</label>
+        <input class="form-input" type="text" name="codigo" value="{{ bici.codigo }}" required></div>
+      {% endif %}
+      <div class="form-group" {% if modo == "crear" %}style="grid-column:1 / -1;"{% endif %}>
+        <label class="form-label">Modelo *</label>
+        <select class="form-input" name="id_modelo" required>
+          {% for m in modelos %}
+          <option value="{{ m.id }}" {% if bici and bici.id_modelo == m.id %}selected{% endif %}>{{ m.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Estado *</label>
+        <select class="form-input" name="estado" required>
+          <option value="disponible"    {% if bici and bici.estado == 'disponible' %}selected{% endif %}>Disponible</option>
+          <option value="en_uso"        {% if bici and bici.estado == 'en_uso' %}selected{% endif %}>En uso</option>
+          <option value="mantenimiento" {% if bici and bici.estado == 'mantenimiento' %}selected{% endif %}>Mantenimiento</option>
+          <option value="retirada"      {% if bici and bici.estado == 'retirada' %}selected{% endif %}>Retirada</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Estación</label>
+        <select class="form-input" name="id_estacion">
+          <option value="">Sin asignar</option>
+          {% for e in estaciones %}
+          <option value="{{ e.id }}" {% if bici and bici.id_estacion == e.id %}selected{% endif %}>{{ e.nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Número de serie</label>
+        <input class="form-input" type="text" name="numero_serie" value="{{ bici.numero_serie if bici else '' }}"></div>
+      <div class="form-group"><label class="form-label">Fecha de adquisición</label>
+        <input class="form-input" type="date" name="fecha_adquisicion" value="{{ bici.fecha_adquisicion if bici and bici.fecha_adquisicion else '' }}"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Observación</label>
+      <input class="form-input" type="text" name="observacion" value="{{ bici.observacion if bici else '' }}" placeholder="Observaciones opcionales"></div>
+    <div class="flex gap-2" style="justify-content:flex-end;margin-top:20px;">
+      <a href="{% if modo == 'crear' %}/empleado/operacion/inventario{% else %}/empleado/operacion/inventario/{{ bici.id }}{% endif %}" class="btn btn-ghost">Cancelar</a>
+      {% if (modo == "crear" and puede_crear) or (modo != "crear" and puede_actualizar) %}
+      <button type="submit" class="btn btn-primary">{% if modo == "crear" %}Crear{% else %}Guardar cambios{% endif %}</button>
+      {% endif %}
+    </div>
+  </form>
+</div>
+{% endif %}
+
+{% endblock %}

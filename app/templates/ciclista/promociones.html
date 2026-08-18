@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Promociones{% endblock %}
+{% block page_title %}Promociones{% endblock %}
+
+{% block content %}
+
+{% if not es_member and promociones | selectattr("bloqueada") | list %}
+<div class="flash info" style="margin-bottom:16px;">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+  Algunas promociones son exclusivas para suscriptores. <a href="/ciclista/membresia" style="font-weight:600;">Ver membresía</a> para desbloquearlas.
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Promociones activas hoy <span class="text-muted text-sm">({{ promociones | length }})</span></span>
+  </div>
+
+  {% if not ch_ok %}
+  <div style="text-align:center;padding:64px 24px;">
+    <div style="font-size:0.88rem;color:var(--text-muted);">No se pudo cargar el catálogo de promociones. Intenta de nuevo en un momento.</div>
+  </div>
+  {% elif promociones %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Código</th>
+          <th>Nombre</th>
+          <th>Descuento</th>
+          <th>Aplica a</th>
+          <th>Vence</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in promociones %}
+        <tr style="{% if p.bloqueada %}opacity:0.55;{% endif %}">
+          <td style="font-family:'IBM Plex Mono',monospace;">{{ p.codigo }}</td>
+          <td>
+            {{ p.nombre }}
+            {% if p.solo_member %}<span class="badge badge-blue" style="margin-left:6px;">Miembros</span>{% endif %}
+          </td>
+          <td>
+            <span class="badge {% if p.bloqueada %}badge-gray{% else %}badge-green{% endif %}">
+              {% if p.tipo_descuento == 'porcentaje' %}{{ p.valor | int }}%{% else %}USD {{ "%.2f" | format(p.valor) }}{% endif %}
+            </span>
+          </td>
+          <td class="text-muted text-sm">{{ p.aplica_a_label }}</td>
+          <td class="text-muted text-sm">
+            {% if p.bloqueada %}<span title="Exclusiva para suscriptores">🔒 Requiere membresía</span>
+            {% else %}{{ p.fecha_fin }}{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:64px 24px;">
+    <div style="display:flex;justify-content:center;margin-bottom:20px;opacity:0.3;">
+      <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20.59 13.41 11 3.83A2 2 0 0 0 9.59 3.24H4a1 1 0 0 0-1 1v5.59a2 2 0 0 0 .59 1.41l9.58 9.59a2 2 0 0 0 2.82 0l4.6-4.6a2 2 0 0 0 0-2.82z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>
+    </div>
+    <div style="font-family:'Sora',sans-serif;font-weight:700;font-size:1.1rem;color:var(--text);margin-bottom:8px;">
+      Sin promociones activas hoy
+    </div>
+    <div style="font-size:0.88rem;color:var(--text-muted);max-width:360px;margin:0 auto;line-height:1.6;">
+      Vuelve a revisar más tarde — las promociones cambian según el día y la disponibilidad.
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

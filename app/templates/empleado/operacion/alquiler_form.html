@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block page_title %}{{ title }}{% endblock %}
+{% block back_url %}/empleado/operacion/alquileres{% endblock %}
+
+{% block content %}
+
+{% if modo == "ver" %}
+<div class="card" style="margin-bottom:16px;">
+  <div class="card-header">
+    <span class="card-title" style="display:flex;align-items:center;gap:10px;">
+      {{ alquiler.codigo }}
+      {% if alquiler.es_prueba %}<span class="badge badge-yellow">Prueba de desarrollo</span>{% endif %}
+    </span>
+    {% if alquiler.estado in ('reservado', 'en_curso') %}
+    <div class="flex gap-2">
+      <button type="button" class="btn btn-primary" onclick="document.getElementById('modal-completar').showModal()">Completar</button>
+      <button type="button" class="btn btn-ghost" style="color:#EF4444;border-color:rgba(239,68,68,0.35);" onclick="document.getElementById('modal-cancelar').showModal()">Cancelar</button>
+    </div>
+    {% endif %}
+  </div>
+  {% include "componentes/flujo_alquiler.html" %}
+</div>
+
+<div class="card">
+  <div class="card-header"><span class="card-title">Detalle</span></div>
+  <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:20px;padding:20px;">
+    <div>
+      <div class="form-label">Bicicleta</div>
+      <div style="margin-bottom:16px;color:var(--text);font-weight:600;">{{ alquiler.bicicleta_codigo }}</div>
+      <div class="form-label">Ciclista</div>
+      <div style="margin-bottom:16px;color:var(--text);">{{ alquiler.ciclista_nombre }}</div>
+      <div class="form-label">Modalidad</div>
+      <div style="margin-bottom:16px;color:var(--text);text-transform:capitalize;">{{ alquiler.modalidad }}</div>
+    </div>
+    <div>
+      <div class="form-label">Estación de inicio</div>
+      <div style="margin-bottom:16px;color:var(--text);">{{ alquiler.estacion_inicio_nombre }}</div>
+      <div class="form-label">Estación de fin</div>
+      <div style="margin-bottom:16px;color:var(--text);">{{ alquiler.estacion_fin_nombre or "—" }}</div>
+      <div class="form-label">Duración real</div>
+      <div style="margin-bottom:16px;color:var(--text);">{{ alquiler.minutos_reales }} min</div>
+    </div>
+    <div style="grid-column:1 / -1;border-top:1px solid var(--border);padding-top:16px;">
+      <div style="display:flex;justify-content:space-between;color:var(--text-muted);font-size:0.85rem;margin-bottom:4px;">
+        <span>Subtotal</span><span>${{ "%.2f" | format(alquiler.subtotal) }}</span>
+      </div>
+      {% if alquiler.descuento and alquiler.descuento > 0 %}
+      <div style="display:flex;justify-content:space-between;color:#16A34A;font-size:0.85rem;margin-bottom:4px;">
+        <span>Descuento{% if alquiler.id_promocion %} (promoción aplicada){% endif %}</span>
+        <span>-${{ "%.2f" | format(alquiler.descuento) }}</span>
+      </div>
+      {% endif %}
+      <div style="display:flex;justify-content:space-between;margin-top:8px;">
+        <span class="form-label" style="margin:0;">Total</span>
+        <span style="font-family:'Sora',sans-serif;font-weight:800;font-size:1.3rem;color:var(--primary);">${{ "%.2f" | format(alquiler.total) }}</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<dialog id="modal-completar">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title">Completar alquiler — {{ alquiler.codigo }}</span>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-completar').close()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <form method="post" action="/empleado/operacion/alquileres/{{ alquiler.id }}/completar">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <div class="form-group">
+        <label class="form-label">Estación de devolución *</label>
+        <select class="form-input" name="estacion_fin_id" required>
+          {% for e in estaciones %}<option value="{{ e.id }}">{{ e.nombre }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="flex gap-2" style="justify-content:flex-end;margin-top:20px;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-completar').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Completar</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+<dialog id="modal-cancelar">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title" style="color:#EF4444;">Cancelar alquiler</span></div>
+    <p style="color:var(--text-muted);margin-bottom:20px;">
+      ¿Cancelar el alquiler <strong style="color:var(--text);">{{ alquiler.codigo }}</strong>? Esto libera la bicicleta como disponible.
+    </p>
+    <form method="post" action="/empleado/operacion/alquileres/{{ alquiler.id }}/cancelar">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <div class="flex gap-2" style="justify-content:flex-end;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-cancelar').close()">Volver</button>
+        <button type="submit" class="btn btn-primary" style="background:#EF4444;border-color:#EF4444;">Cancelar alquiler</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+{% else %}
+{# modo == "crear" #}
+<div class="card">
+  <div class="card-header"><span class="card-title">Alquiler manual (cliente presencial)</span></div>
+  <form method="post" action="/empleado/operacion/alquileres/crear" style="padding:20px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <div class="form-group">
+      <label class="form-label">Bicicleta disponible *</label>
+      <select class="form-input" name="bicicleta_id" id="select-bicicleta" required>
+        <option value="" disabled selected>Selecciona una bicicleta...</option>
+        {% for b in bicicletas_disponibles %}
+        <option value="{{ b.id }}">{{ b.codigo }} — {{ b.marca }} {{ b.modelo }} ({{ b.estacion_nombre or "sin estación" }})</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div id="cotizacion-box" class="form-group" style="display:none;background:var(--bg-soft);border:1px solid var(--border);border-radius:8px;padding:12px 14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <span class="text-muted text-sm">Tarifa (casual, 1 hora)</span>
+        <span id="cot-subtotal" class="text-sm"></span>
+      </div>
+      <div id="cot-promo-row" style="display:none;justify-content:space-between;align-items:center;margin-top:6px;">
+        <span class="badge badge-blue" id="cot-promo-nombre"></span>
+        <span id="cot-descuento" style="color:#16A34A;font-weight:600;font-size:0.85rem;"></span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
+        <span class="form-label" style="margin:0;">Total a cobrar</span>
+        <span id="cot-total" style="font-family:'Sora',sans-serif;font-weight:800;font-size:1.15rem;color:var(--primary);"></span>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Estación de inicio *</label>
+      <select class="form-input" name="estacion_inicio_id" required>
+        <option value="" disabled selected>Selecciona una estación...</option>
+        {% for e in estaciones %}<option value="{{ e.id }}">{{ e.nombre }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Nombre del ciclista</label>
+      <input class="form-input" type="text" name="ciclista_nombre" placeholder="Nombre y apellido (cliente presencial)">
+    </div>
+    <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;">
+      Se crea un usuario real nuevo para este cliente (sin correo, tarifa casual por hora). Si hay una promoción activa aplicable a la bicicleta elegida, se aplica automáticamente al precio.
+    </div>
+    <div class="flex gap-2" style="justify-content:flex-end;margin-top:20px;">
+      <a href="/empleado/operacion/alquileres" class="btn btn-ghost">Cancelar</a>
+      <button type="submit" class="btn btn-primary">Registrar alquiler</button>
+    </div>
+  </form>
+</div>
+<script>
+const COTIZACIONES = {{ cotizaciones_json | jsonseguro }};
+const selectBici = document.getElementById('select-bicicleta');
+const cotBox = document.getElementById('cotizacion-box');
+
+function actualizarCotizacion() {
+  const c = COTIZACIONES[selectBici.value];
+  if (!c) { cotBox.style.display = 'none'; return; }
+  document.getElementById('cot-subtotal').textContent = 'USD ' + c.precio_base.toFixed(2);
+  document.getElementById('cot-total').textContent = 'USD ' + c.total.toFixed(2);
+  const promoRow = document.getElementById('cot-promo-row');
+  if (c.promo) {
+    promoRow.style.display = 'flex';
+    document.getElementById('cot-promo-nombre').textContent = c.promo.nombre;
+    document.getElementById('cot-descuento').textContent = '-USD ' + c.descuento.toFixed(2);
+  } else {
+    promoRow.style.display = 'none';
+  }
+  cotBox.style.display = 'block';
+}
+selectBici.addEventListener('change', actualizarCotizacion);
+</script>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll('dialog').forEach(d => d.addEventListener('click', e => { if (e.target === d) d.close(); }));
+</script>
+{% endblock %}

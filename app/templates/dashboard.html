@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Dashboard{% endblock %}
 {% block page_title %}Dashboard — Administrador{% endblock %}
+{% block back_url %}{% endblock %}
 
 {% block content %}
 
@@ -65,8 +66,11 @@
   </div>
 </div>
 
+<!-- Patron F: banda 2 (graficas), escaneada de izquierda a derecha tras la fila de KPIs -->
+<div style="font-size:0.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">Actividad del sistema</div>
+
 <!-- Gráficas: usuarios por rol + bicicletas por estado -->
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">
+<div class="charts-section" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">
 
   <div class="card">
     <div class="card-header">
@@ -89,7 +93,7 @@
 </div>
 
 <!-- Estaciones activas vs inactivas + distribución citibike -->
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">
+<div class="dashboard-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">
 
   <div class="card">
     <div class="card-header">
@@ -171,33 +175,33 @@
     <span class="card-title">Acceso rápido</span>
   </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;">
-    <a href="/admin/usuarios" class="card" style="text-align:center;padding:20px 12px;text-decoration:none;border:1px solid var(--border);">
+    <a href="/admin/usuarios" class="card card-clickeable" style="text-align:center;padding:20px 12px;text-decoration:none;border:1px solid var(--border);">
       <div style="display:flex;justify-content:center;margin-bottom:8px;">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
       </div>
       <div style="font-weight:600;font-size:0.85rem;color:var(--text);">Usuarios</div>
-      <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">Gestionar cuentas</div>
+      <div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px;">Gestionar cuentas</div>
     </a>
-    <a href="/admin/bicicletas" class="card" style="text-align:center;padding:20px 12px;text-decoration:none;border:1px solid var(--border);">
+    <a href="/admin/bicicletas" class="card card-clickeable" style="text-align:center;padding:20px 12px;text-decoration:none;border:1px solid var(--border);">
       <div style="display:flex;justify-content:center;margin-bottom:8px;">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 0 0 0-2h-3l-1 5.5M5.5 17.5 9 8l3 5h6"/></svg>
       </div>
       <div style="font-weight:600;font-size:0.85rem;color:var(--text);">Bicicletas</div>
-      <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">Flota operativa</div>
+      <div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px;">Flota operativa</div>
     </a>
-    <a href="/admin/estaciones" class="card" style="text-align:center;padding:20px 12px;text-decoration:none;border:1px solid var(--border);">
+    <a href="/admin/estaciones" class="card card-clickeable" style="text-align:center;padding:20px 12px;text-decoration:none;border:1px solid var(--border);">
       <div style="display:flex;justify-content:center;margin-bottom:8px;">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
       </div>
       <div style="font-weight:600;font-size:0.85rem;color:var(--text);">Estaciones</div>
-      <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">Red de estaciones</div>
+      <div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px;">Red de estaciones</div>
     </a>
-    <a href="/gerente/dashboard" class="card" style="text-align:center;padding:20px 12px;text-decoration:none;border:1px solid var(--border);">
+    <a href="/gerente/dashboard" class="card card-clickeable" style="text-align:center;padding:20px 12px;text-decoration:none;border:1px solid var(--border);">
       <div style="display:flex;justify-content:center;margin-bottom:8px;">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
       </div>
       <div style="font-weight:600;font-size:0.85rem;color:var(--text);">KPIs</div>
-      <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">Analítica Citibike</div>
+      <div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px;">Analítica Citibike</div>
     </a>
   </div>
 </div>
@@ -207,11 +211,11 @@
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-const rolLabels = {{ rol_labels | safe }};
-const rolValues = {{ rol_values | safe }};
-const bikeLabels = {{ bike_labels | safe }};
-const bikeValues = {{ bike_values | safe }};
-const bikeColors = {{ bike_colors | safe }};
+const rolLabels = {{ rol_labels | jsonseguro }};
+const rolValues = {{ rol_values | jsonseguro }};
+const bikeLabels = {{ bike_labels | jsonseguro }};
+const bikeValues = {{ bike_values | jsonseguro }};
+const bikeColors = {{ bike_colors | jsonseguro }};
 
 const donutColors = ['#1E86BD','#6366F1','#10B981','#F59E0B','#EF4444','#8B5CF6'];
 

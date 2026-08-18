@@ -1,19 +1,56 @@
 {% extends "base.html" %}
-{% block title %}Órdenes de Trabajo{% endblock %}
-{% block page_title %}Órdenes de Trabajo{% endblock %}
+{% block title %}Órdenes de Mantenimiento{% endblock %}
+{% block page_title %}Órdenes de Mantenimiento{% endblock %}
 
 {% block content %}
 
+<div class="card" style="margin-bottom:16px;">
+  <form method="get" action="/empleado/mantenimiento/ordenes" style="display:flex;gap:10px;padding:16px 20px;flex-wrap:wrap;align-items:center;">
+    <input type="search" class="form-input filtro-buscador" name="q" value="{{ q or '' }}" placeholder="Buscar por código de orden o bicicleta..." style="flex:1;min-width:220px;">
+    <select class="form-input" name="estado" style="width:auto;">
+      <option value="">Todos los estados</option>
+      {% for e in estados %}
+      <option value="{{ e }}" {% if estado == e %}selected{% endif %}>{{ estado_label[e] }}</option>
+      {% endfor %}
+    </select>
+    <select class="form-input" name="tecnico" style="width:auto;">
+      <option value="">Todos los técnicos</option>
+      {% for t in tecnicos %}
+      <option value="{{ t.id }}" {% if tecnico == (t.id | string) %}selected{% endif %}>{{ t.nombre }}</option>
+      {% endfor %}
+    </select>
+    <select class="form-input" name="prioridad" style="width:auto;">
+      <option value="">Todas las prioridades</option>
+      {% for p in prioridades %}
+      <option value="{{ p }}" {% if prioridad == p %}selected{% endif %}>{{ prioridad_label[p] }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-primary">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      Buscar
+    </button>
+    {% if q or estado or tecnico or prioridad %}
+    <a href="/empleado/mantenimiento/ordenes" class="btn btn-ghost">Limpiar</a>
+    {% endif %}
+  </form>
+</div>
+
 <div class="card">
   <div class="card-header">
-    <span class="card-title">Órdenes de mantenimiento <span class="text-muted text-sm">({{ ordenes | length }})</span></span>
-    <div class="flex gap-2" style="align-items:center;">
-      <select class="form-input" style="width:auto;font-size:0.8rem;padding:6px 10px;" onchange="location.href = this.value ? '?estado=' + this.value : location.pathname">
-        <option value="" {% if not filtro %}selected{% endif %}>Todos los estados</option>
-        <option value="pendiente"  {% if filtro == 'pendiente' %}selected{% endif %}>Pendiente</option>
-        <option value="en_proceso" {% if filtro == 'en_proceso' %}selected{% endif %}>En proceso</option>
-        <option value="completado" {% if filtro == 'completado' %}selected{% endif %}>Completado</option>
-      </select>
+    <span class="card-title">Órdenes de mantenimiento <span class="text-muted text-sm">({{ total }})</span></span>
+    <div style="display:flex;gap:8px;">
+      <a href="/empleado/mantenimiento/ordenes/excel?q={{ q }}&estado={{ estado }}&tecnico={{ tecnico }}&prioridad={{ prioridad }}" class="btn btn-ghost" style="font-size:0.8rem;padding:7px 14px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
+        Exportar Excel
+      </a>
+      <a href="/empleado/mantenimiento/ordenes/pdf?q={{ q }}&estado={{ estado }}&tecnico={{ tecnico }}&prioridad={{ prioridad }}" class="btn btn-ghost" style="font-size:0.8rem;padding:7px 14px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+        Exportar PDF
+      </a>
+      <a href="/empleado/mantenimiento/ordenes/nueva" class="btn btn-primary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Nueva orden
+      </a>
     </div>
   </div>
 
@@ -22,53 +59,67 @@
     <table class="table">
       <thead>
         <tr>
+          <th>Código</th>
           <th>Bicicleta</th>
-          <th>Tipo</th>
-          <th>Descripción</th>
+          <th>Origen</th>
+          <th>Tipo de falla</th>
+          <th>Prioridad</th>
           <th>Técnico</th>
           <th>Apertura</th>
           <th>Estado</th>
-          <th style="width:160px;"></th>
         </tr>
       </thead>
       <tbody>
         {% for o in ordenes %}
-        <tr>
-          <td style="font-weight:600;color:var(--text);font-family:monospace;">{{ o.bicicleta_codigo }}</td>
+        <tr class="fila-clickeable" onclick="if (!event.target.closest('img[data-lightbox]')) window.location='/empleado/mantenimiento/ordenes/{{ o.id }}'">
+          <td style="font-weight:600;color:var(--text);font-family:monospace;">{{ o.codigo }}</td>
           <td>
-            {% if o.tipo == 'urgente' %}<span class="badge badge-red">Urgente</span>
-            {% elif o.tipo == 'correctivo' %}<span class="badge badge-blue">Correctivo</span>
-            {% else %}<span class="badge badge-gray">Preventivo</span>{% endif %}
+            <div style="display:flex;align-items:center;gap:10px;">
+              {% if o.foto_url %}
+              <img src="{{ o.foto_url }}?thumb=48x36" alt="{{ o.bicicleta_codigo }}" data-lightbox data-full="{{ o.foto_url }}" style="width:48px;height:36px;object-fit:cover;border-radius:6px;border:1px solid var(--border);flex-shrink:0;">
+              {% else %}
+              <div style="width:48px;height:36px;display:flex;align-items:center;justify-content:center;background:var(--bg-soft);border-radius:6px;border:1px solid var(--border);color:var(--text-muted);flex-shrink:0;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm-9.5 11.5L9 10l4 4 4-4 4 7.5M9 10l-1-3h-3"/></svg>
+              </div>
+              {% endif %}
+              <span>{{ o.bicicleta_codigo }}</span>
+            </div>
           </td>
-          <td class="text-sm" style="max-width:280px;">{{ o.descripcion }}</td>
-          <td class="text-muted text-sm">{{ o.tecnico_nombre or "—" }}</td>
-          <td class="text-muted text-sm">{{ o.fecha_apertura | replace("T", " ") | replace("Z", "") }}</td>
+          <td class="text-muted text-sm">{{ origen_label.get(o.origen, o.origen) }}</td>
+          <td class="text-muted text-sm">{{ tipo_falla_label.get(o.tipo_falla, o.tipo_falla) }}</td>
           <td>
-            {% if o.estado == 'pendiente' %}<span class="badge badge-gray">Pendiente</span>
-            {% elif o.estado == 'en_proceso' %}<span class="badge badge-blue">En proceso</span>
-            {% else %}<span class="badge badge-green">Completado</span>{% endif %}
+            {% if o.prioridad == 'alta' %}<span class="badge badge-red">Alta</span>
+            {% elif o.prioridad == 'baja' %}<span class="badge badge-gray">Baja</span>
+            {% else %}<span class="badge badge-yellow">Media</span>{% endif %}
           </td>
+          <td class="text-muted text-sm">{{ o.tecnico_nombre }}</td>
+          <td class="text-muted text-sm">{{ o.fecha_apertura.strftime('%Y-%m-%d %H:%M') }}</td>
           <td>
-            {% if o.estado == 'pendiente' %}
-            <form method="post" action="/empleado/mantenimiento/ordenes/{{ o.id }}/tomar">
-              <button type="submit" class="btn btn-primary" style="padding:4px 10px;font-size:0.75rem;">Tomar orden</button>
-            </form>
-            {% elif o.estado == 'en_proceso' %}
-            <button class="btn btn-ghost" style="padding:4px 10px;font-size:0.75rem;"
-              data-id="{{ o.id }}"
-              data-descripcion="{{ o.descripcion | e }}"
-              data-tecnico="{{ o.tecnico_nombre | default('') | e }}"
-              data-observaciones="{{ o.observaciones | default('') | e }}"
-              onclick="openActualizar(this)">Actualizar</button>
-            {% else %}
-            <span class="text-muted text-sm">—</span>
-            {% endif %}
+            {% if o.estado_reparacion == 'abierta' %}<span class="badge badge-gray">Abierta</span>
+            {% elif o.estado_reparacion == 'diagnostico' %}<span class="badge badge-blue">Diagnóstico</span>
+            {% elif o.estado_reparacion == 'en_reparacion' %}<span class="badge badge-blue">En reparación</span>
+            {% elif o.estado_reparacion == 'espera_repuesto' %}<span class="badge badge-yellow">Espera repuesto</span>
+            {% else %}<span class="badge badge-green">Cerrada</span>{% endif %}
           </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
+
+  {% if total_paginas > 1 %}
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px 0;border-top:1px solid var(--border);margin-top:8px;">
+    <div style="font-size:0.82rem;color:var(--text-muted);">Página {{ page }} de {{ total_paginas }}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+      {% for p in range(1, total_paginas + 1) %}
+      <a class="btn {% if p == page %}btn-primary{% else %}btn-ghost{% endif %}"
+         style="padding:6px 12px;font-size:0.85rem;"
+         href="/empleado/mantenimiento/ordenes?q={{ q }}&estado={{ estado }}&tecnico={{ tecnico }}&prioridad={{ prioridad }}&page={{ p }}">{{ p }}</a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
   {% else %}
   <div style="text-align:center;padding:64px 24px;">
     <div style="display:flex;justify-content:center;margin-bottom:20px;opacity:0.3;">
@@ -78,42 +129,10 @@
       Sin órdenes de trabajo
     </div>
     <div style="font-size:0.88rem;color:var(--text-muted);max-width:360px;margin:0 auto;line-height:1.6;">
-      No hay órdenes registradas{% if filtro %} con el estado seleccionado{% endif %}. Las órdenes generadas por vigilancia aparecerán aquí.
+      No hay órdenes registradas con ese filtro.
     </div>
   </div>
   {% endif %}
 </div>
 
-<dialog id="modal-actualizar">
-  <div class="modal-card">
-    <div class="modal-header"><span class="card-title">Actualizar orden de trabajo</span>
-      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-actualizar').close()">✕</button></div>
-    <form method="post" id="form-actualizar">
-      <div class="form-group"><label class="form-label">Técnico asignado</label>
-        <input class="form-input" type="text" name="tecnico_nombre" id="act-tecnico"></div>
-      <div class="form-group"><label class="form-label">Descripción</label>
-        <textarea class="form-input" name="descripcion" id="act-descripcion" rows="3"></textarea></div>
-      <div class="form-group"><label class="form-label">Observaciones</label>
-        <textarea class="form-input" name="observaciones" id="act-observaciones" rows="3" placeholder="Avances del trabajo..."></textarea></div>
-      <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;">
-        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-actualizar').close()">Cancelar</button>
-        <button type="submit" class="btn btn-primary">Guardar cambios</button></div>
-    </form>
-  </div>
-</dialog>
-
-{% endblock %}
-
-{% block scripts %}
-<script>
-function openActualizar(btn) {
-  const d = btn.dataset;
-  document.getElementById('form-actualizar').action  = '/empleado/mantenimiento/ordenes/' + d.id + '/actualizar';
-  document.getElementById('act-tecnico').value       = d.tecnico;
-  document.getElementById('act-descripcion').value   = d.descripcion;
-  document.getElementById('act-observaciones').value = d.observaciones;
-  document.getElementById('modal-actualizar').showModal();
-}
-document.querySelectorAll('dialog').forEach(d => d.addEventListener('click', e => { if (e.target === d) d.close(); }));
-</script>
 {% endblock %}

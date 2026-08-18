@@ -1,0 +1,31 @@
+{# ─────────────────────────────────────────────────────────────────────────
+   Componente: flujo de alquiler paso a paso con íconos (ver
+   docs/Requerimientos_Mejoras_UrbanBike.md, punto 3). Pasos reales del
+   sistema (no se inventa un "reservado" separado: reservar() deja el
+   viaje directo en 'activo', no hay estado de espera previo):
+     1. En curso            -- viaje.estado == "activo"
+     2. Devolución reportada -- viaje.estado == "pendiente_validacion"
+     3. Pago                -- viaje completado, pago generado pero no "pagado"
+     4. Completado           -- pago.estado == "pagado" (ya no aparece en el
+                                 dashboard llegado este punto, ver
+                                 ciclista.py:_tarjetas_pendientes -- el paso
+                                 4 se dibuja acá solo como destino final)
+
+   Variable esperada en el contexto: `paso` (int, 1 a 4) -- el paso actual.
+   ───────────────────────────────────────────────────────────────────────── #}
+<div class="pasos-viaje">
+  {% for n, etiqueta, icono in [
+    (1, "En curso", '<circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm-9.5 11.5L9 10l4 4 4-4 4 7.5M9 10l-1-3h-3"/>'),
+    (2, "Devolución", '<path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7z"/><circle cx="12" cy="9" r="2.5"/>'),
+    (3, "Pago", '<rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>'),
+    (4, "Completado", '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>'),
+  ] %}
+  <div class="paso-viaje {% if n < paso %}paso-viaje--hecho{% elif n == paso %}paso-viaje--actual{% else %}paso-viaje--pendiente{% endif %}">
+    <div class="paso-viaje-icono">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">{{ icono | safe }}</svg>
+    </div>
+    <span class="paso-viaje-etiqueta">{{ etiqueta }}</span>
+  </div>
+  {% if not loop.last %}<div class="paso-viaje-linea {% if n < paso %}paso-viaje-linea--hecho{% endif %}"></div>{% endif %}
+  {% endfor %}
+</div>

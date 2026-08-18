@@ -106,7 +106,26 @@
 
   /* ── Cargar valores guardados ──────────────────────────────────────── */
   function cargarEstadoInicial() {
-    applyFontSize(localStorage.getItem(KEYS.fontSize) || "normal");
+    const fontSizeGuardado = localStorage.getItem(KEYS.fontSize);
+    if (fontSizeGuardado) {
+      // Preferencia real del usuario (elegida alguna vez en el panel,
+      // en cualquier pantalla) -- siempre gana, incluso sobre el
+      // default propio de la pagina.
+      applyFontSize(fontSizeGuardado);
+    } else {
+      // Sin preferencia guardada todavia (primera visita real a todo
+      // el sistema): se respeta el data-font-size que la propia
+      // plantilla ya haya puesto en <html> (ver auth/login.html y
+      // auth/registro.html, que arrancan en "grande" por defecto -- ver
+      // docs/HOJA_DE_RUTA.md) en vez de forzarlo a "normal". A
+      // propósito NO se persiste a localStorage: ese default es de
+      // estas 2 páginas puntuales, no debe filtrarse como preferencia
+      // real del resto del sistema la primera vez que el usuario
+      // navegue a cualquier otra pantalla.
+      document.querySelectorAll("[data-font-size-choice]").forEach((btn) => {
+        btn.classList.toggle("active", btn.getAttribute("data-font-size-choice") === (root.getAttribute("data-font-size") || "normal"));
+      });
+    }
     applyContraste(localStorage.getItem(KEYS.contraste) === "1");
     applyLineMarker(localStorage.getItem(KEYS.lineMarker) === "1");
     applyFocusGuide(localStorage.getItem(KEYS.focusGuide) === "1");
@@ -117,6 +136,16 @@
 
   /* ── Conectar UI ───────────────────────────────────────────────────── */
   document.addEventListener("DOMContentLoaded", () => {
+    // Aplicar las preferencias guardadas (tamaño de fuente, contraste,
+    // marcador de línea, guía de enfoque) es independiente de que exista
+    // el panel para *cambiarlas* -- páginas standalone que no extienden
+    // base.html (auth/login.html, auth/registro.html, auth/verificar.html)
+    // cargan este script pero no tienen el panel en su DOM, y aun así
+    // deben heredar la misma preferencia real que el resto del sistema
+    // (antes quedaba cortado por el `return` de abajo, ver
+    // docs/HOJA_DE_RUTA.md).
+    cargarEstadoInicial();
+
     const toggleBtn = document.getElementById("a11y-toggle");
     const panel     = document.getElementById("a11y-panel");
     const overlay   = document.getElementById("a11y-overlay");
@@ -146,7 +175,5 @@
 
     const restoreBtn = document.getElementById("a11y-restore");
     if (restoreBtn) restoreBtn.addEventListener("click", restaurar);
-
-    cargarEstadoInicial();
   });
 })();

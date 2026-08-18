@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="es" data-theme="light">
+<html lang="es" data-theme="light" data-font-size="grande">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Iniciar sesión — UrbanBike</title>
+  <link rel="icon" type="image/png" href="/static/img/logo-urbanbike.png">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -11,6 +12,9 @@
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap"></noscript>
   <link rel="stylesheet" href="/static/css/main.css">
   <script src="/static/js/theme.js"></script>
+  <script src="/static/js/password-toggle.js"></script>
+  <script src="/static/js/usabilidad.js"></script>
+  <script src="/static/js/loading.js"></script>
 </head>
 <body>
 
@@ -25,12 +29,7 @@
     <!-- Logo -->
     <div class="login-logo">
       <div style="display:inline-flex; align-items:center; gap:10px; margin-bottom:6px;">
-        <svg width="36" height="36" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="7"  cy="20" r="5" stroke="#1E86BD" stroke-width="2.2"/>
-          <circle cx="21" cy="20" r="5" stroke="#1E86BD" stroke-width="2.2"/>
-          <path d="M7 20 L12 8 L18 14 L21 20" stroke="#1E86BD" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-          <circle cx="14" cy="6" r="2" fill="#1E86BD"/>
-        </svg>
+        <img src="/static/img/logo-urbanbike.png" alt="" width="36" height="27">
         <span class="login-logo-name">Urban<span>Bike</span></span>
       </div>
       <p class="login-subtitle">Sistema de gestión de bicicletas</p>
@@ -46,8 +45,21 @@
     </div>
     {% endif %}
 
+    <!-- Flash (ej. registro exitoso) -->
+    {% if flash %}
+    <div class="flash {{ flash.type }}" style="margin-bottom: 16px;">
+      {% if flash.type == 'success' %}
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+      {% else %}
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      {% endif %}
+      {{ flash.msg }}
+    </div>
+    {% endif %}
+
     <!-- Formulario -->
     <form method="post" action="/auth/login">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
       <input type="hidden" name="next" value="{{ next | default('/dashboard') }}">
 
       <div class="form-group">
@@ -75,12 +87,19 @@
           autocomplete="current-password"
           required
         >
+        <div style="text-align:right;margin-top:6px;">
+          <a href="/auth/olvide" style="font-size:0.82rem;color:var(--text-muted);">¿Olvidaste tu contraseña?</a>
+        </div>
       </div>
 
       <button type="submit" class="btn btn-primary w-full mt-4" style="justify-content:center; padding:11px;">
         Iniciar sesión
       </button>
     </form>
+
+    <div style="text-align:center;margin-top:18px;font-size:0.85rem;color:var(--text-muted);">
+      ¿No tienes cuenta? <a href="/auth/registro" style="color:var(--primary);font-weight:600;">Crear cuenta</a>
+    </div>
 
   </div>
 </div>

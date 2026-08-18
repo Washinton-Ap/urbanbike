@@ -14,7 +14,7 @@
 <div class="card">
   <div class="card-header">
     <span class="card-title">Empleados registrados <span class="text-muted text-sm">({{ empleados | length }})</span></span>
-    <div class="flex gap-2" style="align-items:center;">
+    <div class="flex gap-2 header-controles" style="align-items:center;">
       <input type="search" class="form-input" placeholder="Buscar..." style="width:auto;font-size:0.8rem;padding:6px 10px;" oninput="filtrarTabla(this, 'tabla-empleados')">
       <button class="btn btn-primary" onclick="document.getElementById('modal-crear').showModal()">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -38,9 +38,13 @@
         <tr>
           <td>
             <div style="display:flex;align-items:center;gap:10px;">
-              <div style="width:32px;height:32px;border-radius:50%;background:var(--primary-light);display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:700;color:#1E86BD;flex-shrink:0;">
-                {{ e.nombre[:2] | upper }}
+              {% if e.avatar %}
+              <img src="{{ file_url('users', e.id, e.avatar) }}?thumb=64x64" alt="{{ e.nombre }}" data-lightbox data-full="{{ file_url('users', e.id, e.avatar) }}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0;cursor:zoom-in;">
+              {% else %}
+              <div style="width:32px;height:32px;border-radius:50%;background:#FFFFFF;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                <img src="/static/img/logo-urbanbike.png" alt="" style="width:60%;height:60%;object-fit:contain;">
               </div>
+              {% endif %}
               <span style="font-weight:600;color:var(--text);font-size:0.88rem;">{{ e.nombre }}</span>
             </div>
           </td>
@@ -55,11 +59,19 @@
             {% else %}<span class="badge badge-red">Bloqueado</span>{% endif %}
           </td>
           <td>
-            <button class="btn btn-ghost" style="padding:4px 10px;font-size:0.75rem;"
-              data-id="{{ e.id }}"
-              data-nombre="{{ e.nombre | e }}"
-              data-rol-slug="{{ e.rol_slug | e }}"
-              onclick="openCambiarRol(this)">Cambiar rol</button>
+            <div class="flex gap-2">
+              <button class="btn btn-ghost" style="padding:4px 10px;font-size:0.8rem;"
+                data-id="{{ e.id }}"
+                data-nombre="{{ e.nombre | e }}"
+                data-rol-slug="{{ e.rol_slug | e }}"
+                onclick="openCambiarRol(this)">Cambiar rol</button>
+              <button class="btn btn-ghost" style="padding:4px 10px;font-size:0.8rem;"
+                data-id="{{ e.id }}"
+                data-nombre="{{ e.nombre | e }}"
+                data-activo="{{ e.activo | lower }}"
+                data-motivo="{{ e.motivo_bloqueo | default('') | e }}"
+                onclick="openBloqueo(this)">{{ "Bloquear" if e.activo else "Reactivar" }}</button>
+            </div>
           </td>
         </tr>
         {% endfor %}
@@ -84,8 +96,9 @@
 <dialog id="modal-crear">
   <div class="modal-card">
     <div class="modal-header"><span class="card-title">Nuevo empleado</span>
-      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-crear').close()">✕</button></div>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-crear').close()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <form method="post" action="/gerente/empleados/crear">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
       <div class="form-group"><label class="form-label">Nombre</label>
         <input class="form-input" type="text" name="name" placeholder="Ej. María García"></div>
       <div class="form-group"><label class="form-label">Email *</label>
@@ -108,18 +121,37 @@
 <dialog id="modal-rol">
   <div class="modal-card">
     <div class="modal-header"><span class="card-title">Cambiar rol — <span id="rol-nombre"></span></span>
-      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-rol').close()">✕</button></div>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-rol').close()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <form method="post" id="form-rol">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
       <div class="form-group"><label class="form-label">Nuevo rol de empleado</label>
         <select class="form-input" name="rol_slug" id="rol-select" required>
           {% for slug in roles_empleado %}
           <option value="{{ slug }}">{{ roles_empleado_labels.get(slug, slug) }}</option>
           {% endfor %}
         </select></div>
-      <div style="font-size:0.78rem;color:var(--text-muted);">Solo puedes asignar roles de empleado (operación, mantenimiento o vigilancia).</div>
+      <div style="font-size:0.8rem;color:var(--text-muted);">Solo puedes asignar roles de empleado (operación, mantenimiento o vigilancia).</div>
       <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;">
         <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-rol').close()">Cancelar</button>
         <button type="submit" class="btn btn-primary">Guardar</button></div>
+    </form>
+  </div>
+</dialog>
+
+<dialog id="modal-bloqueo">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title" id="bloqueo-titulo">Bloquear — <span id="bloqueo-nombre"></span></span>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-bloqueo').close()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <form method="post" id="form-bloqueo">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <div class="form-group" id="bloqueo-motivo-group">
+        <label class="form-label">Motivo del bloqueo</label>
+        <textarea class="form-input" name="motivo_bloqueo" id="bloqueo-motivo" rows="3" placeholder="Este texto lo va a ver el empleado al intentar iniciar sesión"></textarea>
+      </div>
+      <div id="bloqueo-reactivar-info" style="font-size:0.85rem;color:var(--text-muted);display:none;">Se va a reactivar la cuenta y se va a borrar el motivo de bloqueo anterior.</div>
+      <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-bloqueo').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary" id="bloqueo-submit">Bloquear</button></div>
     </form>
   </div>
 </dialog>
@@ -134,6 +166,24 @@ function openCambiarRol(btn) {
   document.getElementById('rol-nombre').textContent = d.nombre;
   document.getElementById('rol-select').value  = d.rolSlug;
   document.getElementById('modal-rol').showModal();
+}
+function openBloqueo(btn) {
+  const d = btn.dataset;
+  const activo = d.activo === 'true';
+  document.getElementById('bloqueo-nombre').textContent = d.nombre;
+  document.getElementById('bloqueo-titulo').firstChild.textContent = (activo ? 'Bloquear' : 'Reactivar') + ' — ';
+  document.getElementById('bloqueo-submit').textContent = activo ? 'Bloquear' : 'Reactivar';
+  if (activo) {
+    document.getElementById('form-bloqueo').action = '/gerente/empleados/' + d.id + '/bloquear';
+    document.getElementById('bloqueo-motivo').value = d.motivo || '';
+    document.getElementById('bloqueo-motivo-group').style.display = '';
+    document.getElementById('bloqueo-reactivar-info').style.display = 'none';
+  } else {
+    document.getElementById('form-bloqueo').action = '/gerente/empleados/' + d.id + '/reactivar';
+    document.getElementById('bloqueo-motivo-group').style.display = 'none';
+    document.getElementById('bloqueo-reactivar-info').style.display = '';
+  }
+  document.getElementById('modal-bloqueo').showModal();
 }
 document.querySelectorAll('dialog').forEach(d => d.addEventListener('click', e => { if (e.target === d) d.close(); }));
 </script>

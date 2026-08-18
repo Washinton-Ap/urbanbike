@@ -38,10 +38,10 @@
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-const estadoLabels = {{ estado_labels | safe }};
-const estadoValues = {{ estado_values | safe }};
-const tipoLabels   = {{ tipo_labels | safe }};
-const tipoValues   = {{ tipo_values | safe }};
+const estadoLabels = {{ estado_labels | jsonseguro }};
+const estadoValues = {{ estado_values | jsonseguro }};
+const tipoLabels   = {{ tipo_labels | jsonseguro }};
+const tipoValues   = {{ tipo_values | jsonseguro }};
 
 new Chart(document.getElementById('chartEstado'), {
   type: 'doughnut',

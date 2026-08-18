@@ -1,8 +1,27 @@
 {% extends "base.html" %}
 {% block title %}Dashboard — Vigilancia{% endblock %}
 {% block page_title %}Dashboard — Vigilancia{% endblock %}
+{% block back_url %}{% endblock %}
 
 {% block content %}
+
+{% if pendientes_validacion > 0 %}
+<a href="/empleado/vigilancia/devoluciones" style="text-decoration:none;">
+  <div class="card card-clickeable" style="margin-bottom:20px;border:1px solid #F59E0B;background:rgba(245,158,11,0.06);">
+    <div style="display:flex;align-items:center;gap:14px;">
+      <div style="width:40px;height:40px;border-radius:10px;background:rgba(245,158,11,0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      </div>
+      <div>
+        <div style="font-family:'Sora',sans-serif;font-weight:700;font-size:0.95rem;color:var(--text);">
+          {{ pendientes_validacion }} devolución{{ "es" if pendientes_validacion != 1 else "" }} pendiente{{ "s" if pendientes_validacion != 1 else "" }} de validar
+        </div>
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px;">El ciclista ya reportó la entrega — el monto sigue aumentando hasta que confirmes la recepción física. Toca para revisar.</div>
+      </div>
+    </div>
+  </div>
+</a>
+{% endif %}
 
 <!-- KPIs de estaciones (PocketBase) -->
 <div class="kpi-grid" style="margin-bottom:24px;">
@@ -51,8 +70,11 @@
   </div>
 </div>
 
+<!-- Patron F: banda 2 (duracion promedio + grafica), tras la fila de KPIs -->
+<div style="font-size:0.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">Actividad del día</div>
+
 <!-- Duración prom + gráfica top estaciones -->
-<div style="display:grid;grid-template-columns:1fr 2fr;gap:16px;margin-bottom:16px;">
+<div class="charts-section" style="display:grid;grid-template-columns:1fr 2fr;gap:16px;margin-bottom:16px;">
 
   <div class="card" style="display:flex;flex-direction:column;justify-content:center;">
     {% if not ch_ok %}
@@ -81,7 +103,7 @@
   <div class="card">
     <div class="card-header">
       <span class="card-title">Top 10 Estaciones — Oct 31</span>
-      <span style="font-size:0.78rem;color:var(--text-muted);">viajes iniciados vs. retrasos</span>
+      <span style="font-size:0.8rem;color:var(--text-muted);">viajes iniciados vs. retrasos</span>
     </div>
     <div style="position:relative;height:220px;">
       <canvas id="chartVig"></canvas>
@@ -125,10 +147,11 @@
 </div>
 {% endif %}
 
-<!-- Navegación -->
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;">
+<!-- Patron F: banda final (accesos) -->
+<div style="font-size:0.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;margin-top:16px;">Accesos rápidos</div>
+<div class="dashboard-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
   <a href="/empleado/vigilancia/seguimiento" style="text-decoration:none;">
-    <div class="card" style="cursor:pointer;transition:box-shadow 0.15s,transform 0.15s;" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 16px rgba(30,134,189,0.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
+    <div class="card card-clickeable">
       <div style="display:flex;align-items:center;gap:14px;">
         <div style="width:40px;height:40px;border-radius:10px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -141,7 +164,7 @@
     </div>
   </a>
   <a href="/empleado/vigilancia/devoluciones" style="text-decoration:none;">
-    <div class="card" style="cursor:pointer;transition:box-shadow 0.15s,transform 0.15s;" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 16px rgba(30,134,189,0.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
+    <div class="card card-clickeable">
       <div style="display:flex;align-items:center;gap:14px;">
         <div style="width:40px;height:40px;border-radius:10px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.43"/></svg>
@@ -160,9 +183,9 @@
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-const vigLabels  = {{ chart_labels | safe }};
-const vigViajes  = {{ chart_viajes | safe }};
-const vigRetraso = {{ chart_retraso | safe }};
+const vigLabels  = {{ chart_labels | jsonseguro }};
+const vigViajes  = {{ chart_viajes | jsonseguro }};
+const vigRetraso = {{ chart_retraso | jsonseguro }};
 
 if (vigLabels.length) {
   new Chart(document.getElementById('chartVig'), {

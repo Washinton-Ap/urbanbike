@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Dashboard — Gerente{% endblock %}
 {% block page_title %}Dashboard — Gerente{% endblock %}
+{% block back_url %}{% endblock %}
 
 {% block content %}
 
@@ -64,13 +65,16 @@
   </div>
 </div>
 
+<!-- Patron F: banda 2 (graficas), escaneada tras la fila de KPIs -->
+<div style="font-size:0.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">Analítica del período</div>
+
 <!-- Gráficas: DOW + Membresía -->
-<div style="display:grid;grid-template-columns:3fr 2fr;gap:16px;margin-bottom:24px;">
+<div class="charts-section" style="display:grid;grid-template-columns:3fr 2fr;gap:16px;margin-bottom:24px;">
 
   <div class="card">
     <div class="card-header">
       <span class="card-title">Viajes por Día de la Semana</span>
-      <span style="font-size:0.78rem;color:var(--text-muted);">Total periodo</span>
+      <span style="font-size:0.8rem;color:var(--text-muted);">Total periodo</span>
     </div>
     <div style="position:relative;height:200px;">
       <canvas id="chartDow"></canvas>
@@ -99,10 +103,13 @@
   </div>
 </div>
 
+<!-- Patron F: banda final (accesos), al pie del recorrido de escaneo -->
+<div style="font-size:0.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">Accesos rápidos</div>
+
 <!-- Navegación -->
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+<div class="dashboard-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
   <a href="/gerente/reportes" style="text-decoration:none;">
-    <div class="card" style="cursor:pointer;transition:box-shadow 0.15s,transform 0.15s;" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 16px rgba(30,134,189,0.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
+    <div class="card card-clickeable">
       <div style="display:flex;align-items:center;gap:12px;">
         <div style="width:40px;height:40px;border-radius:10px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -115,7 +122,7 @@
     </div>
   </a>
   <a href="/gerente/empleados" style="text-decoration:none;">
-    <div class="card" style="cursor:pointer;transition:box-shadow 0.15s,transform 0.15s;" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 16px rgba(30,134,189,0.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
+    <div class="card card-clickeable">
       <div style="display:flex;align-items:center;gap:12px;">
         <div style="width:40px;height:40px;border-radius:10px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1E86BD" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -134,10 +141,10 @@
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-const dowLabels = {{ dow_labels | safe }};
-const dowValues = {{ dow_values | safe }};
-const topLabels = {{ top_labels | safe }};
-const topValues = {{ top_values | safe }};
+const dowLabels = {{ dow_labels | jsonseguro }};
+const dowValues = {{ dow_values | jsonseguro }};
+const topLabels = {{ top_labels | jsonseguro }};
+const topValues = {{ top_values | jsonseguro }};
 const memberVal = {{ kpis.get('viajes_member', 0) }};
 const casualVal = {{ kpis.get('viajes_casual', 0) }};
 

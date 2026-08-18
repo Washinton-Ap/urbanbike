@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}Historial de Pagos{% endblock %}
+{% block page_title %}Historial de Pagos{% endblock %}
+
+{% block content %}
+
+{% if not pb_ok %}
+<div class="flash error" style="margin-bottom:20px;">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  No se pudo conectar con PocketBase.
+</div>
+{% endif %}
+
+<!-- Filtros -->
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header"><span class="card-title">Filtros</span></div>
+  <form method="get" action="/ciclista/pagos" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:14px;align-items:end;padding:0;">
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label">Estado</label>
+      <select class="form-input" name="estado">
+        <option value="" {% if not estado %}selected{% endif %}>Todos</option>
+        {% for valor, etiqueta in estados_pago.items() %}
+        <option value="{{ valor }}" {% if estado == valor %}selected{% endif %}>{{ etiqueta }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label">Método</label>
+      <select class="form-input" name="metodo">
+        <option value="" {% if not metodo %}selected{% endif %}>Todos</option>
+        {% for valor, etiqueta in metodos_pago.items() %}
+        <option value="{{ valor }}" {% if metodo == valor %}selected{% endif %}>{{ etiqueta }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label">Desde</label>
+      <input class="form-input" type="date" name="desde" value="{{ desde }}">
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label">Hasta</label>
+      <input class="form-input" type="date" name="hasta" value="{{ hasta }}">
+    </div>
+    <div style="display:flex;gap:8px;align-items:flex-end;">
+      <button type="submit" class="btn btn-primary" style="flex:1;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        Filtrar
+      </button>
+      {% if estado or metodo or desde or hasta %}
+      <a href="/ciclista/pagos" class="btn btn-ghost">Limpiar</a>
+      {% endif %}
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Mis pagos <span class="text-muted text-sm">({{ total }})</span></span>
+    <div style="display:flex;gap:8px;">
+      <a href="/ciclista/pagos/excel?estado={{ estado }}&metodo={{ metodo }}&desde={{ desde }}&hasta={{ hasta }}" class="btn btn-ghost" style="font-size:0.82rem;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        Excel
+      </a>
+      <a href="/ciclista/pagos/pdf?estado={{ estado }}&metodo={{ metodo }}&desde={{ desde }}&hasta={{ hasta }}" class="btn btn-ghost" style="font-size:0.82rem;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+        PDF
+      </a>
+    </div>
+  </div>
+
+  {% if pagos %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Fecha</th><th>Concepto</th><th>Monto</th><th>Método</th>
+          <th>Estado</th><th>Comprobante</th><th>Motivo de rechazo</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in pagos %}
+        <tr>
+          <td class="text-muted text-sm">{{ (p.fecha_generado or p.fecha_pago or p.fecha_confirmacion or "—")[:10] }}</td>
+          <td>{% if p.tipo == "cargo_danos" %}<span class="badge badge-red">Cargo por daños</span>{% else %}Viaje{% endif %}</td>
+          <td style="font-weight:600;color:var(--text);">${{ "%.2f" | format(p.monto_total | float if p.monto_total else 0.0) }}</td>
+          <td style="text-transform:capitalize;">{{ metodos_pago.get(p.metodo_pago, p.metodo_pago or "—") }}</td>
+          <td>
+            {% if p.estado == 'pagado' %}<span class="badge badge-green">Aprobado</span>
+            {% elif p.estado == 'pendiente' %}<span class="badge badge-yellow">Pendiente</span>
+            {% elif p.estado == 'verificacion_pendiente' %}<span class="badge badge-blue">En verificación</span>
+            {% elif p.estado == 'pendiente_efectivo' %}<span class="badge badge-yellow">Pendiente efectivo</span>
+            {% elif p.estado == 'rechazado' %}<span class="badge badge-red">Rechazado</span>
+            {% else %}<span class="badge badge-gray">Cancelado</span>{% endif %}
+          </td>
+          <td class="text-sm" style="font-family:monospace;">
+            {% if p.estado == 'pagado' and p.comprobante_numero %}
+            <a href="/ciclista/comprobante/{{ p.id }}/pdf" style="color:var(--primary);font-weight:600;" title="Descargar comprobante en PDF">{{ p.comprobante_numero }}</a>
+            {% else %}
+            <span class="text-muted">{{ p.comprobante_numero or "—" }}</span>
+            {% endif %}
+          </td>
+          <td class="text-sm" style="max-width:260px;">
+            {% if p.estado == 'rechazado' %}
+              <span style="color:#EF4444;">{{ p.observaciones_pago or "Sin motivo registrado." }}</span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if total_paginas > 1 %}
+  <div style="display:flex;justify-content:center;gap:6px;padding:16px;flex-wrap:wrap;">
+    {% for p in range(1, total_paginas + 1) %}
+    <a class="btn {% if p == pagina %}btn-primary{% else %}btn-ghost{% endif %}"
+       style="padding:6px 12px;font-size:0.85rem;"
+       href="/ciclista/pagos?estado={{ estado }}&metodo={{ metodo }}&desde={{ desde }}&hasta={{ hasta }}&pagina={{ p }}">{{ p }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% else %}
+  <div style="text-align:center;padding:64px 24px;">
+    <div style="display:flex;justify-content:center;margin-bottom:20px;opacity:0.3;">
+      <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+    </div>
+    <div style="font-family:'Sora',sans-serif;font-weight:700;font-size:1.1rem;color:var(--text);margin-bottom:8px;">
+      {% if estado or metodo or desde or hasta %}Sin resultados{% else %}Sin pagos registrados{% endif %}
+    </div>
+    <div style="font-size:0.88rem;color:var(--text-muted);max-width:360px;margin:0 auto;line-height:1.6;">
+      {% if estado or metodo or desde or hasta %}
+      No se encontraron pagos con esos filtros.
+      {% else %}
+      Aún no tienes pagos registrados. Aparecerán aquí cuando completes un viaje o se genere un cargo.
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

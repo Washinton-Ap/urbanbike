@@ -49,8 +49,8 @@
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-const mesLabels = {{ mes_labels | safe }};
-const mesValues = {{ mes_values | safe }};
+const mesLabels = {{ mes_labels | jsonseguro }};
+const mesValues = {{ mes_values | jsonseguro }};
 
 if (mesLabels.length) {
   new Chart(document.getElementById('chartMeses'), {

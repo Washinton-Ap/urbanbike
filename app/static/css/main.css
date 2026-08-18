@@ -5,6 +5,7 @@
   --primary:        #1E86BD;
   --primary-dark:   #1670A0;
   --primary-light:  #D6EDF8;
+  --accent-cyan:    #34A9D1;
 
   --sidebar-w:      240px;
   --topbar-h:       56px;
@@ -38,12 +39,19 @@
   --sidebar-active: #1E86BD;
   --sidebar-hover:  rgba(255,255,255,0.05);
   --shadow:         0 1px 3px rgba(0,0,0,0.4);
+  /* Antes solo existía en :root (#D6EDF8, pensado para modo claro) y
+     nunca se redefinía acá -- cualquier tarjeta con este fondo (ej.
+     "Reservar Bicicleta", "Tarifas") quedaba con texto casi blanco
+     (var(--text)) sobre un azul pálido de modo claro, casi invisible.
+     Este valor da >10:1 de contraste contra var(--text) y >5:1 contra
+     var(--text-muted) (calculado con la fórmula de luminancia WCAG). */
+  --primary-light:  #14304A;
 }
 
 /* ── Reset ─────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-html { font-size: 15px; }
+html { font-size: 16px; }
 
 body {
   font-family: 'IBM Plex Sans', sans-serif;
@@ -51,6 +59,7 @@ body {
   color: var(--text);
   line-height: 1.6;
   min-height: 100vh;
+  min-height: 100dvh;
   transition: background var(--transition), color var(--transition);
 }
 
@@ -69,6 +78,7 @@ a:hover { color: var(--primary-dark); }
   grid-template-columns: var(--sidebar-w) 1fr;
   grid-template-rows: 1fr;
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 /* ── Sidebar ─────────────────────────────────────────────────────────── */
@@ -91,6 +101,8 @@ a:hover { color: var(--primary-dark); }
   gap: 10px;
   padding: 20px 20px 16px;
   border-bottom: 1px solid rgba(255,255,255,0.07);
+  text-decoration: none;
+  cursor: pointer;
 }
 
 .sidebar-logo svg { flex-shrink: 0; }
@@ -109,7 +121,7 @@ a:hover { color: var(--primary-dark); }
 
 .sidebar-section {
   padding: 12px 12px 4px;
-  font-size: 0.68rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -129,7 +141,7 @@ a:hover { color: var(--primary-dark); }
   margin: 2px 8px;
   border-radius: var(--radius);
   color: var(--sidebar-text);
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
   font-weight: 500;
   transition: background var(--transition), color var(--transition);
   cursor: pointer;
@@ -172,16 +184,31 @@ a:hover { color: var(--primary-dark); }
   background: var(--primary);
   display: flex; align-items: center; justify-content: center;
   font-family: 'Sora', sans-serif;
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   font-weight: 700;
   color: #FFF;
   flex-shrink: 0;
 }
 
+/* Avatar por defecto (sin foto subida): isotipo de UrbanBike en vez de
+   iniciales -- ver docs/Requerimientos_Mejoras_UrbanBike.md, punto 16.
+   Fondo fijo claro (no var(--bg-card)/var(--primary)) porque el isotipo
+   usa el azul pizarra fijo del logo (#3E5C74, ver componentes/factura.html)
+   y necesita contraste garantizado en tema oscuro también. */
+.avatar-logo-fallback {
+  background: #FFFFFF;
+  border: 1px solid var(--border);
+}
+.avatar-logo-fallback img {
+  width: 60%;
+  height: 60%;
+  object-fit: contain;
+}
+
 .user-info { flex: 1; min-width: 0; }
 
 .user-name {
-  font-size: 0.8rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   color: #FFFFFF;
   white-space: nowrap;
@@ -190,7 +217,7 @@ a:hover { color: var(--primary-dark); }
 }
 
 .user-role {
-  font-size: 0.7rem;
+  font-size: 0.8125rem;
   color: rgba(255,255,255,0.45);
 }
 
@@ -209,18 +236,96 @@ a:hover { color: var(--primary-dark); }
   box-shadow: var(--shadow);
 }
 
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.topbar-back {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px 6px 6px;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  flex-shrink: 0;
+  transition: background var(--transition), color var(--transition);
+}
+
+.topbar-back:hover {
+  background: var(--sidebar-hover, rgba(0,0,0,0.05));
+  color: var(--text);
+}
+
+.topbar-back svg { flex-shrink: 0; }
+
 .topbar-title {
   font-family: 'Sora', sans-serif;
   font-size: 1rem;
   font-weight: 600;
   color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .topbar-actions {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
 }
+
+@media (max-width: 560px) {
+  .topbar-back-label { display: none; }
+  .topbar-back { padding: 6px; }
+}
+
+/* ── Lightbox de imagenes ────────────────────────────────────────────── */
+img[data-lightbox] { cursor: zoom-in; }
+
+.lightbox-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 15, 0.88);
+  z-index: 500;
+  align-items: center;
+  justify-content: center;
+  padding: 48px;
+}
+
+.lightbox-overlay.open { display: flex; }
+
+.lightbox-img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: var(--radius);
+  box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+}
+
+.lightbox-close {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255,255,255,0.12);
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.lightbox-close:hover { background: rgba(255,255,255,0.22); }
 
 /* ── Theme toggle ────────────────────────────────────────────────────── */
 .theme-toggle {
@@ -238,6 +343,144 @@ a:hover { color: var(--primary-dark); }
   background: var(--primary-light);
   color: var(--primary);
   border-color: var(--primary);
+}
+
+/* ── Campana de notificaciones (punto 13/11.1) ──────────────────────────
+   Ver app/static/js/campana-notificaciones.js. */
+.campana-wrap { position: relative; }
+
+.campana-contador {
+  position: absolute;
+  top: -4px; right: -4px;
+  min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 8px;
+  background: #EF4444;
+  color: #FFF;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+
+.campana-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 340px;
+  max-width: calc(100vw - 24px);
+  max-height: 420px;
+  overflow-y: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 16px 40px rgba(0,0,0,0.18);
+  z-index: 210;
+}
+
+.campana-dropdown-header {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  font-family: 'Sora', sans-serif;
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: var(--text);
+}
+
+.campana-marcar-todas {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+.campana-marcar-todas:hover { text-decoration: underline; }
+
+.campana-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+}
+
+/* Cada item es una tarjeta al estilo .ub-toast (punto 14) -- mismo
+   lenguaje visual: icono + borde izquierdo de color por tipo, en vez del
+   listado plano de filas que tenia antes. */
+.campana-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  transition: background var(--transition), box-shadow var(--transition);
+}
+.campana-item:hover { background: var(--bg); box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+
+.campana-item-icono { flex-shrink: 0; margin-top: 1px; color: var(--primary); }
+.campana-item-texto { flex: 1; min-width: 0; }
+
+.campana-item.falla,
+.campana-item.penalizacion { border-left-color: #EF4444; }
+.campana-item.falla .campana-item-icono,
+.campana-item.penalizacion .campana-item-icono { color: #EF4444; }
+
+.campana-item.pago_aprobado { border-left-color: #10B981; }
+.campana-item.pago_aprobado .campana-item-icono { color: #10B981; }
+
+.campana-item.pago_pendiente,
+.campana-item.orden_asignada { border-left-color: #1E40AF; }
+.campana-item.pago_pendiente .campana-item-icono,
+.campana-item.orden_asignada .campana-item-icono { color: #1E40AF; }
+[data-theme="dark"] .campana-item.pago_pendiente .campana-item-icono,
+[data-theme="dark"] .campana-item.orden_asignada .campana-item-icono { color: #93C5FD; }
+
+.campana-item.mensaje_soporte { border-left-color: var(--primary); }
+.campana-item.mensaje_soporte .campana-item-icono { color: var(--primary); }
+
+.campana-item.membresia_vencida,
+.campana-item.infraccion { border-left-color: #EF4444; }
+.campana-item.membresia_vencida .campana-item-icono,
+.campana-item.infraccion .campana-item-icono { color: #EF4444; }
+
+.campana-item.membresia_por_vencer { border-left-color: #F59E0B; }
+.campana-item.membresia_por_vencer .campana-item-icono { color: #F59E0B; }
+
+.campana-item-titulo {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+.campana-item-mensaje {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.campana-item-fecha {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.campana-vacio {
+  padding: 28px 14px;
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--text-muted);
 }
 
 /* ── Main content ────────────────────────────────────────────────────── */
@@ -267,6 +510,8 @@ a:hover { color: var(--primary-dark); }
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-bottom: 16px;
 }
 
@@ -293,7 +538,7 @@ a:hover { color: var(--primary-dark); }
 }
 
 .kpi-label {
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -310,7 +555,7 @@ a:hover { color: var(--primary-dark); }
 }
 
 .kpi-delta {
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   color: var(--text-muted);
   margin-top: 4px;
 }
@@ -325,7 +570,7 @@ a:hover { color: var(--primary-dark); }
   gap: 10px;
   padding: 12px 16px;
   border-radius: var(--radius);
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
   margin-bottom: 20px;
 }
 
@@ -337,6 +582,109 @@ a:hover { color: var(--primary-dark); }
 [data-theme="dark"] .flash.error   { background: #7F1D1D; color: #FCA5A5; border-color: #991B1B; }
 [data-theme="dark"] .flash.info    { background: #1E3A5F; color: #93C5FD; border-color: #1E40AF; }
 
+/* ── Notificaciones flotantes (toast + modal de confirmación) ──────────
+   Componente único reutilizable, ver app/static/js/notificaciones.js.
+   Reemplaza alert()/confirm() nativos y los flash messages del bloque
+   anterior (ver docs/Requerimientos_Mejoras_UrbanBike.md, punto 14). */
+#ub-toast-container {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 360px;
+  max-width: calc(100vw - 24px);
+  pointer-events: none;
+}
+
+.ub-toast {
+  position: relative;
+  overflow: hidden;
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.18);
+  padding: 13px 14px;
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--text);
+  animation: ub-toast-in 0.22s ease;
+}
+.ub-toast.leaving { animation: ub-toast-out 0.18s ease forwards; }
+
+.ub-toast-icon { flex-shrink: 0; margin-top: 1px; }
+.ub-toast-msg  { flex: 1; word-break: break-word; }
+.ub-toast-close {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--text-muted);
+  border-radius: 4px;
+}
+.ub-toast-close:hover { color: var(--text); background: var(--bg); }
+
+.ub-toast-bar { position: absolute; left: 0; bottom: 0; height: 2px; background: currentColor; opacity: 0.35; animation: ub-toast-progress linear forwards; }
+
+.ub-toast.success { border-left-color: #10B981; }
+.ub-toast.error   { border-left-color: #EF4444; }
+.ub-toast.info    { border-left-color: #1E40AF; }
+.ub-toast.success .ub-toast-icon, .ub-toast.success .ub-toast-bar { color: #10B981; }
+.ub-toast.error   .ub-toast-icon, .ub-toast.error   .ub-toast-bar { color: #EF4444; }
+.ub-toast.info    .ub-toast-icon, .ub-toast.info    .ub-toast-bar { color: #1E40AF; }
+[data-theme="dark"] .ub-toast.info .ub-toast-icon, [data-theme="dark"] .ub-toast.info .ub-toast-bar { color: #93C5FD; }
+
+@keyframes ub-toast-in       { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes ub-toast-out      { from { opacity: 1; transform: translateX(0); }    to { opacity: 0; transform: translateX(24px); } }
+@keyframes ub-toast-progress { from { width: 100%; }                             to { width: 0%; } }
+
+@media (max-width: 480px) {
+  #ub-toast-container { left: 12px; right: 12px; top: 12px; width: auto; }
+}
+
+#ub-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15,23,42,0.55);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+#ub-confirm-overlay.open { opacity: 1; pointer-events: auto; }
+
+.ub-confirm-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+  padding: 24px;
+  transform: translateY(10px);
+  transition: transform 0.15s ease;
+}
+#ub-confirm-overlay.open .ub-confirm-card { transform: translateY(0); }
+
+.ub-confirm-title { font-family: 'Sora', sans-serif; font-weight: 700; font-size: 1.05rem; color: var(--text); margin-bottom: 10px; }
+.ub-confirm-msg   { color: var(--text-muted); font-size: 0.9rem; line-height: 1.55; margin-bottom: 22px; }
+.ub-confirm-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.ub-confirm-actions .btn-primary.peligro { background: #EF4444; border-color: #EF4444; }
+.ub-confirm-actions .btn-primary.peligro:hover { background: #DC2626; border-color: #DC2626; }
+
 /* ── Botones ─────────────────────────────────────────────────────────── */
 .btn {
   display: inline-flex;
@@ -344,7 +692,7 @@ a:hover { color: var(--primary-dark); }
   gap: 6px;
   padding: 8px 16px;
   border-radius: var(--radius);
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
   font-weight: 500;
   font-family: 'IBM Plex Sans', sans-serif;
   cursor: pointer;
@@ -367,12 +715,74 @@ a:hover { color: var(--primary-dark); }
 }
 .btn-ghost:hover { background: var(--bg); color: var(--text); }
 
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* ── Indicador de carga (app/static/js/loading.js) ───────────────────── */
+/* El texto/ícono del botón se vuelve transparente (en vez de borrarse con
+   JS) para no perder ni tener que reconstruir el contenido original -- el
+   spinner es un ::after posicionado encima, con su propio `color` (si no,
+   heredaría el `color: transparent` del texto y también desaparecería). */
+.btn.is-loading {
+  color: transparent !important;
+  pointer-events: none;
+  position: relative;
+}
+.btn.is-loading svg { visibility: hidden; }
+.btn-primary.is-loading::after { color: #FFFFFF; }
+.btn-ghost.is-loading::after   { color: var(--text-muted); }
+/* Isotipo real (docs/Requerimientos_Mejoras_UrbanBike.md punto 16) en vez
+   de un anillo genérico -- mismo asset que favicon/campana
+   (static/img/logo-urbanbike.png), aplicado como mascara CSS en vez de
+   <img> para que herede `currentColor` (blanco sobre primario, gris sobre
+   ghost, arriba) igual que el anillo anterior -- una imagen normal no se
+   podria recolorear por tema/variante sin generar un asset nuevo. */
+.btn.is-loading::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 15px;
+  height: 15px;
+  margin: -7.5px 0 0 -7.5px;
+  background-color: currentColor;
+  -webkit-mask-image: url('/static/img/logo-urbanbike.png');
+  mask-image: url('/static/img/logo-urbanbike.png');
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  animation: ub-girar 0.9s linear infinite;
+}
+@keyframes ub-girar { to { transform: rotate(360deg); } }
+
+/* Barra de progreso superior para navegación de página completa (creada
+   por loading.js) -- se destruye sola cuando el navegador reemplaza la
+   página, no requiere que nadie la oculte al terminar. */
+#ub-progreso {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 0%;
+  background: var(--primary);
+  z-index: 300;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+#ub-progreso.ub-progreso-avanzar {
+  opacity: 1;
+  width: 80%;
+  transition: width 3s cubic-bezier(0.1, 0.7, 0.6, 0.9), opacity 0.2s;
+}
+
 /* ── Formularios ─────────────────────────────────────────────────────── */
 .form-group { margin-bottom: 16px; }
 
 .form-label {
   display: block;
-  font-size: 0.8rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   color: var(--text-muted);
   margin-bottom: 6px;
@@ -385,7 +795,7 @@ a:hover { color: var(--primary-dark); }
   border: 1px solid var(--border);
   background: var(--bg-input);
   color: var(--text);
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
   font-family: 'IBM Plex Sans', sans-serif;
   transition: border-color var(--transition), box-shadow var(--transition);
   outline: none;
@@ -402,13 +812,13 @@ a:hover { color: var(--primary-dark); }
 table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
 }
 
 th {
   text-align: left;
   padding: 10px 14px;
-  font-size: 0.72rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -427,13 +837,78 @@ td {
 tr:last-child td { border-bottom: none; }
 tr:hover td { background: var(--bg); }
 
+/* Filas de WorkPanel que navegan a un detalle al hacer clic */
+.fila-clickeable { cursor: pointer; }
+.fila-clickeable:hover td { background: var(--primary-light); }
+
+/* ── Filas de gráficas Chart.js (dashboards/reportes) ─────────────────
+   Las proporciones (3fr 2fr, 2fr 1fr 1fr, etc.) se fijan inline por
+   pantalla; min-width:0 evita que el <canvas> fuerce el ancho de su
+   columna (bug real: sin esto la fila entera empuja la página a
+   scroll horizontal en vez de encogerse), y bajo 768px (mismo
+   breakpoint que ya usa el sidebar) colapsan a una columna. */
+.charts-section > * { min-width: 0; }
+
+@media (max-width: 768px) {
+  .charts-section { grid-template-columns: 1fr !important; }
+}
+
+/* ── Grids de campos en formularios de 2+ columnas ────────────────────
+   Mismo problema y mismo breakpoint que .charts-section, aplicado a
+   los grids de campos (grid-template-columns:1fr 1fr / 2fr 1fr /
+   repeat(3,1fr), fijados inline por pantalla) para que no se aprieten
+   ilegibles en móvil. */
+.form-grid > * { min-width: 0; }
+
+@media (max-width: 768px) {
+  .form-grid { grid-template-columns: 1fr !important; }
+}
+
+/* ── Grids de 2 columnas fijas en dashboards de rol (tarjetas/tablas sin
+   <canvas>) ────────────────────────────────────────────────────────────
+   Mismo problema y mismo breakpoint que .charts-section/.form-grid, pero
+   para las filas de los 6 dashboards de rol que no tienen gráfica (por
+   eso .charts-section las dejó fuera a propósito). */
+.dashboard-grid > * { min-width: 0; }
+
+@media (max-width: 768px) {
+  .dashboard-grid { grid-template-columns: 1fr !important; }
+}
+
+/* ── Buscador de barras de filtro (WorkPanel) ──────────────────────────
+   El min-width fijo (200-220px) empuja la fila entera fuera del viewport
+   en pantallas muy angostas. Cambiar el mínimo a 0 no basta: con
+   flex:1 (flex-basis:0%) el buscador pasa a tener tamaño hipotético 0
+   para el algoritmo de wrap, así que SIEMPRE cabe en la línea junto a
+   un <select> y solo recibe el espacio sobrante de esa línea -- medido
+   con anchos reales, el campo terminaba en 37-91px (inusable) en varios
+   anchos intermedios (360-768px), de forma no monótona según cuántos
+   elementos entraban en esa línea.
+   La corrección real es forzar flex-basis:100% -- así el buscador
+   siempre reclama la línea completa para sí mismo y ningún <select>
+   puede compartirla, garantizando que ocupe todo el ancho disponible
+   en cualquier punto de este rango, en vez de negociar espacio. */
+@media (max-width: 768px) {
+  .filtro-buscador { flex: 1 1 100% !important; min-width: 0 !important; }
+}
+
+/* ── Tarjetas clicables (accesos rápidos de dashboards) ──────────────── */
+.card-clickeable {
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.card-clickeable:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(30,134,189,0.15);
+}
+
 /* ── Badge de estado ─────────────────────────────────────────────────── */
 .badge {
   display: inline-flex;
   align-items: center;
   padding: 2px 8px;
   border-radius: 99px;
-  font-size: 0.72rem;
+  font-size: 0.8125rem;
   font-weight: 600;
 }
 
@@ -448,6 +923,502 @@ tr:hover td { background: var(--bg); }
 [data-theme="dark"] .badge-yellow { background: #78350F; color: #FCD34D; }
 [data-theme="dark"] .badge-blue   { background: #1E3A5F; color: #93C5FD; }
 
+/* ── Flujo de alquiler (línea de ruta) ──────────────────────────────────
+   Elemento distintivo del sistema: ver docs/REDISENO_UI.md.
+   Úsalo solo en la vista de detalle de un alquiler. ────────────────────── */
+.flujo-alquiler {
+  display: flex;
+  align-items: flex-start;
+  padding: 8px 4px 4px;
+  overflow-x: auto;
+}
+
+.flujo-paso {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  min-width: 84px;
+}
+
+.flujo-paso-cabecera {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-height: 40px;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.flujo-paso-etiqueta {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.flujo-paso-actual-tag {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--primary);
+  background: var(--primary-light);
+  padding: 2px 8px;
+  border-radius: 99px;
+}
+
+.flujo-paso-actual-tag.oculta { visibility: hidden; }
+
+.flujo-nodo {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background var(--transition), border-color var(--transition), box-shadow var(--transition);
+}
+
+.flujo-nodo.completado {
+  background: var(--primary);
+  color: #FFFFFF;
+  border: 2px solid var(--primary);
+}
+
+.flujo-nodo.pendiente {
+  background: transparent;
+  color: var(--text-muted);
+  border: 2px solid var(--border);
+}
+
+.flujo-nodo.actual {
+  box-shadow: 0 0 0 3px var(--bg-card), 0 0 0 5px var(--accent-cyan);
+}
+
+.flujo-paso-hora {
+  margin-top: 10px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.flujo-segmento {
+  flex: 1 1 auto;
+  min-width: 32px;
+  height: 3px;
+  margin-top: 78px;
+  background: repeating-linear-gradient(to right, var(--border) 0 6px, transparent 6px 12px);
+}
+
+.flujo-segmento.completo {
+  background: var(--primary);
+}
+
+/* ── Checklist de devolución por categoría (línea de ruta vertical) ─────
+   Elemento distintivo del sistema: ver docs/REDISENO_UI.md.
+   Úsalo solo en la vista de inspección/devolución. ─────────────────────── */
+.checklist-devolucion {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 32px;
+  padding: 8px 4px 4px;
+}
+
+.checklist-columna-izq {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.checklist-anillo {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  margin-bottom: 28px;
+}
+
+.checklist-anillo svg circle {
+  transition: stroke-dashoffset var(--transition);
+}
+
+.checklist-anillo-texto {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.checklist-anillo-pct {
+  font-family: 'Sora', sans-serif;
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.1;
+}
+
+.checklist-anillo-label {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.checklist-categorias {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: 100%;
+  position: relative;
+}
+
+.checklist-categorias::before {
+  content: "";
+  position: absolute;
+  left: 17px;
+  top: 18px;
+  bottom: 18px;
+  width: 2px;
+  background: var(--border);
+}
+
+.checklist-categoria {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  position: relative;
+  color: var(--text-muted);
+}
+
+.checklist-categoria-nodo {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  z-index: 1;
+  background: var(--bg-card);
+  border: 2px solid var(--border);
+  color: var(--text-muted);
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+
+.checklist-categoria-nodo.completa {
+  background: #10B981;
+  border-color: #10B981;
+  color: #FFFFFF;
+}
+
+.checklist-categoria-nodo.en_revision {
+  background: #F59E0B;
+  border-color: #F59E0B;
+  color: #FFFFFF;
+}
+
+.checklist-categoria-etiqueta {
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.checklist-categoria.activa .checklist-categoria-etiqueta {
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.checklist-columna-der {
+  min-width: 0;
+}
+
+.checklist-items-cabecera {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 14px 10px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.checklist-item-fila {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.checklist-item-fila:nth-child(even) { background: var(--bg); }
+
+.checklist-item-codigo {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  margin-right: 12px;
+}
+
+.checklist-item-nombre {
+  font-size: 0.88rem;
+  color: var(--text);
+}
+
+.checklist-items-vacio {
+  padding: 24px 14px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.checklist-panel-items.oculto { display: none; }
+
+@media (max-width: 640px) {
+  .checklist-devolucion { grid-template-columns: 1fr; }
+}
+
+/* ── Catálogo: tarjeta de bicicleta con identidad de dominio ────────────
+   Ver docs/REDISENO_UI.md → Componente 3. ────────────────────────────── */
+.catalogo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 20px;
+}
+
+/* A 320-375px el contenido real disponible (~184-224px tras el padding
+   acumulado de .page-content + .card) es menor que el mínimo de 260px
+   de la columna -- la tarjeta se sale de su propio contenedor. Una sola
+   columna a ancho completo resuelve esto sin tocar el diseño de la
+   tarjeta en sí. */
+@media (max-width: 768px) {
+  .catalogo-grid { grid-template-columns: 1fr; }
+}
+
+.tarjeta-bicicleta {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  transition: border-color var(--transition), transform var(--transition);
+}
+
+.tarjeta-bicicleta:hover {
+  border-color: var(--primary);
+  transform: translateY(-2px);
+}
+
+.tarjeta-bicicleta-foto {
+  /* ≈60% de la altura de la tarjeta: con el cuerpo actual (nombre, specs,
+     precio y botón) rondando los 220-260px, 360px deja la tarjeta cerca
+     de esa proporción sin depender de porcentajes de flex poco fiables
+     sobre contenedores de alto automático. */
+  position: relative;
+  height: 360px;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tarjeta-bicicleta-foto img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tarjeta-bicicleta-marca-agua { opacity: 0.9; }
+
+.tarjeta-bicicleta-premium {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: var(--sidebar-bg);
+  color: var(--accent-cyan);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.tarjeta-bicicleta-estado {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+}
+
+.tarjeta-bicicleta-beneficio {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 22px;
+  background: var(--bg-card);
+  color: var(--text);
+  text-align: center;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  font-weight: 500;
+  box-shadow: var(--shadow);
+}
+
+.tarjeta-bicicleta-cuerpo {
+  padding: 16px 18px 18px;
+}
+
+.tarjeta-bicicleta-autonomia {
+  background: var(--primary-light);
+  color: var(--primary);
+  text-align: center;
+  padding: 9px 12px;
+  border-radius: var(--radius);
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+
+.tarjeta-bicicleta-nombre {
+  font-family: 'Sora', sans-serif;
+  font-weight: 700;
+  font-size: 1.02rem;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.tarjeta-bicicleta-subtitulo {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+}
+
+.tarjeta-bicicleta-specs {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 14px;
+}
+
+.tarjeta-bicicleta-spec {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.tarjeta-bicicleta-spec svg { color: var(--text-muted); flex-shrink: 0; }
+
+.tarjeta-bicicleta-spec-destacado,
+.tarjeta-bicicleta-spec-destacado svg {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.tarjeta-bicicleta-precio-bloque {
+  margin-bottom: 14px;
+}
+
+.tarjeta-bicicleta-precio {
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 500;
+  font-size: 1.15rem;
+  color: var(--primary);
+}
+
+.tarjeta-bicicleta-precio-periodo {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+.tarjeta-bicicleta-precio-casual {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.tarjeta-bicicleta-precio-tachado {
+  font-family: 'IBM Plex Mono', monospace;
+  text-decoration: line-through;
+}
+
+.tarjeta-bicicleta-precio-promo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.tarjeta-bicicleta-precio-promo > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.tarjeta-bicicleta-ahorro {
+  font-weight: 700;
+  color: #10B981;
+}
+
+.tarjeta-bicicleta-btn-alquilar {
+  width: 100%;
+  justify-content: center;
+  font-size: 0.9rem;
+}
+
+.catalogo-filtro-oculta { display: none !important; }
+
+/* ── Controles de .card-header (botones/filtros a la derecha del título) ──
+   Mismo problema en las 10 pantallas reales que lo usan (WorkPanels de
+   admin/gerente: exportar Excel/PDF + "Nueva X", o filtros inline): un
+   .flex sin flex-wrap no colapsa, así que el grupo de controles suma
+   más ancho que el viewport a 320-375px y empuja la página entera a
+   scroll horizontal. Clase genérica reutilizable (nace del fix puntual
+   del header del catálogo del ciclista, sección 48) -- aplicar a
+   cualquier .flex dentro de un .card-header con más de 1-2 controles. */
+@media (max-width: 768px) {
+  .header-controles { flex-wrap: wrap; }
+}
+
+/* ── Catálogo: selector de modalidad (hora/día) ─────────────────────────── */
+.modalidad-selector {
+  display: flex;
+  gap: 6px;
+  padding: 3px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.modalidad-btn {
+  padding: 6px 12px;
+  border-radius: calc(var(--radius) - 3px);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  font-family: 'IBM Plex Sans', sans-serif;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.modalidad-btn:hover { color: var(--text); }
+
+.modalidad-btn.activo {
+  background: var(--primary);
+  color: #FFFFFF;
+}
+
 /* ── Scrollbar ───────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -455,20 +1426,33 @@ tr:hover td { background: var(--bg); }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
 /* ── Login page ──────────────────────────────────────────────────────── */
+/* Fondo real (docs/Requerimientos_Mejoras_UrbanBike.md, imagen provista
+   por Washington) en las 6 pantallas de auth/ que comparten este mismo
+   wrapper -- un solo lugar cubre login/registro/verificar/olvide/
+   restablecer/bloqueado, sin tocar cada plantilla. Degradado oscuro
+   (#0F1629, mismo tono navy que --sidebar-bg/--text del tema claro,
+   var(--bg) real más cercana a ese valor) hacia transparente encima de
+   la foto, para que siga leyéndose como fondo de marca sin competir con
+   la tarjeta del formulario (que ya es opaca de por sí). Independiente
+   del tema claro/oscuro -- el fondo de marca es el mismo en los dos. */
 .login-page {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg);
   padding: 24px;
+  background:
+    linear-gradient(180deg, #0F1629 0%, rgba(15,22,41,0.55) 45%, rgba(15,22,41,0.88) 100%),
+    url('/static/img/fondo-login.jpg') center center / cover no-repeat,
+    var(--bg);
 }
 
 .login-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 12px;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+  box-shadow: 0 8px 40px rgba(0,0,0,0.35);
   padding: 40px 36px;
   width: 100%;
   max-width: 400px;
@@ -490,7 +1474,7 @@ tr:hover td { background: var(--bg); }
 .login-logo-name span { color: var(--primary); }
 
 .login-subtitle {
-  font-size: 0.8rem;
+  font-size: 0.8125rem;
   color: var(--text-muted);
   margin-top: 4px;
 }
@@ -531,8 +1515,8 @@ dialog::backdrop {
 /* ── Utilities ───────────────────────────────────────────────────────── */
 .text-muted    { color: var(--text-muted); }
 .text-primary  { color: var(--primary); }
-.text-sm       { font-size: 0.875rem; }
-.text-xs       { font-size: 0.75rem; }
+.text-sm       { font-size: 0.9375rem; }
+.text-xs       { font-size: 0.8125rem; }
 .font-semibold { font-weight: 600; }
 .font-bold     { font-weight: 700; }
 .mt-1 { margin-top:  4px; }
@@ -547,6 +1531,230 @@ dialog::backdrop {
 .gap-2 { gap: 8px; }
 .gap-4 { gap: 16px; }
 .w-full { width: 100%; }
+
+/* Membrete de empresa (logo + nombre + colores institucionales), oculto
+   en pantalla y visible solo al imprimir — ver componentes/membrete.html */
+.membrete-empresa { display: none; }
+
+/* Factura con marca UrbanBike (punto 11) — a diferencia de .membrete-empresa
+   esta SÍ se muestra siempre en pantalla, no solo al imprimir: es el
+   documento en sí, no un encabezado de reporte. Ver componentes/factura.html
+   y su equivalente en PDF, app/reportes/factura.py. */
+.factura-card {
+  /* Paleta real del logo (confirmada por Washington) -- fija, independiente
+     de --primary (#1E86BD, el azul del resto del sitio): un logo tiene sus
+     propios colores de identidad, no los del tema claro/oscuro de la UI.
+     Mismos valores que app/reportes/factura.py (versión PDF). */
+  --factura-principal: #3E5C74; /* bicicleta del logo, encabezado y líneas */
+  --factura-navy:      #2A3143; /* "Urban" del wordmark */
+  --factura-acento:    #0B9FC3; /* "Bike" del wordmark + totales/destacados */
+  --factura-alt:       #EAF0F4; /* tinte muy claro de --factura-principal, rayado de filas */
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 28px;
+}
+
+.factura-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 18px;
+  margin-bottom: 20px;
+  border-bottom: 2px solid var(--factura-principal);
+}
+
+.factura-empresa-nombre {
+  font-family: 'Sora', sans-serif;
+  font-weight: 800;
+  font-size: 1.2rem;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.factura-empresa-dato {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.factura-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.factura-logo-nombre {
+  font-family: 'Sora', sans-serif;
+  font-weight: 800;
+  font-size: 1.15rem;
+}
+
+.factura-logo-urban { color: var(--factura-navy); }
+.factura-logo-bike  { color: var(--factura-acento); }
+
+.factura-identificacion {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px 20px;
+  margin-bottom: 20px;
+}
+
+.factura-identificacion div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.factura-identificacion span {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.factura-identificacion strong {
+  font-size: 0.9375rem;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.factura-cliente {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 20px;
+  font-size: 0.9rem;
+  color: var(--text);
+  line-height: 1.7;
+}
+
+.factura-cliente-titulo {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.factura-tabla { margin-bottom: 20px; }
+
+.factura-tabla thead th {
+  background: var(--factura-principal);
+  color: #FFFFFF;
+}
+
+/* rgba (no el hex plano --factura-alt) para que el rayado se vea bien
+   tanto en tema claro como oscuro -- un tinte hex fijo tipo #EAF0F4 se ve
+   correcto sobre una tarjeta clara pero como una franja clara "rota"
+   sobre --bg-card oscuro. */
+.factura-tabla tbody tr:nth-child(even) { background: rgba(62, 92, 116, 0.08); }
+
+.factura-totales {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-left: auto;
+  max-width: 320px;
+  margin-bottom: 24px;
+}
+
+.factura-totales div {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.factura-totales div span:first-child { color: var(--text-muted); }
+
+.factura-total-final {
+  border-top: 2px solid var(--factura-acento);
+  padding-top: 10px;
+  margin-top: 4px;
+  font-family: 'Sora', sans-serif;
+  font-weight: 700;
+  font-size: 1.1rem !important;
+}
+
+.factura-total-final span { color: var(--factura-acento) !important; }
+
+.factura-pie {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+/* Flujo de alquiler paso a paso (punto 3) -- ver componentes/pasos_viaje.html */
+.pasos-viaje {
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+}
+
+.paso-viaje {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.paso-viaje-icono {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  background: var(--bg-card);
+  flex-shrink: 0;
+}
+
+.paso-viaje--actual .paso-viaje-icono {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #FFFFFF;
+}
+
+.paso-viaje--hecho .paso-viaje-icono {
+  border-color: #10B981;
+  background: #10B981;
+  color: #FFFFFF;
+}
+
+.paso-viaje-etiqueta {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  text-align: center;
+}
+
+.paso-viaje--actual .paso-viaje-etiqueta { color: var(--text); font-weight: 600; }
+.paso-viaje--hecho .paso-viaje-etiqueta { color: #10B981; }
+
+.paso-viaje-linea {
+  flex: 1;
+  height: 2px;
+  background: var(--border);
+  margin: 13px 4px 0;
+  min-width: 12px;
+}
+
+.paso-viaje-linea--hecho { background: #10B981; }
 
 /* ── Print / @media print ────────────────────────────────────────────── */
 @media print {
@@ -564,6 +1772,17 @@ dialog::backdrop {
   .print-only {
     display: block !important;
   }
+
+  .membrete-empresa {
+    display: flex !important;
+    align-items: center;
+    gap: 10px;
+    padding-bottom: 14px;
+    margin-bottom: 18px;
+    border-bottom: 2px solid #1E86BD;
+  }
+  .membrete-empresa-nombre { font-family: 'Sora', sans-serif; font-weight: 800; font-size: 1.4rem; color: #1E86BD; }
+  .membrete-empresa-sub { font-size: 0.8rem; color: #64748B; }
 
   /* Ajustar layout a ancho completo */
   .layout {
@@ -609,8 +1828,8 @@ dialog::backdrop {
 }
 
 /* ── Usabilidad: tamaño de fuente ────────────────────────────────────── */
-html[data-font-size="grande"] { font-size: 17px; }
-html[data-font-size="extra"]  { font-size: 19px; }
+html[data-font-size="grande"] { font-size: 18px; }
+html[data-font-size="extra"]  { font-size: 20px; }
 
 /* ── Usabilidad: alto contraste ──────────────────────────────────────── */
 [data-theme="light"][data-contraste="alto"] {
@@ -694,6 +1913,7 @@ html[data-font-size="extra"]  { font-size: 19px; }
   top: 0;
   right: 0;
   height: 100vh;
+  height: 100dvh;
   width: 320px;
   max-width: 92vw;
   background: var(--bg-card);
@@ -743,7 +1963,7 @@ html[data-font-size="extra"]  { font-size: 19px; }
 }
 
 .a11y-group-title {
-  font-size: 0.72rem;
+  font-size: 0.8125rem;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -820,4 +2040,62 @@ html[data-font-size="extra"]  { font-size: 19px; }
   .a11y-panel, .a11y-overlay, .a11y-line-marker, .a11y-focus-guide-mask {
     display: none !important;
   }
+}
+
+/* ── Chat interno de soporte (docs/Requerimientos_Mejoras_UrbanBike.md
+   punto 12, Opción B -- ver docs/HOJA_DE_RUTA.md sección 68) ──────────── */
+.chat-hilo {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 440px;
+  overflow-y: auto;
+  padding: 16px;
+  background: var(--bg);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+.chat-msg { max-width: 72%; display: flex; flex-direction: column; gap: 3px; }
+.chat-msg-otro   { align-self: flex-start; }
+.chat-msg-propio { align-self: flex-end; align-items: flex-end; }
+.chat-msg-autor { font-size: 0.72rem; font-weight: 600; color: var(--text-muted); }
+.chat-msg-burbuja {
+  padding: 9px 13px;
+  border-radius: 12px;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.chat-msg-otro .chat-msg-burbuja {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-top-left-radius: 2px;
+}
+.chat-msg-propio .chat-msg-burbuja {
+  background: var(--primary);
+  color: #FFFFFF;
+  border-top-right-radius: 2px;
+}
+.chat-msg-fecha { font-size: 0.68rem; color: var(--text-muted); }
+.chat-vacio { text-align: center; color: var(--text-muted); font-size: 0.85rem; padding: 28px 12px; }
+.chat-form { display: flex; gap: 10px; margin-top: 14px; align-items: flex-end; }
+.chat-form textarea { flex: 1; resize: vertical; min-height: 44px; }
+
+/* Lista de conversaciones del WorkPanel (Vigilancia/Admin) -- badge de no
+   leídos, mismo lenguaje visual que .badge ya existente. */
+.chat-conv-fila { cursor: pointer; }
+.chat-conv-no-leidos {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: var(--primary);
+  color: #FFFFFF;
+  font-size: 0.72rem;
+  font-weight: 700;
 }

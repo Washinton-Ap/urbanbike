@@ -6,7 +6,7 @@
 
 <div class="card" style="margin-bottom:20px;">
   <form method="get" action="/ciclista/historial" style="display:flex;gap:10px;padding:16px 20px;flex-wrap:wrap;align-items:center;">
-    <input type="search" class="form-input" name="q" value="{{ q or '' }}" placeholder="Buscar por bicicleta o estación..." style="flex:1;min-width:220px;">
+    <input type="search" class="form-input filtro-buscador" name="q" value="{{ q or '' }}" placeholder="Buscar por bicicleta o estación..." style="flex:1;min-width:220px;">
     <select class="form-input" name="estado" style="width:auto;" onchange="this.form.submit()">
       <option value="" {% if not estado %}selected{% endif %}>Todos los estados</option>
       <option value="activo"     {% if estado == 'activo' %}selected{% endif %}>Activo</option>
@@ -26,6 +26,16 @@
 <div class="card">
   <div class="card-header">
     <span class="card-title">Historial de viajes <span class="text-muted text-sm">({{ viajes | length if viajes else 0 }})</span></span>
+    <div style="display:flex;gap:8px;">
+      <a href="/ciclista/historial/excel?q={{ q or '' }}&estado={{ estado or '' }}" class="btn btn-ghost" style="font-size:0.8rem;padding:6px 12px;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        Excel
+      </a>
+      <a href="/ciclista/historial/pdf?q={{ q or '' }}&estado={{ estado or '' }}" class="btn btn-ghost" style="font-size:0.8rem;padding:6px 12px;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        PDF
+      </a>
+    </div>
   </div>
 
   {% if viajes %}
@@ -35,6 +45,7 @@
     {% set pagos_v = pagos_por_viaje.get(v.id, []) if pagos_por_viaje else [] %}
     {% set pagados_v = pagos_v | selectattr('estado', 'equalto', 'pagado') | list %}
     {% set pago_unico = pagados_v[0] if pagados_v else (pagos_v[0] if pagos_v else none) %}
+    {% set recibo = recibos_por_viaje.get(v.id) if recibos_por_viaje else none %}
     
     <div style="display:flex;align-items:center;gap:16px;padding:16px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
 
@@ -70,11 +81,13 @@
             <span class="badge badge-gray">Cancelado</span>
           {% endif %}
         </div>
-        <div style="font-size:0.85rem;color:var(--text-muted);">
-          📍 {{ v.estacion_inicio_nombre or "—" }} → {{ estaciones_nombres.get(v.estacion_fin_id, "—") if (estaciones_nombres and v.estacion_fin_id) else "—" }}
+        <div style="font-size:0.85rem;color:var(--text-muted);display:flex;align-items:center;gap:4px;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          {{ v.estacion_inicio_nombre or "—" }} → {{ estaciones_nombres.get(v.estacion_fin_id, "—") if (estaciones_nombres and v.estacion_fin_id) else "—" }}
         </div>
-        <div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px;">
-          ⏱ {{ v.fecha_inicio | replace("T", " ") | replace("Z", "") if v.fecha_inicio else "—" }}
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px;display:flex;align-items:center;gap:4px;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          {{ v.fecha_inicio | replace("T", " ") | replace("Z", "") if v.fecha_inicio else "—" }}
           {% if v.duracion_minutos %} &middot; {{ v.duracion_minutos }} min{% endif %}
         </div>
       </div>
@@ -93,6 +106,17 @@
           </div>
           {% if pago_unico.estado != "pagado" and pago_unico.id %}
           <a href="/ciclista/pago/{{ pago_unico.id }}" style="font-size:0.8rem;color:var(--primary);font-weight:600;display:inline-block;margin-top:4px;">Pagar →</a>
+          {% endif %}
+          {% if recibo %}
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">
+            Comprobante {{ recibo.codigo }} · {{ recibo.fecha_facturacion.strftime('%d/%m/%Y') if recibo.fecha_facturacion else '' }}
+          </div>
+          {% if recibo.id_factura %}
+          <a href="/ciclista/factura/{{ recibo.id_factura }}/pdf" style="font-size:0.78rem;color:var(--primary);font-weight:600;display:inline-flex;align-items:center;gap:4px;margin-top:4px;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+            Descargar factura
+          </a>
+          {% endif %}
           {% endif %}
         </div>
         {% else %}
@@ -116,7 +140,7 @@
       <div style="text-align:right;">
         <div style="font-family:'Sora',sans-serif;font-weight:800;color:var(--text);">${{ "%.2f" | format(pago.monto_total | float if pago.monto_total else 0.0) }}</div>
         {% if pago.estado != "pagado" and pago.id %}
-        <a href="/ciclista/pago/{{ pago.id }}" style="font-size:0.78rem;color:var(--primary);font-weight:600;">Pagar →</a>
+        <a href="/ciclista/pago/{{ pago.id }}" style="font-size:0.8rem;color:var(--primary);font-weight:600;">Pagar →</a>
         {% endif %}
       </div>
     </div>
@@ -180,11 +204,13 @@
     let descText = '';
 
     // Generar texto persuasivo dependiendo del tipo
+    const svgRayo = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px;margin-right:3px;"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>';
+    const svgBici  = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-1px;margin-right:3px;"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm-9.5 11.5L9 10l4 4 4-4 4 7.5M9 10l-1-3h-3"/></svg>';
     if(tipo === 'electric_bike') {
-       typeHtml = '<span class="badge badge-green">⚡ Bicicleta Eléctrica</span>';
+       typeHtml = '<span class="badge badge-green">' + svgRayo + 'Bicicleta Eléctrica</span>';
        descText = '¡Llega más lejos sin sudar! Esta bicicleta de pedaleo asistido es perfecta para recorrer la ciudad de forma rápida, cómoda y ecológica. Ideal para evitar el tráfico y subir pendientes con cero esfuerzo.';
     } else {
-       typeHtml = '<span class="badge badge-blue">🚲 Bicicleta Clásica</span>';
+       typeHtml = '<span class="badge badge-blue">' + svgBici + 'Bicicleta Clásica</span>';
        descText = 'Ligera, ágil y clásica. La opción perfecta para disfrutar del paisaje, hacer un poco de ejercicio cardiovascular y moverte libremente por las ciclovías de la ciudad a tu propio ritmo.';
     }
     

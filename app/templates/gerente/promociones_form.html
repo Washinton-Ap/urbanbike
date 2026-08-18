@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block page_title %}{{ title }}{% endblock %}
+{% block back_url %}/gerente/promociones{% endblock %}
+
+{% block content %}
+
+{% if modo == "ver" %}
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">{{ promo.codigo }} — {{ promo.nombre }}</span>
+    <div class="flex gap-2">
+      <a href="/gerente/promociones/{{ promo.id }}?modo=editar" class="btn btn-primary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        Actualizar
+      </a>
+      <button type="button" class="btn btn-ghost" style="color:#EF4444;border-color:rgba(239,68,68,0.35);" onclick="document.getElementById('modal-eliminar').showModal()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        Eliminar
+      </button>
+    </div>
+  </div>
+  <div class="form-grid" style="padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+    <div>
+      <div class="form-label">Descuento</div>
+      <div style="margin-bottom:16px;color:var(--text);">
+        {% if promo.tipo_descuento == 'porcentaje' %}{{ promo.valor | int }}% de descuento{% else %}USD {{ "%.2f" | format(promo.valor) }} de descuento{% endif %}
+      </div>
+      <div class="form-label">Aplica a</div>
+      <div style="margin-bottom:16px;color:var(--text);">
+        {% if promo.aplica_a == 'todas' %}Todas las bicicletas
+        {% else %}{{ promo.aplica_a | capitalize }} ({{ promo.id_referencia }}){% endif %}
+      </div>
+      <div class="form-label">Días de la semana</div>
+      <div style="margin-bottom:16px;color:var(--text);">
+        {%- for d in promo.dias_lista -%}
+          {{ {"1":"Lun","2":"Mar","3":"Mié","4":"Jue","5":"Vie","6":"Sáb","7":"Dom"}[d] }}{% if not loop.last %}, {% endif %}
+        {%- endfor -%}
+      </div>
+    </div>
+    <div>
+      <div class="form-label">Vigencia</div>
+      <div style="margin-bottom:16px;color:var(--text);">{{ promo.fecha_inicio }} → {{ promo.fecha_fin }}</div>
+      <div class="form-label">Usos</div>
+      <div style="margin-bottom:16px;color:var(--text);">
+        {{ promo.usos_actuales }}{% if promo.usos_maximos > 0 %} de {{ promo.usos_maximos }} máximos{% else %} (sin límite){% endif %}
+      </div>
+      <div class="form-label">Estado</div>
+      <div style="margin-bottom:16px;">
+        {% if promo.estado == 'activa' %}<span class="badge badge-green">Activa</span>
+        {% elif promo.estado == 'pausada' %}<span class="badge badge-yellow">Pausada</span>
+        {% else %}<span class="badge badge-gray">Vencida</span>{% endif %}
+      </div>
+      <div class="form-label">Quién puede usarla</div>
+      <div style="margin-bottom:16px;">
+        {% if promo.solo_member %}<span class="badge badge-blue">Solo suscriptores</span>
+        {% else %}<span class="badge badge-gray">Todos los ciclistas</span>{% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<dialog id="modal-eliminar">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title" style="color:#EF4444;">Eliminar promoción</span></div>
+    <p style="color:var(--text-muted);margin-bottom:20px;">
+      ¿Eliminar la promoción <strong style="color:var(--text);">{{ promo.codigo }}</strong>?
+      {% if promo.usos_actuales > 0 %}
+      Ya se usó <strong>{{ promo.usos_actuales }}</strong> vez(es) en alquileres reales — la eliminación va a ser rechazada; considera cambiar su estado a "Pausada" o "Vencida" en su lugar.
+      {% else %}
+      Esta acción no se puede deshacer.
+      {% endif %}
+    </p>
+    <form method="post" action="/gerente/promociones/{{ promo.id }}/eliminar">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <div class="flex gap-2" style="justify-content:flex-end;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-eliminar').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary" style="background:#EF4444;border-color:#EF4444;">Eliminar</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+{% else %}
+{# modo == "editar" o "crear" #}
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">{% if modo == "crear" %}Nueva promoción{% else %}Actualizar {{ promo.codigo }}{% endif %}</span>
+  </div>
+  <form method="post" action="{% if modo == 'crear' %}/gerente/promociones/crear{% else %}/gerente/promociones/{{ promo.id }}/editar{% endif %}" style="padding:20px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="form-group"><label class="form-label">Código *</label>
+        <input class="form-input" type="text" name="codigo" value="{{ promo.codigo if promo else '' }}" placeholder="FINDE15" required></div>
+      <div class="form-group"><label class="form-label">Nombre *</label>
+        <input class="form-input" type="text" name="nombre" value="{{ promo.nombre if promo else '' }}" placeholder="Descuento de fin de semana" required></div>
+
+      <div class="form-group"><label class="form-label">Tipo de descuento *</label>
+        <select class="form-input" name="tipo_descuento" required>
+          <option value="porcentaje" {% if promo and promo.tipo_descuento == 'porcentaje' %}selected{% endif %}>Porcentaje (%)</option>
+          <option value="monto" {% if promo and promo.tipo_descuento == 'monto' %}selected{% endif %}>Monto fijo (USD)</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">Valor *</label>
+        <input class="form-input" type="number" step="0.01" min="0.01" name="valor" value="{{ promo.valor if promo else '' }}" required></div>
+
+      <div class="form-group"><label class="form-label">Aplica a *</label>
+        <select class="form-input" id="promo-aplica-a" name="aplica_a" onchange="actualizarAplicaA()" required>
+          <option value="todas"     {% if promo and promo.aplica_a == 'todas' %}selected{% endif %}>Todas las bicicletas</option>
+          <option value="categoria" {% if promo and promo.aplica_a == 'categoria' %}selected{% endif %}>Una categoría</option>
+          <option value="modalidad" {% if promo and promo.aplica_a == 'modalidad' %}selected{% endif %}>Una modalidad (hora/día)</option>
+          <option value="bicicleta" {% if promo and promo.aplica_a == 'bicicleta' %}selected{% endif %}>Una bicicleta</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <div class="promo-ref-grupo" data-aplica="categoria" style="display:none;">
+          <label class="form-label">Categoría</label>
+          <select class="form-input" name="id_referencia">
+            {% for c in categorias %}
+            <option value="{{ c.id }}" {% if promo and promo.id_referencia == c.id|string %}selected{% endif %}>{{ c.nombre }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="promo-ref-grupo" data-aplica="modalidad" style="display:none;">
+          <label class="form-label">Modalidad</label>
+          <select class="form-input" name="id_referencia">
+            <option value="hora"   {% if promo and promo.id_referencia == 'hora' %}selected{% endif %}>Hora</option>
+            <option value="dia"    {% if promo and promo.id_referencia == 'dia' %}selected{% endif %}>Día</option>
+            <option value="semana" {% if promo and promo.id_referencia == 'semana' %}selected{% endif %}>Semana</option>
+          </select>
+        </div>
+        <div class="promo-ref-grupo" data-aplica="bicicleta" style="display:none;">
+          <label class="form-label">Bicicleta</label>
+          <select class="form-input" name="id_referencia">
+            {% for b in bicicletas %}
+            <option value="{{ b.id }}" {% if promo and promo.id_referencia == b.id|string %}selected{% endif %}>{{ b.codigo }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group"><label class="form-label">Fecha de inicio *</label>
+        <input class="form-input" type="date" id="promo-fecha-inicio" name="fecha_inicio"
+               value="{{ promo.fecha_inicio if promo else '' }}" onchange="document.getElementById('promo-fecha-fin').min = this.value" required></div>
+      <div class="form-group"><label class="form-label">Fecha de fin *</label>
+        <input class="form-input" type="date" id="promo-fecha-fin" name="fecha_fin" value="{{ promo.fecha_fin if promo else '' }}" required></div>
+
+      <div class="form-group"><label class="form-label">Usos máximos</label>
+        <input class="form-input" type="number" min="0" name="usos_maximos" value="{{ promo.usos_maximos if promo else 0 }}" placeholder="0 = sin límite"></div>
+      {% if modo == "editar" %}
+      <div class="form-group"><label class="form-label">Estado *</label>
+        <select class="form-input" name="estado" required>
+          <option value="activa"  {% if promo.estado == 'activa' %}selected{% endif %}>Activa</option>
+          <option value="pausada" {% if promo.estado == 'pausada' %}selected{% endif %}>Pausada</option>
+          <option value="vencida" {% if promo.estado == 'vencida' %}selected{% endif %}>Vencida</option>
+        </select>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="form-group" style="margin-top:8px;">
+      <label style="display:flex;align-items:center;gap:8px;font-size:0.9rem;color:var(--text);cursor:pointer;">
+        <input type="checkbox" name="solo_member" value="true" {% if promo and promo.solo_member %}checked{% endif %}>
+        Exclusiva para suscriptores (punto 4) -- un ciclista sin membresía activa no puede usarla, aunque tenga el código.
+      </label>
+    </div>
+
+    <div class="form-group" style="margin-top:8px;">
+      <label class="form-label">Días de la semana en que aplica</label>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;padding-top:4px;">
+        {% for valor, etiqueta in dias_semana_opciones.items() %}
+        <label style="display:flex;align-items:center;gap:6px;font-size:0.85rem;color:var(--text);cursor:pointer;">
+          <input type="checkbox" name="dias" value="{{ valor }}"
+                 {% if not promo or valor in promo.dias_lista %}checked{% endif %}>
+          {{ etiqueta }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="flex gap-2" style="justify-content:flex-end;margin-top:20px;">
+      <a href="{% if modo == 'crear' %}/gerente/promociones{% else %}/gerente/promociones/{{ promo.id }}{% endif %}" class="btn btn-ghost">Cancelar</a>
+      <button type="submit" class="btn btn-primary">{% if modo == "crear" %}Crear{% else %}Guardar cambios{% endif %}</button>
+    </div>
+  </form>
+</div>
+
+<script>
+function actualizarAplicaA() {
+  const val = document.getElementById('promo-aplica-a').value;
+  document.querySelectorAll('.promo-ref-grupo').forEach(function (el) {
+    const activo = el.dataset.aplica === val;
+    el.style.display = activo ? '' : 'none';
+    el.querySelectorAll('select').forEach(function (s) { s.disabled = !activo; });
+  });
+}
+actualizarAplicaA();
+</script>
+{% endif %}
+
+{% endblock %}

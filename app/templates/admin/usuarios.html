@@ -13,7 +13,15 @@
 <div class="card">
   <div class="card-header">
     <span class="card-title">Usuarios registrados <span class="text-muted text-sm">({{ items | length }})</span></span>
-    <div class="flex gap-2" style="align-items:center;">
+    <div class="flex gap-2 header-controles" style="align-items:center;">
+      <a href="/admin/usuarios/excel" class="btn btn-ghost" style="font-size:0.8rem;padding:7px 14px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
+        Excel
+      </a>
+      <a href="/admin/usuarios/pdf" class="btn btn-ghost" style="font-size:0.8rem;padding:7px 14px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+        PDF
+      </a>
       <input type="search" class="form-input" placeholder="Buscar..." style="width:auto;font-size:0.8rem;padding:6px 10px;" oninput="filtrarTabla(this, 'tabla-usuarios')">
     <button class="btn btn-primary" onclick="document.getElementById('modal-crear').showModal()">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -29,7 +37,6 @@
           <th>Nombre</th>
           <th>Email</th>
           <th>Rol</th>
-          <th>Verificado</th>
           <th>Estado</th>
           <th>Creado</th>
           <th style="width:260px;"></th>
@@ -39,20 +46,24 @@
         {% for u in items %}
         {% set rol_obj = u.expand.rol if u.get("expand") and u.get("expand", {}).get("rol") else {} %}
         <tr>
-          <td class="font-semibold">{{ u.name or "—" }}</td>
+          <td class="font-semibold">
+            <div style="display:flex;align-items:center;gap:10px;">
+              {% if u.avatar %}
+              <img src="{{ avatar_url(u) }}?thumb=64x64" alt="{{ u.name or u.email }}" data-lightbox data-full="{{ avatar_url(u) }}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0;cursor:zoom-in;">
+              {% else %}
+              <div style="width:32px;height:32px;border-radius:50%;background:#FFFFFF;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                <img src="/static/img/logo-urbanbike.png" alt="" style="width:60%;height:60%;object-fit:contain;">
+              </div>
+              {% endif %}
+              <span>{{ u.name or "—" }}</span>
+            </div>
+          </td>
           <td class="text-muted">{{ u.email }}</td>
           <td>
             {% if rol_obj %}
               <span class="badge badge-blue">{{ rol_obj.nombre or rol_obj.slug or "—" }}</span>
             {% else %}
               <span class="badge badge-gray">Sin rol</span>
-            {% endif %}
-          </td>
-          <td>
-            {% if u.verified %}
-              <span class="badge badge-green">Verificado</span>
-            {% else %}
-              <span class="badge badge-yellow">Pendiente</span>
             {% endif %}
           </td>
           <td>
@@ -66,40 +77,51 @@
           <td>
             <div class="flex gap-2">
               <button class="btn btn-ghost"
-                style="padding:4px 10px;font-size:0.75rem;"
+                style="padding:4px 10px;font-size:0.8rem;"
                 data-id="{{ u.id }}"
                 data-name="{{ u.name | default('') | e }}"
                 data-email="{{ u.email | default('') | e }}"
                 data-cedula="{{ u.cedula | default('') | e }}"
                 data-rol="{{ rol_obj.id | default('') | e }}"
+                data-avatar="{{ avatar_url(u) if u.avatar else '' }}"
+                data-motivo="{{ u.motivo_bloqueo | default('') | e }}"
+                data-no-loading
                 onclick="openEdit(this)">Editar</button>
               <form method="post" action="/admin/usuarios/{{ u.id }}/toggle-activo" style="display:inline;">
-                <button type="submit" class="btn btn-ghost" style="padding:4px 10px;font-size:0.75rem;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <button type="submit" class="btn btn-ghost" style="padding:4px 10px;font-size:0.8rem;">
                   {{ "Desactivar" if u.activo else "Activar" }}
                 </button>
               </form>
+              <form method="post" action="/admin/usuarios/{{ u.id }}/cerrar-sesion" style="display:inline;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <button type="submit" class="btn btn-ghost" style="padding:4px 10px;font-size:0.8rem;" title="Cierra su sesión activa sin eliminar la cuenta">
+                  Cerrar sesión
+                </button>
+              </form>
               <button class="btn btn-ghost"
-                style="padding:4px 10px;font-size:0.75rem;"
+                style="padding:4px 10px;font-size:0.8rem;"
                 data-name="{{ u.name | default('') | e }}"
                 data-email="{{ u.email | default('') | e }}"
                 data-cedula="{{ u.cedula | default('') | e }}"
                 data-rol="{{ (rol_obj.nombre or rol_obj.slug or 'Sin rol') | e }}"
-                data-verificado="{{ 'Verificado' if u.verified else 'Pendiente' }}"
                 data-activo="{{ 'Activo' if u.activo else 'Bloqueado' }}"
                 data-creado="{{ u.created[:10] if u.created else '—' }}"
                 data-avatar="{{ avatar_url(u) }}"
+                data-no-loading
                 onclick="openPerfil(this)">Ver perfil</button>
               <button class="btn btn-ghost"
-                style="padding:4px 10px;font-size:0.75rem;color:#EF4444;border-color:rgba(239,68,68,0.35);"
+                style="padding:4px 10px;font-size:0.8rem;color:#EF4444;border-color:rgba(239,68,68,0.35);"
                 data-id="{{ u.id }}"
                 data-label="{{ u.email | e }}"
+                data-no-loading
                 onclick="openDel(this)">Eliminar</button>
             </div>
           </td>
         </tr>
         {% else %}
         <tr>
-          <td colspan="7" style="text-align:center;padding:48px;color:var(--text-muted);">
+          <td colspan="6" style="text-align:center;padding:48px;color:var(--text-muted);">
             No hay usuarios registrados aún.
           </td>
         </tr>
@@ -114,9 +136,10 @@
   <div class="modal-card">
     <div class="modal-header">
       <span class="card-title">Nuevo usuario</span>
-      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-crear').close()">✕</button>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-crear').close()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
-    <form method="post" action="/admin/usuarios/crear">
+    <form method="post" action="/admin/usuarios/crear" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
       <div class="form-group">
         <label class="form-label">Nombre</label>
         <input class="form-input" type="text" name="name" placeholder="Ej. María García">
@@ -128,6 +151,14 @@
       <div class="form-group">
         <label class="form-label">Contraseña * (mín. 8 caracteres)</label>
         <input class="form-input" type="password" name="password" required minlength="8" placeholder="••••••••">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Cédula</label>
+        <input class="form-input" type="text" name="cedula" maxlength="10" pattern="[0-9]{10}" inputmode="numeric" placeholder="10 dígitos">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Foto de perfil</label>
+        <input class="form-input" type="file" name="avatar" accept="image/jpeg,image/png,image/gif">
       </div>
       <div class="form-group">
         <label class="form-label">Rol</label>
@@ -151,9 +182,10 @@
   <div class="modal-card">
     <div class="modal-header">
       <span class="card-title">Editar usuario</span>
-      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-editar').close()">✕</button>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-editar').close()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
-    <form method="post" id="form-editar">
+    <form method="post" id="form-editar" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
       <div class="form-group">
         <label class="form-label">Nombre</label>
         <input class="form-input" type="text" name="name" id="edit-name">
@@ -164,7 +196,13 @@
       </div>
       <div class="form-group">
         <label class="form-label">Cédula</label>
-        <input class="form-input" type="text" name="cedula" id="edit-cedula" maxlength="10" placeholder="10 dígitos">
+        <input class="form-input" type="text" name="cedula" id="edit-cedula" maxlength="10" pattern="[0-9]{10}" inputmode="numeric" placeholder="10 dígitos">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Foto actual</label>
+        <div id="edit-avatar-preview" style="margin-bottom:8px;"></div>
+        <label class="form-label">Reemplazar foto</label>
+        <input class="form-input" type="file" name="avatar" id="edit-avatar" accept="image/jpeg,image/png,image/gif">
       </div>
       <div class="form-group">
         <label class="form-label">Rol</label>
@@ -175,6 +213,10 @@
           {% endfor %}
         </select>
       </div>
+      <div class="form-group">
+        <label class="form-label">Motivo de bloqueo</label>
+        <textarea class="form-input" name="motivo_bloqueo" id="edit-motivo" rows="2" placeholder="Solo se muestra al usuario si su cuenta está bloqueada"></textarea>
+      </div>
       <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;">
         <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-editar').close()">Cancelar</button>
         <button type="submit" class="btn btn-primary">Guardar cambios</button>
@@ -184,6 +226,7 @@
     <div style="border-top:1px solid var(--border);margin-top:20px;padding-top:16px;">
       <div style="font-size:0.85rem;font-weight:600;color:var(--text);margin-bottom:10px;">Nueva contraseña (opcional)</div>
       <form method="post" id="form-password" style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
         <input class="form-input" type="password" name="password" placeholder="Nueva contraseña" minlength="8" style="flex:1;min-width:160px;">
         <input class="form-input" type="password" name="password_confirm" placeholder="Confirmar" minlength="8" style="flex:1;min-width:160px;">
         <button type="submit" class="btn btn-ghost">Cambiar contraseña</button>
@@ -197,7 +240,7 @@
   <div class="modal-card">
     <div class="modal-header">
       <span class="card-title">Perfil del usuario</span>
-      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-perfil').close()">✕</button>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-perfil').close()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <div style="display:flex;flex-direction:column;gap:12px;">
       <div style="display:flex;align-items:center;gap:14px;margin-bottom:8px;">
@@ -209,7 +252,6 @@
       </div>
       <div style="display:flex;justify-content:space-between;"><span class="text-muted text-sm">Cédula</span><span id="perfil-cedula" style="font-weight:600;"></span></div>
       <div style="display:flex;justify-content:space-between;"><span class="text-muted text-sm">Rol</span><span id="perfil-rol" style="font-weight:600;"></span></div>
-      <div style="display:flex;justify-content:space-between;"><span class="text-muted text-sm">Verificación</span><span id="perfil-verificado" style="font-weight:600;"></span></div>
       <div style="display:flex;justify-content:space-between;"><span class="text-muted text-sm">Estado</span><span id="perfil-activo" style="font-weight:600;"></span></div>
       <div style="display:flex;justify-content:space-between;"><span class="text-muted text-sm">Registrado</span><span id="perfil-creado" style="font-weight:600;"></span></div>
     </div>
@@ -230,6 +272,7 @@
       Esta acción no se puede deshacer.
     </p>
     <form method="post" id="form-eliminar">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
       <div class="flex gap-2" style="justify-content:flex-end;">
         <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-eliminar').close()">Cancelar</button>
         <button type="submit" class="btn btn-primary" style="background:#EF4444;border-color:#EF4444;">Eliminar</button>
@@ -249,6 +292,12 @@ function openEdit(btn) {
   document.getElementById('edit-email').value  = d.email;
   document.getElementById('edit-cedula').value = d.cedula;
   document.getElementById('edit-rol').value    = d.rol;
+  document.getElementById('edit-motivo').value = d.motivo || '';
+  document.getElementById('edit-avatar').value = '';
+  const preview = document.getElementById('edit-avatar-preview');
+  preview.innerHTML = d.avatar
+    ? '<img src="' + d.avatar + '?thumb=64x64" data-lightbox data-full="' + d.avatar + '" style="width:56px;height:56px;border-radius:50%;object-fit:cover;border:1px solid var(--border);cursor:zoom-in;">'
+    : '<span class="text-muted text-sm">Sin foto</span>';
   document.getElementById('modal-editar').showModal();
 }
 function openPerfil(btn) {
@@ -257,13 +306,12 @@ function openPerfil(btn) {
   document.getElementById('perfil-email').textContent      = d.email || '—';
   document.getElementById('perfil-cedula').textContent     = d.cedula || '—';
   document.getElementById('perfil-rol').textContent        = d.rol || '—';
-  document.getElementById('perfil-verificado').textContent = d.verificado || '—';
   document.getElementById('perfil-activo').textContent     = d.activo || '—';
   document.getElementById('perfil-creado').textContent     = d.creado || '—';
   const avatarWrap = document.getElementById('perfil-avatar-wrap');
   avatarWrap.innerHTML = d.avatar
-    ? '<img src="' + d.avatar + '" style="width:100%;height:100%;object-fit:cover;">'
-    : '<span style="color:var(--text-muted);font-size:0.7rem;">Sin foto</span>';
+    ? '<img src="' + d.avatar + '" data-lightbox data-full="' + d.avatar + '" style="width:100%;height:100%;object-fit:cover;cursor:zoom-in;">'
+    : '<span style="color:var(--text-muted);font-size:0.8rem;">Sin foto</span>';
   document.getElementById('modal-perfil').showModal();
 }
 function openDel(btn) {

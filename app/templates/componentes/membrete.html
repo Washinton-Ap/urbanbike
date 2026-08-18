@@ -1,0 +1,29 @@
+{# ─────────────────────────────────────────────────────────────────────────
+   Componente: membrete "formato de empresa" (logo + nombre + colores
+   institucionales), extraído del que ya existía inline en
+   gerente/informe.html. Solo visible al imprimir (ver .membrete-empresa
+   en main.css), como encabezado de cualquier reporte impreso desde el
+   navegador.
+
+   El mismo logo/colores se redibujan por separado en app/reportes/pdf.py
+   para los PDF generados con reportlab (reportlab no puede incluir este
+   HTML directamente — no renderiza HTML/CSS —, así que ambos comparten
+   el mismo diseño visual, no el mismo código).
+
+   Variables esperadas en el contexto:
+     titulo     (str)            — texto junto a "UrbanBike", p.ej. "Informe General"
+     subtitulo  (str, opcional)  — línea secundaria bajo el título
+   ───────────────────────────────────────────────────────────────────────── #}
+
+<div class="membrete-empresa">
+  <svg width="34" height="34" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="7"  cy="20" r="5" stroke="#1E86BD" stroke-width="2.2"/>
+    <circle cx="21" cy="20" r="5" stroke="#1E86BD" stroke-width="2.2"/>
+    <path d="M7 20 L12 8 L18 14 L21 20" stroke="#1E86BD" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="14" cy="6" r="2" fill="#1E86BD"/>
+  </svg>
+  <div>
+    <div class="membrete-empresa-nombre">UrbanBike{% if titulo %} — {{ titulo }}{% endif %}</div>
+    {% if subtitulo %}<div class="membrete-empresa-sub">{{ subtitulo }}</div>{% endif %}
+  </div>
+</div>

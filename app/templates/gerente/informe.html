@@ -4,21 +4,10 @@
 
 {% block head %}
 <style>
-  #print-header { display: none; }
   @media print {
     .sidebar, .topbar, #btn-imprimir, .theme-toggle { display: none !important; }
     .layout, .main-wrapper, .page-content { margin: 0 !important; padding: 0 !important; }
     body { background: #fff !important; }
-    #print-header {
-      display: flex !important;
-      align-items: center;
-      gap: 10px;
-      padding-bottom: 14px;
-      margin-bottom: 18px;
-      border-bottom: 2px solid #1E86BD;
-    }
-    #print-header .nombre { font-family: 'Sora', sans-serif; font-weight: 800; font-size: 1.4rem; color: #1E86BD; }
-    #print-header .sub { font-size: 0.78rem; color: #64748B; }
     .card { break-inside: avoid; border: 1px solid #E2E8F0 !important; }
   }
 </style>
@@ -26,19 +15,7 @@
 
 {% block content %}
 
-<!-- Encabezado solo visible al imprimir -->
-<div id="print-header">
-  <svg width="34" height="34" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="7"  cy="20" r="5" stroke="#1E86BD" stroke-width="2.2"/>
-    <circle cx="21" cy="20" r="5" stroke="#1E86BD" stroke-width="2.2"/>
-    <path d="M7 20 L12 8 L18 14 L21 20" stroke="#1E86BD" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-    <circle cx="14" cy="6" r="2" fill="#1E86BD"/>
-  </svg>
-  <div>
-    <div class="nombre">UrbanBike — Informe General</div>
-    <div class="sub">Reporte de indicadores clave de la empresa</div>
-  </div>
-</div>
+{% include "componentes/membrete.html" with context %}
 
 {% if not ch_ok %}
 <div class="flash error" style="margin-bottom:16px;">
@@ -57,17 +34,17 @@
 <!-- KPIs principales -->
 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:20px;">
   <div class="card" style="padding:20px;">
-    <div style="font-size:0.78rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">Total de viajes</div>
+    <div style="font-size:0.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">Total de viajes</div>
     <div style="font-family:'Sora',sans-serif;font-size:1.8rem;font-weight:800;color:var(--text);margin-top:6px;">{{ total_viajes | num }}</div>
   </div>
   <div class="card" style="padding:20px;">
-    <div style="font-size:0.78rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">Tarifa promedio / hora</div>
+    <div style="font-size:0.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">Tarifa promedio / hora</div>
     <div style="font-family:'Sora',sans-serif;font-size:1.8rem;font-weight:800;color:var(--text);margin-top:6px;">${{ "%.2f" | format(precio_promedio) }}</div>
   </div>
   <div class="card" style="padding:20px;">
-    <div style="font-size:0.78rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">Ingresos estimados</div>
+    <div style="font-size:0.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">Ingresos estimados</div>
     <div style="font-family:'Sora',sans-serif;font-size:1.8rem;font-weight:800;color:#1E86BD;margin-top:6px;">${{ ingresos_estimados | num }}</div>
-    <div style="font-size:0.74rem;color:var(--text-muted);margin-top:4px;">viajes × tarifa promedio</div>
+    <div style="font-size:0.8rem;color:var(--text-muted);margin-top:4px;">viajes × tarifa promedio</div>
   </div>
 </div>
 
@@ -95,7 +72,7 @@
 </div>
 
 <!-- Gráficos -->
-<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;">
+<div class="dashboard-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;">
   <div class="card" style="padding:20px;">
     <div class="card-title" style="margin-bottom:14px;">Distribución por tipo de bicicleta</div>
     <div style="height:260px;"><canvas id="chartTipo"></canvas></div>
@@ -115,12 +92,12 @@
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-const tipoLabels      = {{ tipo_labels | safe }};
-const tipoValues      = {{ tipo_values | safe }};
-const membresiaLabels = {{ membresia_labels | safe }};
-const membresiaValues = {{ membresia_values | safe }};
-const top5Labels      = {{ top5_labels | safe }};
-const top5Values      = {{ top5_values | safe }};
+const tipoLabels      = {{ tipo_labels | jsonseguro }};
+const tipoValues      = {{ tipo_values | jsonseguro }};
+const membresiaLabels = {{ membresia_labels | jsonseguro }};
+const membresiaValues = {{ membresia_values | jsonseguro }};
+const top5Labels      = {{ top5_labels | jsonseguro }};
+const top5Values      = {{ top5_values | jsonseguro }};
 
 new Chart(document.getElementById('chartTipo'), {
   type: 'doughnut',

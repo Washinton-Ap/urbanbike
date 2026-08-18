@@ -123,7 +123,7 @@
 <div class="card">
   <div class="card-header">
     <span class="card-title">Estaciones por Viajes Iniciados</span>
-    <span style="font-size:0.78rem;color:var(--text-muted);">Página {{ pagina }} de {{ total_paginas }}</span>
+    <span style="font-size:0.8rem;color:var(--text-muted);">Página {{ pagina }} de {{ total_paginas }}</span>
   </div>
 
   {% if estaciones %}
@@ -135,7 +135,6 @@
           <th>Estación</th>
           <th style="text-align:right;">Viajes</th>
           <th style="text-align:right;">Dur. Prom.</th>
-          <th style="text-align:right;">Dist. Prom.</th>
           <th class="no-print">Proporción</th>
         </tr>
       </thead>
@@ -148,7 +147,6 @@
           <td style="font-weight:500;font-size:0.88rem;color:var(--text);">{{ est.nombre or "—" }}</td>
           <td style="text-align:right;font-weight:600;font-size:0.9rem;">{{ est.viajes | num }}</td>
           <td style="text-align:right;color:var(--text-muted);font-size:0.85rem;">{{ est.dur_prom }} min</td>
-          <td style="text-align:right;color:var(--text-muted);font-size:0.85rem;">{{ est.dist_prom }} km</td>
           <td class="no-print" style="min-width:100px;">
             <div style="height:6px;border-radius:3px;background:var(--border);overflow:hidden;">
               <div style="height:100%;border-radius:3px;background:#1E86BD;width:{{ ((est.viajes / max_v) * 100) | round(1) }}%;"></div>
@@ -200,14 +198,14 @@
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-const estLabels  = {{ chart_est_labels | safe }};
-const estValues  = {{ chart_est_values | safe }};
-const dowLabels  = {{ chart_dow_labels | safe }};
-const dowValues  = {{ chart_dow_values | safe }};
-const tipoLabels = {{ chart_tipo_labels | safe }};
-const tipoValues = {{ chart_tipo_values | safe }};
-const tendLabels = {{ chart_tendencia_labels | safe }};
-const tendValues = {{ chart_tendencia_values | safe }};
+const estLabels  = {{ chart_est_labels | jsonseguro }};
+const estValues  = {{ chart_est_values | jsonseguro }};
+const dowLabels  = {{ chart_dow_labels | jsonseguro }};
+const dowValues  = {{ chart_dow_values | jsonseguro }};
+const tipoLabels = {{ chart_tipo_labels | jsonseguro }};
+const tipoValues = {{ chart_tipo_values | jsonseguro }};
+const tendLabels = {{ chart_tendencia_labels | jsonseguro }};
+const tendValues = {{ chart_tendencia_values | jsonseguro }};
 
 if (estLabels.length) {
   new Chart(document.getElementById('chartEstaciones'), {

@@ -4,41 +4,177 @@
 
 {% block content %}
 
-<div class="kpi-grid" style="margin-bottom:8px;">
+{% include "componentes/membrete.html" with context %}
+
+<div class="kpi-grid no-print" style="margin-bottom:16px;">
   <div class="kpi-card">
-    <div class="kpi-label">Total de alquileres</div>
-    <div class="kpi-value">{{ total_alquileres | num }}</div>
+    <div class="kpi-label">Alquileres (filtro actual)</div>
+    <div class="kpi-value">{{ total | num }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Monto total (página actual)</div>
+    <div class="kpi-value" style="color:#1E86BD;">${{ "%.2f" | format(total_monto) }}</div>
   </div>
 </div>
 
-<div class="card" style="margin-bottom:16px;">
+<!-- Filtros -->
+<div class="card no-print" style="margin-bottom:16px;">
+  <div class="card-header"><span class="card-title">Filtros</span></div>
+  <form method="get" action="/empleado/operacion/reportes" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;align-items:end;padding:0 20px 20px;">
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label">Estado</label>
+      <select class="form-input" name="estado">
+        <option value="">Todos</option>
+        {% for e in estados %}
+        <option value="{{ e }}" {% if estado == e %}selected{% endif %}>{{ estado_label[e] }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label">Fecha inicio (desde)</label>
+      <input class="form-input" type="date" name="fecha_desde" value="{{ fecha_desde }}">
+    </div>
+    <div class="form-group" style="margin-bottom:0;">
+      <label class="form-label">Fecha inicio (hasta)</label>
+      <input class="form-input" type="date" name="fecha_hasta" value="{{ fecha_hasta }}">
+    </div>
+    <div style="display:flex;gap:8px;align-items:flex-end;">
+      <button type="submit" class="btn btn-primary" style="flex:1;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        Filtrar
+      </button>
+      <a href="/empleado/operacion/reportes" class="btn btn-ghost">Limpiar</a>
+    </div>
+  </form>
+</div>
+
+<!-- Grilla -->
+<div class="card">
   <div class="card-header">
-    <span class="card-title">Pagos confirmados hoy por mí <span class="text-muted text-sm">({{ pagos_turno | length }})</span></span>
-  </div>
-  <div class="kpi-grid" style="padding:20px;">
-    <div class="kpi-card">
-      <div class="kpi-label">Total efectivo recibido</div>
-      <div class="kpi-value" style="color:#10B981;">${{ "%.2f" | format(total_efectivo_turno) }}</div>
+    <span class="card-title">Alquileres <span class="text-muted text-sm">({{ total | num }})</span></span>
+    <div class="no-print" style="display:flex;gap:8px;">
+      <a href="/empleado/operacion/reportes/excel?estado={{ estado }}&fecha_desde={{ fecha_desde }}&fecha_hasta={{ fecha_hasta }}"
+         class="btn btn-ghost" style="font-size:0.82rem;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        Exportar Excel
+      </a>
+      <a href="/empleado/operacion/reportes/pdf?estado={{ estado }}&fecha_desde={{ fecha_desde }}&fecha_hasta={{ fecha_hasta }}"
+         class="btn btn-ghost" style="font-size:0.82rem;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+        Exportar PDF
+      </a>
     </div>
-    <div class="kpi-card">
-      <div class="kpi-label">Total transferencias verificadas</div>
-      <div class="kpi-value" style="color:#1E86BD;">${{ "%.2f" | format(total_transferencia_turno) }}</div>
-    </div>
   </div>
-  {% if pagos_turno %}
+
+  {% if alquileres %}
   <div class="table-wrap">
     <table class="table">
       <thead>
-        <tr><th>Comprobante</th><th>Ciclista</th><th>Método</th><th>Monto</th><th>Confirmado</th></tr>
+        <tr>
+          <th>Código</th>
+          <th>Ciclista</th>
+          <th>Bicicleta</th>
+          <th>Estación inicio</th>
+          <th>Estación fin</th>
+          <th>Fecha inicio</th>
+          <th>Fecha fin</th>
+          <th>Modalidad</th>
+          <th>Estado</th>
+          <th style="text-align:right;">Total</th>
+        </tr>
       </thead>
       <tbody>
-        {% for p in pagos_turno %}
+        {% for a in alquileres %}
         <tr>
-          <td style="font-family:monospace;font-size:0.82rem;">{{ p.comprobante_numero or "—" }}</td>
-          <td style="font-weight:600;color:var(--text);">{{ p.ciclista_nombre }}</td>
-          <td style="text-transform:capitalize;">{{ p.metodo_pago or "—" }}</td>
-          <td style="font-weight:600;color:var(--text);">${{ "%.2f" | format(p.monto_total | float) }}</td>
-          <td class="text-muted text-sm">{{ p.fecha_confirmacion or "—" }}</td>
+          <td style="font-weight:600;font-family:monospace;color:var(--text);">{{ a.codigo }}</td>
+          <td style="font-weight:500;color:var(--text);">{{ a.ciclista_nombre }}</td>
+          <td>{{ a.bicicleta_codigo }}</td>
+          <td>{{ a.estacion_inicio_nombre }}</td>
+          <td class="text-muted text-sm">{{ a.estacion_fin_nombre or "—" }}</td>
+          <td class="text-muted text-sm">{{ a.fecha_inicio.strftime('%Y-%m-%d %H:%M') if a.fecha_inicio else "—" }}</td>
+          <td class="text-muted text-sm">{{ a.fecha_fin.strftime('%Y-%m-%d %H:%M') if a.fecha_fin else "—" }}</td>
+          <td style="text-transform:capitalize;">{{ a.modalidad or "—" }}</td>
+          <td>
+            {% if a.estado == 'reservado' %}<span class="badge badge-gray">Reservado</span>
+            {% elif a.estado == 'en_curso' %}<span class="badge badge-blue">En curso</span>
+            {% elif a.estado == 'devuelto' %}<span class="badge badge-yellow">Devuelto</span>
+            {% elif a.estado == 'facturado' %}<span class="badge badge-green">Facturado</span>
+            {% else %}<span class="badge badge-red">Cancelado</span>{% endif %}
+          </td>
+          <td style="text-align:right;font-weight:600;color:var(--text);">${{ "%.2f" | format(a.total | float) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if total_paginas > 1 %}
+  <div class="no-print" style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px 0;border-top:1px solid var(--border);margin-top:8px;">
+    <div style="font-size:0.82rem;color:var(--text-muted);">
+      Página {{ page }} de {{ total_paginas }}
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+      {% if page > 1 %}
+      <a href="?estado={{ estado }}&fecha_desde={{ fecha_desde }}&fecha_hasta={{ fecha_hasta }}&page={{ page - 1 }}"
+         class="btn btn-ghost" style="padding:6px 12px;font-size:0.8rem;">← Anterior</a>
+      {% endif %}
+      {% for p in range([1, page-2]|max, [total_paginas+1, page+3]|min) %}
+        {% if p == page %}
+        <span class="btn btn-primary" style="padding:6px 12px;font-size:0.8rem;cursor:default;">{{ p }}</span>
+        {% else %}
+        <a href="?estado={{ estado }}&fecha_desde={{ fecha_desde }}&fecha_hasta={{ fecha_hasta }}&page={{ p }}"
+           class="btn btn-ghost" style="padding:6px 12px;font-size:0.8rem;">{{ p }}</a>
+        {% endif %}
+      {% endfor %}
+      {% if page < total_paginas %}
+      <a href="?estado={{ estado }}&fecha_desde={{ fecha_desde }}&fecha_hasta={{ fecha_hasta }}&page={{ page + 1 }}"
+         class="btn btn-ghost" style="padding:6px 12px;font-size:0.8rem;">Siguiente →</a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% else %}
+  <div style="text-align:center;padding:48px 24px;color:var(--text-muted);">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom:12px;opacity:0.4;"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 5v3h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+    <div style="font-size:0.9rem;">Sin alquileres para los filtros seleccionados.</div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Informe compuesto: bicicletas por categoria y estado -->
+<div class="card" style="margin-top:20px;">
+  <div class="card-header">
+    <span class="card-title">Bicicletas por Categoría y Estado <span class="text-muted text-sm">({{ total_bicicletas | num }})</span></span>
+    <div class="no-print" style="display:flex;gap:8px;">
+      <a href="/empleado/operacion/reportes/bicicletas/excel" class="btn btn-ghost" style="font-size:0.82rem;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        Exportar Excel
+      </a>
+      <a href="/empleado/operacion/reportes/bicicletas/pdf" class="btn btn-ghost" style="font-size:0.82rem;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+        Exportar PDF
+      </a>
+    </div>
+  </div>
+
+  {% if bicis_categoria_estado %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr><th>Categoría</th><th>Estado</th><th style="text-align:right;">Bicicletas</th></tr>
+      </thead>
+      <tbody>
+        {% for r in bicis_categoria_estado %}
+        <tr>
+          <td style="font-weight:600;color:var(--text);">{{ r.categoria or "N/A" }}</td>
+          <td>
+            {% if r.estado == 'disponible' %}<span class="badge badge-green">Disponible</span>
+            {% elif r.estado == 'en_uso' %}<span class="badge badge-blue">En uso</span>
+            {% elif r.estado == 'mantenimiento' %}<span class="badge badge-yellow">Mantenimiento</span>
+            {% else %}<span class="badge badge-red">Retirada</span>{% endif %}
+          </td>
+          <td style="text-align:right;font-weight:600;color:var(--text);">{{ r.total | num }}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -46,91 +182,9 @@
   </div>
   {% else %}
   <div style="text-align:center;padding:32px 24px;color:var(--text-muted);">
-    <div style="font-size:0.88rem;">Aún no has confirmado pagos hoy.</div>
+    <div style="font-size:0.9rem;">Sin bicicletas registradas.</div>
   </div>
   {% endif %}
 </div>
 
-<div style="display:grid;grid-template-columns:3fr 2fr;gap:16px;">
-
-  <div class="card">
-    <div class="card-header">
-      <span class="card-title">Alquileres por Día de la Semana</span>
-    </div>
-    <div style="position:relative;height:300px;">
-      <canvas id="chartDias"></canvas>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-header">
-      <span class="card-title">Bicicletas Más Alquiladas</span>
-    </div>
-    {% if bici_labels != '[]' %}
-    <div style="position:relative;height:300px;">
-      <canvas id="chartBicis"></canvas>
-    </div>
-    {% else %}
-    <div style="text-align:center;padding:48px 24px;color:var(--text-muted);">
-      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom:12px;opacity:0.4;"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 0 0 0-2h-3l-1 5.5M5.5 17.5 9 8l3 5h6"/></svg>
-      <div style="font-size:0.9rem;">Sin alquileres registrados.</div>
-    </div>
-    {% endif %}
-  </div>
-
-</div>
-
-{% endblock %}
-
-{% block scripts %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script>
-const diaLabels  = {{ dia_labels | safe }};
-const diaValues  = {{ dia_values | safe }};
-const biciLabels = {{ bici_labels | safe }};
-const biciValues = {{ bici_values | safe }};
-
-new Chart(document.getElementById('chartDias'), {
-  type: 'bar',
-  data: {
-    labels: diaLabels,
-    datasets: [{ label: 'Alquileres', data: diaValues, backgroundColor: '#1E86BD', borderRadius: 6, borderSkipped: false }]
-  },
-  options: {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { display: false },
-      tooltip: { callbacks: { label: (ctx) => ' ' + ctx.raw.toLocaleString('es') } }
-    },
-    scales: {
-      y: { beginAtZero: true, ticks: { stepSize: 1, callback: v => v.toLocaleString('es'), font: { family: 'IBM Plex Sans', size: 10 } }, grid: { color: 'rgba(0,0,0,0.05)' } },
-      x: { grid: { display: false }, ticks: { font: { family: 'IBM Plex Sans', size: 10 } } }
-    }
-  }
-});
-
-if (biciLabels.length) {
-  new Chart(document.getElementById('chartBicis'), {
-    type: 'bar',
-    data: {
-      labels: biciLabels,
-      datasets: [{ label: 'Alquileres', data: biciValues, backgroundColor: '#6366F1', borderRadius: 6, borderSkipped: false }]
-    },
-    options: {
-      indexAxis: 'y',
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: { callbacks: { label: (ctx) => ' ' + ctx.raw.toLocaleString('es') } }
-      },
-      scales: {
-        x: { beginAtZero: true, ticks: { stepSize: 1, callback: v => v.toLocaleString('es'), font: { family: 'IBM Plex Sans', size: 10 } }, grid: { color: 'rgba(0,0,0,0.05)' } },
-        y: { grid: { display: false }, ticks: { font: { family: 'IBM Plex Sans', size: 10 } } }
-      }
-    }
-  });
-}
-</script>
 {% endblock %}

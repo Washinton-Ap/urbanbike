@@ -1,0 +1,12 @@
+id,codigo,tipo,estado,estacion,notas,marca,modelo,categoria,es_premium,enfoque,marchas,tipo_frenos,material_cuadro,suspension,rodado,peso_kg,es_electrica,autonomia_km
+bglk1mjfqiz1bes,UB-001,classic_bike,disponible,Parque Central,,Trek,FX 2 Disc,Estandar,0,urbano,18,disco_mecanico,aluminio,rigida,28,12.8,0,0
+xsh0wa5x87svmfw,UB-002,electric_bike,disponible,Parque El Ejido,Cargada al 85%,Giant,Explore E+ 2,Electrica,1,paseo,8,disco_hidraulico,aluminio,delantera,28,24.0,1,85
+mc4u9d8t6ducyc8,UB-003,classic_bike,disponible,Malecon 2000,,Scott,Sub Cross 40,Estandar,0,urbano,18,zapata,aluminio,rigida,28,13.5,0,0
+k64s1a9dgk9qh7g,UB-004,classic_bike,mantenimiento,Malecon 2000,,Trek,FX 3 Disc,Premium,1,urbano,21,disco_hidraulico,aluminio,rigida,28,11.2,0,0
+t6aoblrk6togj7j,UB-005,electric_bike,disponible,Parque central de Moraspungo,,Giant,Explore E+,Electrica,1,paseo,8,disco_hidraulico,aluminio,delantera,28,24.5,1,90
+1ofr2tqez6u93e5,UB-006,classic_bike,mantenimiento,Parque El Ejido,,Merida,Crossway 40,Estandar,0,urbano,21,disco_mecanico,aluminio,rigida,28,13.0,0,0
+9rjdb0imposm9fa,UB-007,classic_bike,disponible,Plaza Grande,,Scott,Sub Cross 20,Estandar,0,urbano,18,zapata,aluminio,rigida,28,14.0,0,0
+w475b364mi8fico,UB-008,classic_bike,disponible,Parque El Ejido,,Trek,Dual Sport 2,Estandar,0,montana,21,disco_mecanico,aluminio,delantera,29,13.8,0,0
+tmq1kxuyrg2qxgu,UB-009,classic_bike,mantenimiento,Parque El Ejido,,Specialized,Sirrus X 2.0,Premium,1,urbano,24,disco_hidraulico,aluminio,rigida,28,12.5,0,0
+xciymuhanrlzu9q,UB-010,electric_bike,mantenimiento,Parque El Ejido,,Giant,Explore E+ 2,Electrica,1,paseo,8,disco_hidraulico,aluminio,delantera,28,24.0,1,85
+i9ni3qrtqkqrsew,UB-011,classic_bike,disponible,Parque La Carolina,,Merida,Crossway 15,Estandar,0,urbano,18,disco_mecanico,aluminio,rigida,28,13.2,0,0

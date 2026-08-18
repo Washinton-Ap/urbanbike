@@ -1,0 +1,83 @@
+{# ─────────────────────────────────────────────────────────────────────────
+   Componente: factura con marca UrbanBike (ver
+   docs/Requerimientos_Mejoras_UrbanBike.md, punto 11). Reemplaza el
+   comprobante genérico plano que usaban ciclista/comprobante.html y
+   ciclista/membresia_comprobante.html -- mismo componente para los dos
+   orígenes (pago de viaje, membresía), el router arma `factura` distinto
+   según el caso. Version PDF equivalente: app/reportes/factura.py.
+
+   Logo/colores: reales (confirmados por Washington), independientes del
+   azul institucional (#1E86BD) del resto del sitio -- ver las variables
+   --factura-* de abajo y app/reportes/factura.py (misma paleta, versión
+   PDF). El PNG es un recorte del isotipo con fondo transparente, mismo
+   archivo que usa la versión PDF (app/static/img/logo-urbanbike.png).
+
+   Variable esperada en el contexto: `factura` (dict) con: numero,
+   fecha_emision, fecha_vencimiento, numero_pedido, cliente_nombre,
+   cliente_cedula, cliente_extra, metodo_pago, lineas (lista de dicts:
+   descripcion, cantidad, precio_unitario, importe), subtotal, iva,
+   descuento, total, nota.
+   ───────────────────────────────────────────────────────────────────────── #}
+
+<div class="factura-card">
+  <div class="factura-header">
+    <div class="factura-empresa">
+      <div class="factura-empresa-nombre">UrbanBike S.A.</div>
+      <div class="factura-empresa-dato">Av. Walter Andrade y Séptima Etapa, Quevedo, Los Ríos, Ecuador</div>
+      <div class="factura-empresa-dato">RUC: 1293456786001 · Tel: 05 275 0000</div>
+    </div>
+    <div class="factura-logo">
+      <img src="/static/img/logo-urbanbike.png" alt="UrbanBike" width="30" height="22">
+      <span class="factura-logo-nombre">
+        <span class="factura-logo-urban">Urban</span><span class="factura-logo-bike">Bike</span>
+      </span>
+    </div>
+  </div>
+
+  <div class="factura-identificacion">
+    <div><span>Factura N°</span><strong>{{ factura.numero }}</strong></div>
+    <div><span>Fecha de emisión</span><strong>{{ factura.fecha_emision }}</strong></div>
+    <div><span>N° de pedido / viaje</span><strong>{{ factura.numero_pedido }}</strong></div>
+    <div><span>Fecha de vencimiento</span><strong>{{ factura.fecha_vencimiento }}</strong></div>
+  </div>
+
+  <div class="factura-cliente">
+    <div class="factura-cliente-titulo">Facturar a</div>
+    <div>{{ factura.cliente_nombre }}</div>
+    <div>Cédula/RUC: {{ factura.cliente_cedula or "—" }}</div>
+    {% if factura.cliente_extra %}<div>{{ factura.cliente_extra }}</div>{% endif %}
+  </div>
+
+  <div class="table-wrap">
+    <table class="factura-tabla">
+      <thead>
+        <tr><th>Cant.</th><th>Descripción</th><th style="text-align:right;">Precio unitario</th><th style="text-align:right;">Importe</th></tr>
+      </thead>
+      <tbody>
+        {% for l in factura.lineas %}
+        <tr>
+          <td>{{ l.cantidad | num }}</td>
+          <td>{{ l.descripcion }}</td>
+          <td style="text-align:right;">{{ l.precio_unitario | moneda }}</td>
+          <td style="text-align:right;">{{ l.importe | moneda }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="factura-totales">
+    <div><span>Subtotal</span><span>{{ factura.subtotal | moneda }}</span></div>
+    <div><span>IVA (15%)</span><span>{{ factura.iva | moneda }}</span></div>
+    {% if factura.descuento > 0 %}
+    <div><span>Descuento aplicado</span><span>{{ (-factura.descuento) | moneda }}</span></div>
+    {% endif %}
+    <div class="factura-total-final"><span>TOTAL</span><span>{{ factura.total | moneda }}</span></div>
+  </div>
+
+  <div class="factura-pie">
+    <div>Condición de pago: {{ factura.metodo_pago }}</div>
+    {% if factura.nota %}<div>{{ factura.nota }}</div>{% endif %}
+    <div>Soporte y contacto: {{ soporte_email }} — Documento generado electrónicamente con fines académicos, sin validez tributaria (sin autorización del SRI).</div>
+  </div>
+</div>

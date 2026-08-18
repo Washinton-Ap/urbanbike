@@ -4,16 +4,25 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}{{ title | default("") }} — UrbanBike{% endblock %}</title>
+  <link rel="icon" type="image/png" href="/static/img/logo-urbanbike.png">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" media="print" onload="this.media='all'">
-  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap"></noscript>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" media="print" onload="this.media='all'">
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"></noscript>
 
   <link rel="stylesheet" href="/static/css/main.css">
   <script src="/static/js/theme.js"></script>
   <script src="/static/js/table-search.js"></script>
   <script src="/static/js/usabilidad.js"></script>
+  <script src="/static/js/lightbox.js"></script>
+  <script src="/static/js/password-toggle.js"></script>
+  <script src="/static/js/costo-en-vivo.js"></script>
+  <script src="/static/js/loading.js"></script>
+  <script src="/static/js/solo-numeros.js" defer></script>
+  <script src="/static/js/notificaciones.js" defer></script>
+  <script src="/static/js/sesion-tiempo-real.js" defer></script>
+  <script src="/static/js/campana-notificaciones.js" defer></script>
 
   {% block head %}{% endblock %}
 
@@ -85,7 +94,7 @@
     }
   </style>
 </head>
-<body>
+<body{% if request.session.get('user') %} data-sesion-activa{% endif %} data-csrf-token="{{ csrf_token(request) }}">
 
 <div id="sidebar-overlay"></div>
 <div class="layout">
@@ -93,15 +102,10 @@
   <!-- ══════════════ SIDEBAR ══════════════ -->
   <aside class="sidebar">
 
-    <div class="sidebar-logo">
-      <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-        <circle cx="7"  cy="20" r="5" stroke="#1E86BD" stroke-width="2.2"/>
-        <circle cx="21" cy="20" r="5" stroke="#1E86BD" stroke-width="2.2"/>
-        <path d="M7 20 L12 8 L18 14 L21 20" stroke="#1E86BD" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-        <circle cx="14" cy="6" r="2" fill="#1E86BD"/>
-      </svg>
+    <a class="sidebar-logo" href="{{ dashboard_url(user) }}" aria-label="Ir al inicio">
+      <img src="/static/img/logo-urbanbike.png" alt="" width="28" height="21">
       <span class="sidebar-logo-text">Urban<span>Bike</span></span>
-    </div>
+    </a>
 
     <nav class="sidebar-nav">
       {% set rol = user.rol_slug if user else "" %}
@@ -127,9 +131,25 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
           Auditoría
         </a>
+        <a class="nav-item {% if p == '/admin/permisos' %}active{% endif %}" href="/admin/permisos">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          Roles y Permisos
+        </a>
+        <a class="nav-item {% if '/admin/permisos-usuario' in p %}active{% endif %}" href="/admin/permisos-usuario">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/><path d="M22 11l-2 2 2 2" stroke-width="2"/></svg>
+          Excepciones por Usuario
+        </a>
         <a class="nav-item {% if '/admin/reportes' in p %}active{% endif %}" href="/admin/reportes">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
           Reportes
+        </a>
+        <a class="nav-item {% if '/admin/respaldo' in p %}active{% endif %}" href="/admin/respaldo">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9l6 6z"/><polyline points="14 3 14 9 20 9"/><line x1="12" y1="12" x2="12" y2="18"/><polyline points="9 15 12 18 15 15"/></svg>
+          Respaldo
+        </a>
+        <a class="nav-item {% if '/admin/soporte' in p %}active{% endif %}" href="/admin/soporte">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          Soporte
         </a>
         <div class="sidebar-section">Analítica</div>
         <a class="nav-item {% if '/gerente/dashboard' in p %}active{% endif %}" href="/gerente/dashboard">
@@ -157,6 +177,15 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           Informe
         </a>
+        <a class="nav-item {% if '/gerente/estrategico' in p %}active{% endif %}" href="/gerente/estrategico">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+          Informe Estratégico
+        </a>
+        <div class="sidebar-section">Dataset Académico</div>
+        <a class="nav-item {% if '/gerente/analisis-citibike' in p %}active{% endif %}" href="/gerente/analisis-citibike">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c0 2 3 3 6 3s6-1 6-3v-5"/></svg>
+          Análisis Citibike (NY 2023)
+        </a>
         <div class="sidebar-section">Gestión</div>
         <a class="nav-item {% if '/gerente/empleados' in p %}active{% endif %}" href="/gerente/empleados">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -174,6 +203,15 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
           Tarifas
         </a>
+        <a class="nav-item {% if '/gerente/promociones' in p %}active{% endif %}" href="/gerente/promociones">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41 11 3.83A2 2 0 0 0 9.59 3.24H4a1 1 0 0 0-1 1v5.59a2 2 0 0 0 .59 1.41l9.58 9.59a2 2 0 0 0 2.82 0l4.6-4.6a2 2 0 0 0 0-2.82z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>
+          Promociones
+        </a>
+        <div class="sidebar-section">Empresa</div>
+        <a class="nav-item {% if '/institucional/mision-vision' in p %}active{% endif %}" href="/institucional/mision-vision">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          Misión y Visión
+        </a>
       {% endif %}
 
       <!-- ── Ciclista ── -->
@@ -183,13 +221,29 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
           Inicio
         </a>
+        <a class="nav-item {% if '/ciclista/catalogo' in p %}active{% endif %}" href="/ciclista/catalogo">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          Catálogo
+        </a>
         <a class="nav-item {% if '/ciclista/alquilar' in p %}active{% endif %}" href="/ciclista/alquilar">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 0 0 0-2h-3l-1 5.5M5.5 17.5 9 8l3 5h6"/></svg>
           Reservar Bicicleta
         </a>
+        <a class="nav-item {% if '/ciclista/promociones' in p %}active{% endif %}" href="/ciclista/promociones">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41 11 3.83A2 2 0 0 0 9.59 3.24H4a1 1 0 0 0-1 1v5.59a2 2 0 0 0 .59 1.41l9.58 9.59a2 2 0 0 0 2.82 0l4.6-4.6a2 2 0 0 0 0-2.82z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>
+          Promociones
+        </a>
+        <a class="nav-item {% if '/ciclista/membresia' in p %}active{% endif %}" href="/ciclista/membresia">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          Membresía
+        </a>
         <a class="nav-item {% if '/ciclista/historial' in p %}active{% endif %}" href="/ciclista/historial">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
           Mis Viajes
+        </a>
+        <a class="nav-item {% if '/ciclista/pagos' in p %}active{% endif %}" href="/ciclista/pagos">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          Historial de Pagos
         </a>
         <a class="nav-item {% if '/ciclista/infracciones' in p %}active{% endif %}" href="/ciclista/infracciones">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
@@ -198,6 +252,10 @@
         <a class="nav-item {% if '/ciclista/reportes' in p %}active{% endif %}" href="/ciclista/reportes">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
           Mis Reportes
+        </a>
+        <a class="nav-item {% if '/ciclista/soporte' in p %}active{% endif %}" href="/ciclista/soporte">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          Soporte
         </a>
       {% endif %}
 
@@ -228,6 +286,11 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
           Reportes
         </a>
+        <div class="sidebar-section">Empresa</div>
+        <a class="nav-item {% if '/institucional/mision-vision' in p %}active{% endif %}" href="/institucional/mision-vision">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          Misión y Visión
+        </a>
       {% endif %}
 
       <!-- ── Empleado Mantenimiento ── -->
@@ -236,6 +299,10 @@
         <a class="nav-item {% if p == '/empleado/mantenimiento/dashboard' %}active{% endif %}" href="/empleado/mantenimiento/dashboard">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
           Dashboard
+        </a>
+        <a class="nav-item {% if '/empleado/operacion/inventario' in p %}active{% endif %}" href="/empleado/operacion/inventario">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 0 0 0-2h-3l-1 5.5M5.5 17.5 9 8l3 5h6"/></svg>
+          Inventario
         </a>
         <a class="nav-item {% if '/empleado/mantenimiento/ordenes' in p %}active{% endif %}" href="/empleado/mantenimiento/ordenes">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
@@ -249,6 +316,11 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
           Reportes
         </a>
+        <div class="sidebar-section">Empresa</div>
+        <a class="nav-item {% if '/institucional/mision-vision' in p %}active{% endif %}" href="/institucional/mision-vision">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          Misión y Visión
+        </a>
       {% endif %}
 
       <!-- ── Empleado Vigilancia ── -->
@@ -257,6 +329,10 @@
         <a class="nav-item {% if p == '/empleado/vigilancia/dashboard' %}active{% endif %}" href="/empleado/vigilancia/dashboard">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
           Dashboard
+        </a>
+        <a class="nav-item {% if '/empleado/operacion/inventario' in p %}active{% endif %}" href="/empleado/operacion/inventario">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 0 0 0-2h-3l-1 5.5M5.5 17.5 9 8l3 5h6"/></svg>
+          Inventario
         </a>
         <a class="nav-item {% if '/empleado/vigilancia/seguimiento' in p %}active{% endif %}" href="/empleado/vigilancia/seguimiento">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
@@ -278,9 +354,18 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
           Alertas
         </a>
+        <a class="nav-item {% if '/empleado/vigilancia/soporte' in p %}active{% endif %}" href="/empleado/vigilancia/soporte">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          Soporte
+        </a>
         <a class="nav-item {% if '/empleado/vigilancia/reportes' in p %}active{% endif %}" href="/empleado/vigilancia/reportes">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
           Reportes
+        </a>
+        <div class="sidebar-section">Empresa</div>
+        <a class="nav-item {% if '/institucional/mision-vision' in p %}active{% endif %}" href="/institucional/mision-vision">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          Misión y Visión
         </a>
       {% endif %}
 
@@ -298,18 +383,24 @@
     {% if user %}
     <div class="sidebar-footer">
       <div class="user-card">
-        {% set _avatar = avatar_url(user) %}
-        {% if _avatar %}
-        <div class="user-avatar" style="width:40px;height:40px;border-radius:50%;flex-shrink:0;padding:0;overflow:hidden;">
-          <img src="{{ _avatar }}" alt="Avatar" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">
-        </div>
-        {% else %}
-        <div class="user-avatar" style="width:40px;height:40px;border-radius:50%;flex-shrink:0;font-size:0.85rem;">{{ (user.name or user.email)[:2] | upper }}</div>
-        {% endif %}
-        <div class="user-info">
-          <div class="user-name">{{ user.name or user.email }}</div>
-          <div class="user-role">{{ user.rol_nombre or "Sin rol" }}</div>
-        </div>
+        <a href="/perfil" title="Ver mi perfil"
+           style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;text-decoration:none;color:inherit;"
+           onclick="if (event.target.closest('img[data-lightbox]')) event.preventDefault();">
+          {% set _avatar = avatar_url(user) %}
+          {% if _avatar %}
+          <div class="user-avatar" style="width:40px;height:40px;border-radius:50%;flex-shrink:0;padding:0;overflow:hidden;">
+            <img src="{{ _avatar }}" alt="Avatar de {{ user.name or user.email }}" data-lightbox data-full="{{ _avatar }}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;cursor:zoom-in;">
+          </div>
+          {% else %}
+          <div class="user-avatar avatar-logo-fallback" style="width:40px;height:40px;border-radius:50%;flex-shrink:0;">
+            <img src="/static/img/logo-urbanbike.png" alt="">
+          </div>
+          {% endif %}
+          <div class="user-info">
+            <div class="user-name">{{ user.name or user.email }}</div>
+            <div class="user-role">{{ user.rol_nombre or "Sin rol" }}</div>
+          </div>
+        </a>
         <a href="/auth/logout" title="Cerrar sesión" style="color:rgba(255,255,255,0.35);flex-shrink:0;">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         </a>
@@ -322,10 +413,40 @@
   <!-- ══════════════ CONTENIDO PRINCIPAL ══════════════ -->
   <div class="main-wrapper">
 
+    <!-- back_url: bloque invisible (solo se lee via self.back_url()); sobreescribir
+         en una plantilla hija para un destino distinto al dashboard del rol,
+         o dejarlo vacio para ocultar el boton (pantallas de inicio). -->
+    <!-- {% block back_url %}{{ dashboard_url(user) }}{% endblock %} -->
     <header class="topbar">
       <button id="hamburger-btn" class="hamburger" aria-label="Abrir menú">&#9776;</button>
-      <span class="topbar-title">{% block page_title %}{{ title | default("") }}{% endblock %}</span>
+      <div class="topbar-left">
+        {% set _back_url = self.back_url() | trim %}
+        {% if _back_url %}
+        <a class="topbar-back" href="{{ _back_url }}" aria-label="Volver">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          <span class="topbar-back-label">Volver</span>
+        </a>
+        {% endif %}
+        <span class="topbar-title">{% block page_title %}{{ title | default("") }}{% endblock %}</span>
+      </div>
       <div class="topbar-actions">
+        {% if request.session.get('user') %}
+        <div class="campana-wrap" id="campana-wrap">
+          <button id="campana-toggle" class="theme-toggle" title="Notificaciones" aria-label="Abrir notificaciones">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            <span id="campana-contador" class="campana-contador" style="display:none;">0</span>
+          </button>
+          <div id="campana-dropdown" class="campana-dropdown" style="display:none;">
+            <div class="campana-dropdown-header">
+              <span>Notificaciones</span>
+              <button type="button" id="campana-marcar-todas" class="campana-marcar-todas">Marcar todas</button>
+            </div>
+            <div id="campana-lista" class="campana-lista">
+              <div class="campana-vacio">Sin notificaciones nuevas.</div>
+            </div>
+          </div>
+        </div>
+        {% endif %}
         <button id="a11y-toggle" class="theme-toggle" title="Usabilidad" aria-label="Abrir panel de usabilidad">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         </button>
@@ -334,16 +455,11 @@
     </header>
 
     {% if flash %}
-    <div class="page-content" style="padding-bottom:0;">
-      <div class="flash {{ flash.type }}">
-        {% if flash.type == 'success' %}
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-        {% else %}
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        {% endif %}
-        {{ flash.msg }}
-      </div>
-    </div>
+    <script>
+      document.addEventListener('DOMContentLoaded', function () {
+        UB.toast({{ flash.msg | tojson }}, {{ flash.type | tojson }});
+      });
+    </script>
     {% endif %}
 
     <main class="page-content">

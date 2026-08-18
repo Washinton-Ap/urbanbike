@@ -1,0 +1,12 @@
+id,codigo,tipo,estado,estacion,notas,marca,modelo,categoria,es_premium,enfoque,marchas,tipo_frenos,material_cuadro,suspension,rodado,peso_kg,es_electrica,autonomia_km
+bglk1mjfqiz1bes,UB-001,classic_bike,disponible,Parque Central,,,,,,,,,,,,,,
+xsh0wa5x87svmfw,UB-002,electric_bike,disponible,Parque El Ejido,Cargada al 85%,,,,,,,,,,,,,
+mc4u9d8t6ducyc8,UB-003,classic_bike,disponible,Malecon 2000,,,,,,,,,,,,,,
+k64s1a9dgk9qh7g,UB-004,classic_bike,mantenimiento,Malecon 2000,,,,,,,,,,,,,,
+t6aoblrk6togj7j,UB-005,electric_bike,disponible,Parque central de Moraspungo,,,,,,,,,,,,,,
+1ofr2tqez6u93e5,UB-006,classic_bike,mantenimiento,Parque El Ejido,,,,,,,,,,,,,,
+9rjdb0imposm9fa,UB-007,classic_bike,disponible,Plaza Grande,,,,,,,,,,,,,,
+w475b364mi8fico,UB-008,classic_bike,disponible,Parque El Ejido,,,,,,,,,,,,,,
+tmq1kxuyrg2qxgu,UB-009,classic_bike,mantenimiento,Parque El Ejido,,,,,,,,,,,,,,
+xciymuhanrlzu9q,UB-010,electric_bike,mantenimiento,Parque El Ejido,,,,,,,,,,,,,,
+i9ni3qrtqkqrsew,UB-011,classic_bike,disponible,Parque La Carolina,,,,,,,,,,,,,,

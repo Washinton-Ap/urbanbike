@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ title }}{% endblock %}
 {% block page_title %}{{ title }}{% endblock %}
+{% block back_url %}{% endblock %}
 
 {% block content %}
 <div style="margin-bottom:28px;">
@@ -16,7 +17,7 @@
 <div class="kpi-grid">
   {% for m in modulos %}
   <a href="{{ m.href }}" style="text-decoration:none;">
-    <div class="kpi-card" style="cursor:pointer;transition:box-shadow 0.15s,transform 0.15s;" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 16px rgba(30,134,189,0.15)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
+    <div class="kpi-card card-clickeable">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
         <div style="width:36px;height:36px;border-radius:8px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
           {% if m.icono == "chart" %}
@@ -42,7 +43,7 @@
         <span style="font-family:'Sora',sans-serif;font-size:0.9rem;font-weight:600;color:var(--text);">{{ m.nombre }}</span>
       </div>
       <p style="font-size:0.8rem;color:var(--text-muted);line-height:1.4;">{{ m.desc }}</p>
-      <div style="margin-top:12px;font-size:0.75rem;color:var(--primary);font-weight:500;">
+      <div style="margin-top:12px;font-size:0.8rem;color:var(--primary);font-weight:500;">
         {% if m.href == "#" %}Próximamente →{% else %}Acceder →{% endif %}
       </div>
     </div>

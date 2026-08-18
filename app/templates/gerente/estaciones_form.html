@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block page_title %}{{ title }}{% endblock %}
+{% block back_url %}/gerente/estaciones{% endblock %}
+
+{% block content %}
+
+{% if modo == "ver" %}
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">{{ est.codigo }} — {{ est.nombre }}</span>
+    <div class="flex gap-2">
+      <a href="/gerente/estaciones/{{ est.id }}?modo=editar" class="btn btn-primary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        Actualizar
+      </a>
+      <button type="button" class="btn btn-ghost" style="color:#EF4444;border-color:rgba(239,68,68,0.35);" onclick="document.getElementById('modal-eliminar').showModal()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        Eliminar
+      </button>
+    </div>
+  </div>
+  <div class="form-grid" style="padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+    <div>
+      <div class="form-label">Dirección</div>
+      <div style="margin-bottom:16px;color:var(--text);">{{ est.direccion or "—" }}</div>
+      <div class="form-label">Capacidad (anclajes)</div>
+      <div style="margin-bottom:16px;color:var(--text);">{{ est.capacidad if est.capacidad else "—" }}</div>
+      <div class="form-label">Coordenadas</div>
+      <div style="margin-bottom:16px;color:var(--text);">
+        {% if est.latitud and est.longitud %}{{ "%.6f" | format(est.latitud | float) }}, {{ "%.6f" | format(est.longitud | float) }}
+        {% else %}—{% endif %}
+      </div>
+      <div class="form-label">Estado</div>
+      <div style="margin-bottom:16px;">
+        {% if est.activa %}<span class="badge badge-green">Activa</span>{% else %}<span class="badge badge-red">Inactiva</span>{% endif %}
+      </div>
+    </div>
+    <div>
+      <div class="form-label">Bicicletas reales asignadas</div>
+      <div style="margin-bottom:16px;color:var(--text);">{{ n_bicis }}</div>
+      <div class="form-label">Alquileres reales (inicio o fin)</div>
+      <div style="margin-bottom:16px;color:var(--text);">{{ n_alquileres }}</div>
+    </div>
+  </div>
+</div>
+
+<dialog id="modal-eliminar">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title" style="color:#EF4444;">Eliminar estación</span></div>
+    <p style="color:var(--text-muted);margin-bottom:20px;">
+      ¿Eliminar la estación <strong style="color:var(--text);">{{ est.nombre }}</strong>?
+      {% if n_bicis > 0 or n_alquileres > 0 %}
+      Tiene {% if n_bicis > 0 %}<strong>{{ n_bicis }}</strong> bicicleta(s) real(es){% endif %}{% if n_bicis > 0 and n_alquileres > 0 %} y {% endif %}{% if n_alquileres > 0 %}<strong>{{ n_alquileres }}</strong> alquiler(es) real(es){% endif %} asociado(s) — la eliminación va a ser rechazada; considera cambiar su estado a "Inactiva" en su lugar.
+      {% else %}
+      Esta acción no se puede deshacer.
+      {% endif %}
+    </p>
+    <form method="post" action="/gerente/estaciones/{{ est.id }}/eliminar">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <div class="flex gap-2" style="justify-content:flex-end;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-eliminar').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary" style="background:#EF4444;border-color:#EF4444;">Eliminar</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+{% else %}
+{# modo == "editar" o "crear" #}
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">{% if modo == "crear" %}Nueva estación{% else %}Actualizar {{ est.codigo }}{% endif %}</span>
+  </div>
+  <form method="post" action="{% if modo == 'crear' %}/gerente/estaciones/crear{% else %}/gerente/estaciones/{{ est.id }}/editar{% endif %}" style="padding:20px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+
+    {% if modo == "crear" %}
+    <div class="form-group">
+      <label class="form-label">Buscar lugar en Ecuador</label>
+      <div style="display:flex;gap:8px;">
+        <input class="form-input" type="text" id="lugar-search" placeholder="Buscar lugar en Ecuador..." style="flex:1;">
+        <button type="button" class="btn btn-ghost" onclick="buscarLugar()" style="white-space:nowrap;">Buscar</button>
+      </div>
+      <div id="sugerencias" style="display:none;border:1px solid var(--border);border-radius:8px;margin-top:4px;overflow:hidden;"></div>
+      <div style="font-size:0.8rem;color:var(--text-muted);margin-top:6px;">Selecciona un resultado de la búsqueda para fijar las coordenadas, o ingrésalas manualmente abajo.</div>
+    </div>
+    {% endif %}
+
+    <div class="form-grid" style="display:grid;grid-template-columns:2fr 1fr;gap:12px;">
+      <div class="form-group"><label class="form-label">Nombre *</label>
+        <input class="form-input" type="text" name="nombre" value="{{ est.nombre if est else '' }}" required placeholder="Ej. Parque La Carolina"></div>
+      <div class="form-group"><label class="form-label">Código *</label>
+        <input class="form-input" type="text" name="codigo" value="{{ est.codigo if est else '' }}" required placeholder="Ej. EC-Q04"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Dirección</label>
+      <input class="form-input" type="text" name="direccion" value="{{ est.direccion if est else '' }}" placeholder="Dirección opcional"></div>
+    <div class="form-group"><label class="form-label">Capacidad (anclajes)</label>
+      <input class="form-input" type="text" name="capacidad" inputmode="numeric" pattern="[0-9]*" value="{{ est.capacidad if est else 0 }}"></div>
+    <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="form-group"><label class="form-label">Latitud *</label>
+        <input class="form-input" type="text" name="latitud" id="latitud" inputmode="decimal" pattern="-?[0-9]*\.?[0-9]*" data-ub-signed required value="{{ est.latitud if est else '' }}" {% if modo == "crear" %}readonly placeholder="Se completa al buscar"{% endif %}></div>
+      <div class="form-group"><label class="form-label">Longitud *</label>
+        <input class="form-input" type="text" name="longitud" id="longitud" inputmode="decimal" pattern="-?[0-9]*\.?[0-9]*" data-ub-signed required value="{{ est.longitud if est else '' }}" {% if modo == "crear" %}readonly placeholder="Se completa al buscar"{% endif %}></div>
+    </div>
+    <div class="form-group"><label class="form-label">Estado</label>
+      <select class="form-input" name="activa">
+        <option value="true"  {% if est and est.activa %}selected{% endif %}>Activa</option>
+        <option value="false" {% if est and not est.activa %}selected{% endif %}>Inactiva</option>
+      </select>
+    </div>
+
+    <div class="flex gap-2" style="justify-content:flex-end;margin-top:20px;">
+      <a href="{% if modo == 'crear' %}/gerente/estaciones{% else %}/gerente/estaciones/{{ est.id }}{% endif %}" class="btn btn-ghost">Cancelar</a>
+      <button type="submit" class="btn btn-primary">{% if modo == "crear" %}Crear{% else %}Guardar cambios{% endif %}</button>
+    </div>
+  </form>
+</div>
+
+<script>
+async function buscarLugar() {
+  const q = document.getElementById('lugar-search').value.trim();
+  const cont = document.getElementById('sugerencias');
+  if (!q) { cont.style.display = 'none'; return; }
+
+  try {
+    const resp = await fetch('/gerente/estaciones/buscar-lugar?q=' + encodeURIComponent(q));
+    const data = await resp.json();
+    cont.innerHTML = '';
+    if (!data.length) {
+      cont.innerHTML = '<div style="padding:10px 14px;font-size:0.82rem;color:var(--text-muted);">Sin resultados.</div>';
+      cont.style.display = 'block';
+      return;
+    }
+    data.forEach(item => {
+      const div = document.createElement('div');
+      div.style.cssText = 'padding:9px 14px;font-size:0.82rem;cursor:pointer;border-bottom:1px solid var(--border);color:var(--text);';
+      div.textContent = item.nombre;
+      div.addEventListener('mouseenter', () => div.style.background = 'var(--surface)');
+      div.addEventListener('mouseleave', () => div.style.background = '');
+      div.addEventListener('click', () => {
+        document.getElementById('latitud').value = item.lat;
+        document.getElementById('longitud').value = item.lng;
+        cont.style.display = 'none';
+        document.getElementById('lugar-search').value = '';
+      });
+      cont.appendChild(div);
+    });
+    cont.style.display = 'block';
+  } catch (e) {
+    cont.innerHTML = '<div style="padding:10px 14px;font-size:0.82rem;color:#EF4444;">Error al buscar.</div>';
+    cont.style.display = 'block';
+  }
+}
+const lugarInput = document.getElementById('lugar-search');
+if (lugarInput) {
+  lugarInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); buscarLugar(); } });
+}
+</script>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,74 @@
+{# ─────────────────────────────────────────────────────────────────────────
+   Componente: flujo visual de la orden de mantenimiento (línea de ruta)
+   Mismo lenguaje visual que componentes/flujo_alquiler.html — extiende el
+   elemento distintivo del sistema mas alla de los tres componentes
+   originales (pendiente 5, ver docs/HOJA_DE_RUTA.md). Reutiliza las mismas
+   clases CSS (.flujo-alquiler/.flujo-paso/.flujo-nodo/.flujo-segmento),
+   nada nuevo en main.css.
+
+   Variable esperada en el contexto al incluir este parcial: `orden`, un
+   dict con al menos:
+     estado_reparacion — slug real: abierta | diagnostico | en_reparacion |
+                          espera_repuesto | cerrada
+     fecha_apertura     — datetime real (siempre existe)
+     fecha_cierre        — datetime; solo tiene sentido si estado_reparacion
+                          == 'cerrada' (sentinela 1970-01-01 si no)
+
+   A diferencia de alquiler_eventos, ordenes_mantenimiento no tiene una
+   tabla de eventos con hora por paso -- solo fecha_apertura y fecha_cierre
+   son reales. "Diagnóstico" y "en reparación" muestran "—" en vez de
+   inventar una hora que no existe.
+
+   espera_repuesto no es uno de los 4 pasos principales: se representa
+   sobre el mismo nodo que "en reparación" (sigue siendo trabajo en curso,
+   solo bloqueado), con su propia etiqueta en vez de "Paso actual".
+   ───────────────────────────────────────────────────────────────────────── #}
+
+{% set pasos = [
+  {"slug": "abierta",       "etiqueta": "abierta"},
+  {"slug": "diagnostico",   "etiqueta": "diagnóstico"},
+  {"slug": "en_reparacion", "etiqueta": "en reparación"},
+  {"slug": "cerrada",       "etiqueta": "cerrada"},
+] %}
+
+{% set slugs = pasos | map(attribute="slug") | list %}
+{% set estado_para_indice = "en_reparacion" if orden.estado_reparacion == "espera_repuesto" else orden.estado_reparacion %}
+{% set indice_actual = slugs.index(estado_para_indice) if estado_para_indice in slugs else -1 %}
+
+<div class="flujo-alquiler">
+  {% for paso in pasos %}
+    {% set completado = loop.index0 <= indice_actual %}
+    {% set es_actual = loop.index0 == indice_actual %}
+
+    {% if not loop.first %}
+      <div class="flujo-segmento {% if loop.index0 <= indice_actual %}completo{% endif %}"></div>
+    {% endif %}
+
+    <div class="flujo-paso">
+      <div class="flujo-paso-cabecera">
+        <span class="flujo-paso-etiqueta">{{ paso.etiqueta }}</span>
+        <span class="flujo-paso-actual-tag {% if not es_actual %}oculta{% endif %}">
+          {% if es_actual and orden.estado_reparacion == "espera_repuesto" %}Espera repuesto{% else %}Paso actual{% endif %}
+        </span>
+      </div>
+
+      <div class="flujo-nodo {% if completado %}completado{% else %}pendiente{% endif %} {% if es_actual %}actual{% endif %}">
+        {% if paso.slug == "abierta" %}
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        {% elif paso.slug == "diagnostico" %}
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+        {% elif paso.slug == "en_reparacion" %}
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        {% else %}
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        {% endif %}
+      </div>
+
+      <div class="flujo-paso-hora">
+        {% if paso.slug == "abierta" %}{{ orden.fecha_apertura.strftime('%Y-%m-%d %H:%M') if orden.fecha_apertura else "—" }}
+        {% elif paso.slug == "cerrada" %}{{ orden.fecha_cierre.strftime('%Y-%m-%d %H:%M') if orden.estado_reparacion == "cerrada" and orden.fecha_cierre else "—" }}
+        {% else %}—{% endif %}
+      </div>
+    </div>
+  {% endfor %}
+</div>

@@ -1,0 +1,65 @@
+{# ─────────────────────────────────────────────────────────────────────────
+   Componente: flujo visual del alquiler (línea de ruta)
+   Ver docs/REDISENO_UI.md → "Componente 1: flujo visual del alquiler".
+
+   Variables esperadas en el contexto al incluir este parcial:
+     eventos       — lista de filas de alquiler_eventos, cada una con al
+                      menos: estado_destino (str) y fecha (str, ya formateada
+                      como HH:MM). Puede venir vacía si el alquiler recién
+                      se reservó.
+     estado_actual — slug del estado actual del alquiler (alquileres.estado):
+                      reservado | en_curso | devuelto | inspeccionado |
+                      facturado | cerrado
+   ───────────────────────────────────────────────────────────────────────── #}
+
+{% set pasos = [
+  {"slug": "reservado",     "etiqueta": "reservado"},
+  {"slug": "en_curso",      "etiqueta": "en curso"},
+  {"slug": "devuelto",      "etiqueta": "devuelta"},
+  {"slug": "inspeccionado", "etiqueta": "inspeccionada"},
+  {"slug": "facturado",     "etiqueta": "facturada"},
+  {"slug": "cerrado",       "etiqueta": "cerrada"},
+] %}
+
+{% set horas_por_estado = {} %}
+{% for ev in (eventos or []) %}
+  {% set _ = horas_por_estado.update({ev.estado_destino: ev.fecha}) %}
+{% endfor %}
+
+<div class="flujo-alquiler">
+  {% for paso in pasos %}
+    {% set hora = horas_por_estado.get(paso.slug) %}
+    {% set completado = hora is not none %}
+    {% set es_actual = paso.slug == estado_actual %}
+
+    {% if not loop.first %}
+      {% set anterior_completado = horas_por_estado.get(pasos[loop.index0 - 1].slug) is not none %}
+      <div class="flujo-segmento {% if anterior_completado and completado %}completo{% endif %}"></div>
+    {% endif %}
+
+    <div class="flujo-paso">
+      <div class="flujo-paso-cabecera">
+        <span class="flujo-paso-etiqueta">{{ paso.etiqueta }}</span>
+        <span class="flujo-paso-actual-tag {% if not es_actual %}oculta{% endif %}">Paso actual</span>
+      </div>
+
+      <div class="flujo-nodo {% if completado %}completado{% else %}pendiente{% endif %} {% if es_actual %}actual{% endif %}">
+        {% if paso.slug == "reservado" %}
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>
+        {% elif paso.slug == "en_curso" %}
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 0 0 0-2h-3l-1 5.5M5.5 17.5 9 8l3 5h6"/></svg>
+        {% elif paso.slug == "devuelto" %}
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><polyline points="9 15 11 17 15 12"/></svg>
+        {% elif paso.slug == "inspeccionado" %}
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><polyline points="8 13 9.5 14.5 12 12"/><line x1="8" y1="17" x2="14" y2="17"/></svg>
+        {% elif paso.slug == "facturado" %}
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        {% else %}
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        {% endif %}
+      </div>
+
+      <div class="flujo-paso-hora">{{ hora if hora else "—" }}</div>
+    </div>
+  {% endfor %}
+</div>

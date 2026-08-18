@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Promociones{% endblock %}
+{% block page_title %}Promociones{% endblock %}
+
+{% block content %}
+
+<div class="card" style="margin-bottom:16px;">
+  <form method="get" action="/gerente/promociones" style="display:flex;gap:10px;padding:16px 20px;flex-wrap:wrap;align-items:center;">
+    <input type="search" class="form-input filtro-buscador" name="q" value="{{ q or '' }}" placeholder="Buscar por código o nombre..." style="flex:1;min-width:220px;">
+    <select class="form-input" name="estado" style="width:auto;">
+      <option value="">Todos los estados</option>
+      <option value="activa"  {% if estado == 'activa' %}selected{% endif %}>Activa</option>
+      <option value="pausada" {% if estado == 'pausada' %}selected{% endif %}>Pausada</option>
+      <option value="vencida" {% if estado == 'vencida' %}selected{% endif %}>Vencida</option>
+    </select>
+    <button type="submit" class="btn btn-primary">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      Buscar
+    </button>
+    {% if q or estado %}
+    <a href="/gerente/promociones" class="btn btn-ghost">Limpiar</a>
+    {% endif %}
+  </form>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Promociones <span class="text-muted text-sm">({{ total }})</span></span>
+    <div class="flex gap-2 header-controles" style="align-items:center;">
+      <a href="/gerente/promociones/excel?q={{ q }}&estado={{ estado }}" class="btn btn-ghost" style="font-size:0.8rem;padding:7px 14px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
+        Excel
+      </a>
+      <a href="/gerente/promociones/pdf?q={{ q }}&estado={{ estado }}" class="btn btn-ghost" style="font-size:0.8rem;padding:7px 14px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+        PDF
+      </a>
+      <a href="/gerente/promociones/nueva" class="btn btn-primary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Nueva promoción
+      </a>
+    </div>
+  </div>
+
+  {% if promociones %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Código</th>
+          <th>Nombre</th>
+          <th>Descuento</th>
+          <th>Aplica a</th>
+          <th>Días</th>
+          <th>Vigencia</th>
+          <th>Usos</th>
+          <th>Estado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in promociones %}
+        <tr class="fila-clickeable" onclick="window.location='/gerente/promociones/{{ p.id }}'">
+          <td style="font-weight:600;font-family:monospace;color:var(--text);">{{ p.codigo }}</td>
+          <td>{{ p.nombre }}{% if p.solo_member %} <span class="badge badge-blue" title="Exclusiva para suscriptores">Miembros</span>{% endif %}</td>
+          <td>{% if p.tipo_descuento == 'porcentaje' %}{{ p.valor | int }}%{% else %}USD {{ "%.2f" | format(p.valor) }}{% endif %}</td>
+          <td style="color:var(--text-muted);font-size:0.85rem;">
+            {% if p.aplica_a == 'todas' %}Todas las bicicletas{% else %}{{ p.aplica_a | capitalize }}{% endif %}
+          </td>
+          <td style="color:var(--text-muted);font-size:0.82rem;">{{ p.dias_semana_label }}</td>
+          <td style="color:var(--text-muted);font-size:0.82rem;">{{ p.fecha_inicio }} → {{ p.fecha_fin }}</td>
+          <td>{{ p.usos_actuales }}{% if p.usos_maximos > 0 %} / {{ p.usos_maximos }}{% endif %}</td>
+          <td>
+            {% if p.estado == 'activa' %}<span class="badge badge-green">Activa</span>
+            {% elif p.estado == 'pausada' %}<span class="badge badge-yellow">Pausada</span>
+            {% else %}<span class="badge badge-gray">Vencida</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if total_paginas > 1 %}
+  <div style="display:flex;justify-content:center;gap:6px;padding:16px;flex-wrap:wrap;">
+    {% for p in range(1, total_paginas + 1) %}
+    <a class="btn {% if p == page %}btn-primary{% else %}btn-ghost{% endif %}"
+       style="padding:6px 12px;font-size:0.85rem;"
+       href="/gerente/promociones?q={{ q }}&estado={{ estado }}&page={{ p }}">{{ p }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% else %}
+  <div style="text-align:center;padding:48px 24px;color:var(--text-muted);">
+    <div style="display:flex;justify-content:center;margin-bottom:12px;opacity:0.4;">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20.59 13.41 11 3.83A2 2 0 0 0 9.59 3.24H4a1 1 0 0 0-1 1v5.59a2 2 0 0 0 .59 1.41l9.58 9.59a2 2 0 0 0 2.82 0l4.6-4.6a2 2 0 0 0 0-2.82z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>
+    </div>
+    <div style="font-size:0.9rem;">Sin resultados para este filtro</div>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

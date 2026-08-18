@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Respaldo del sistema{% endblock %}
+{% block page_title %}Respaldo del sistema{% endblock %}
+
+{% block content %}
+
+<div class="card" style="max-width:760px;">
+  <div class="card-header">
+    <span class="card-title">Generar respaldo</span>
+  </div>
+
+  <div style="padding:4px 20px 20px;font-size:0.85rem;color:var(--text-muted);">
+    Selecciona las tablas a incluir y, si quieres, un rango de fechas — se aplica
+    solo a las tablas que tienen una columna de fecha real (las demás se exportan
+    completas siempre). Sin fechas, se exporta todo el historial real.
+  </div>
+
+  <form method="get" id="form-respaldo" style="padding:0 20px 20px;">
+    <div class="form-group" style="display:flex;gap:16px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:160px;">
+        <label class="form-label">Desde</label>
+        <input class="form-input" type="date" name="desde">
+      </div>
+      <div style="flex:1;min-width:160px;">
+        <label class="form-label">Hasta</label>
+        <input class="form-input" type="date" name="hasta">
+      </div>
+    </div>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin:20px 0 10px;">
+      <span class="form-label" style="margin-bottom:0;">Tablas a incluir</span>
+      <label style="display:flex;align-items:center;gap:6px;font-size:0.82rem;color:var(--text-muted);cursor:pointer;">
+        <input type="checkbox" id="check-todas" onclick="document.querySelectorAll('.chk-tabla').forEach(c => c.checked = this.checked)">
+        Seleccionar todas
+      </label>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:16px;">
+      {% for categoria, tablas in categorias.items() %}
+      <div style="border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;">
+        <div style="font-family:'Sora',sans-serif;font-weight:600;font-size:0.82rem;color:var(--text);margin-bottom:8px;">{{ categoria }}</div>
+        {% for t in tablas %}
+        <label style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:0.85rem;color:var(--text);cursor:pointer;">
+          <input type="checkbox" class="chk-tabla" name="tablas" value="{{ t }}">
+          {{ t }}
+        </label>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;">
+      <button type="submit" formaction="/admin/respaldo/csv" class="btn btn-ghost">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        Descargar CSV
+      </button>
+      <button type="submit" formaction="/admin/respaldo/sql" class="btn btn-primary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        Descargar SQL
+      </button>
+    </div>
+  </form>
+</div>
+
+{% endblock %}

@@ -1,0 +1,37 @@
+{# ─────────────────────────────────────────────────────────────────────────
+   Componente: hilo de una conversación de soporte (ver
+   docs/Requerimientos_Mejoras_UrbanBike.md, punto 12, Opción B -- ver
+   docs/HOJA_DE_RUTA.md sección 68). Reutilizado por ciclista/soporte.html
+   y por el detalle de conversación de Vigilancia/Admin -- misma burbuja,
+   mismo formulario, mismo sondeo de 4s (app/static/js/chat-soporte.js).
+
+   Variables esperadas en el contexto:
+     mensajes      -- list[dict], en orden cronológico (viejo -> nuevo).
+     soy_ciclista  -- bool: True si quien ve la pantalla es el ciclista
+                      dueño de la conversación (alinea sus propios
+                      mensajes a la derecha); False para Vigilancia/Admin
+                      (alinea los mensajes del staff a la derecha).
+     poll_url      -- URL del endpoint JSON que refresca el hilo.
+     enviar_url    -- action del formulario para mandar un mensaje nuevo.
+   ───────────────────────────────────────────────────────────────────────── #}
+<div class="chat-hilo" id="chat-hilo"
+     data-poll-url="{{ poll_url }}"
+     data-soy-ciclista="{{ '1' if soy_ciclista else '0' }}"
+     data-ultimo-id="{{ mensajes[-1].id if mensajes else '' }}">
+  {% for m in mensajes %}
+  {% set es_propio = (m.autor_rol == "ciclista") == soy_ciclista %}
+  <div class="chat-msg {{ 'chat-msg-propio' if es_propio else 'chat-msg-otro' }}">
+    <div class="chat-msg-autor">{{ m.autor_nombre or "—" }}</div>
+    <div class="chat-msg-burbuja">{{ m.texto }}</div>
+    <div class="chat-msg-fecha">{{ m.fecha | replace("T", " ") | replace("Z", "") if m.fecha else "" }}</div>
+  </div>
+  {% else %}
+  <div class="chat-vacio">Todavía no hay mensajes en esta conversación.</div>
+  {% endfor %}
+</div>
+
+<form method="post" action="{{ enviar_url }}" class="chat-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <textarea class="form-input" name="texto" rows="2" maxlength="2000" placeholder="Escribe un mensaje..." required></textarea>
+  <button type="submit" class="btn btn-primary">Enviar</button>
+</form>

@@ -42,7 +42,17 @@
 <div class="card">
   <div class="card-header">
     <span class="card-title">Registro de infracciones <span class="text-muted text-sm">({{ infracciones | length }})</span></span>
-    <input type="search" class="form-input" placeholder="Buscar..." style="width:auto;font-size:0.8rem;padding:6px 10px;" oninput="filtrarTabla(this, 'tabla-infracciones')">
+    <div style="display:flex;gap:8px;align-items:center;">
+      <input type="search" class="form-input" placeholder="Buscar..." style="width:auto;font-size:0.8rem;padding:6px 10px;" oninput="filtrarTabla(this, 'tabla-infracciones')">
+      <a href="/empleado/vigilancia/infracciones/excel" class="btn btn-ghost" style="font-size:0.8rem;padding:6px 12px;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        Excel
+      </a>
+      <a href="/empleado/vigilancia/infracciones/pdf" class="btn btn-ghost" style="font-size:0.8rem;padding:6px 12px;">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        PDF
+      </a>
+    </div>
   </div>
 
   {% if infracciones %}
@@ -73,7 +83,7 @@
           </td>
           <td>
             {% if not i.resuelta %}
-            <button class="btn btn-primary" style="padding:4px 10px;font-size:0.75rem;"
+            <button class="btn btn-primary" style="padding:4px 10px;font-size:0.8rem;"
               data-id="{{ i.id }}"
               data-ciclista="{{ i.ciclista_id | default('') | e }}"
               data-descripcion="{{ i.descripcion | default('') | e }}"
@@ -103,9 +113,10 @@
 <dialog id="modal-resolver">
   <div class="modal-card">
     <div class="modal-header"><span class="card-title">Resolver infracción</span>
-      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-resolver').close()">✕</button></div>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-resolver').close()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <p style="color:var(--text-muted);margin-bottom:16px;font-size:0.85rem;" id="resolver-descripcion"></p>
     <form method="post" id="form-resolver">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
       <div class="form-group">
         <label class="form-label">Resolución</label>
         <textarea class="form-input" name="resolucion" rows="3" placeholder="Detalle de cómo se resolvió la infracción..." required></textarea>

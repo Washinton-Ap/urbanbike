@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}Excepciones — {{ usuario.name or usuario.email }}{% endblock %}
+{% block page_title %}Excepciones — {{ usuario.name or usuario.email }}{% endblock %}
+{% block back_url %}/admin/permisos-usuario{% endblock %}
+
+{% block content %}
+
+<div class="card" style="margin-bottom:20px;">
+  <div class="card-header"><span class="card-title">{{ usuario.name or "Sin nombre" }}</span></div>
+  <div style="padding:16px 20px;display:flex;gap:24px;flex-wrap:wrap;align-items:center;">
+    <div>
+      <div class="form-label">Correo</div>
+      <div style="color:var(--text);">{{ usuario.email }}</div>
+    </div>
+    <div>
+      <div class="form-label">Rol actual</div>
+      <div style="color:var(--text);font-weight:600;">{{ usuario.rol_nombre }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:20px;border-left:3px solid var(--primary);">
+  <div class="card-header"><span class="card-title">Cambiar rol</span></div>
+  <form method="post" action="/admin/usuarios/{{ usuario.id }}/editar" style="padding:16px 20px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <input type="hidden" name="next" value="/admin/permisos-usuario/{{ usuario.id }}">
+    <div class="form-group" style="margin-bottom:0;min-width:220px;">
+      <label class="form-label">Nuevo rol</label>
+      <select class="form-input" name="rol">
+        {% for r in roles %}
+        <option value="{{ r.id }}" {% if r.id == usuario.rol_id %}selected{% endif %}>{{ r.nombre or r.slug }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" class="btn btn-primary">Confirmar cambio de rol</button>
+  </form>
+</div>
+
+{% set resumen_items = [
+  ("leer", "Lectura"),
+  ("crear", "Escritura"),
+  ("actualizar", "Actualizar"),
+  ("eliminar", "Eliminar"),
+] %}
+<div class="kpi-grid" style="margin-bottom:20px;">
+  {% for accion, etiqueta in resumen_items %}
+  {% set r = resumen[accion] %}
+  <div class="kpi-card">
+    <div class="kpi-label">{{ etiqueta }}</div>
+    <div class="kpi-value" style="color:{{ '#10B981' if r.estado == 'todos' else ('#F59E0B' if r.estado == 'parcial' else 'var(--text-muted)') }};display:flex;align-items:center;gap:8px;font-size:1.1rem;">
+      {% if r.estado == 'todos' %}
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+      {% elif r.estado == 'parcial' %}
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      {% else %}
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      {% endif %}
+      {{ r.efectivos }}/{{ r.total }} recursos
+    </div>
+    <form method="post" action="/admin/permisos-usuario/{{ usuario.id }}/toggle-masivo" style="margin-top:10px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <input type="hidden" name="accion" value="{{ accion }}">
+      {% if r.estado == "todos" %}
+      <input type="hidden" name="direccion" value="revocar">
+      <button type="submit" class="btn btn-ghost" style="font-size:0.78rem;padding:6px 12px;width:100%;color:#EF4444;border-color:rgba(239,68,68,0.35);">Revocar de todos</button>
+      {% else %}
+      <input type="hidden" name="direccion" value="otorgar">
+      <button type="submit" class="btn btn-ghost" style="font-size:0.78rem;padding:6px 12px;width:100%;">Otorgar en todos</button>
+      {% endif %}
+    </form>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Permisos ({{ grupos.values() | map('length') | sum }})</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="min-width:220px;">Permiso</th>
+          <th>Estado</th>
+          <th style="width:220px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for recurso, permisos in grupos.items() %}
+        <tr style="background:var(--bg-soft);">
+          <td colspan="3" style="font-weight:700;color:var(--text);font-family:'Sora',sans-serif;font-size:0.85rem;">
+            {{ recurso_label.get(recurso, recurso) }}
+          </td>
+        </tr>
+        {% for p in permisos %}
+        <tr>
+          <td style="padding-top:10px;padding-bottom:10px;">
+            <span style="font-family:monospace;font-size:0.88rem;color:var(--text);">{{ p.codigo }}</span>
+            {% if p.descripcion %}
+            <div class="text-muted text-sm" style="margin-top:2px;">{{ p.descripcion }}</div>
+            {% endif %}
+          </td>
+          <td style="padding-top:10px;padding-bottom:10px;">
+            {% if p.excepcion == "otorgado" %}
+            <span class="badge badge-green" style="font-weight:700;">Excepción: Otorgado</span>
+            <div class="text-muted text-sm" style="margin-top:3px;">Su rol no lo da</div>
+            {% elif p.excepcion == "revocado" %}
+            <span class="badge badge-red" style="font-weight:700;">Excepción: Revocado</span>
+            <div class="text-muted text-sm" style="margin-top:3px;">Su rol sí lo da</div>
+            {% elif p.heredado %}
+            <div style="display:flex;align-items:center;gap:6px;color:var(--text-muted);font-size:0.85rem;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2.2"><polyline points="20 6 9 17 4 12"/></svg>
+              Heredado por rol
+            </div>
+            {% else %}
+            <div style="display:flex;align-items:center;gap:6px;color:var(--text-muted);font-size:0.85rem;opacity:0.7;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2.2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              No heredado
+            </div>
+            {% endif %}
+          </td>
+          <td style="padding-top:10px;padding-bottom:10px;">
+            <form method="post" action="/admin/permisos-usuario/{{ usuario.id }}/toggle">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+              <input type="hidden" name="id_permiso" value="{{ p.id }}">
+              <input type="hidden" name="accion" value="{{ p.accion_boton }}">
+              {% if p.accion_boton == "otorgar" %}
+              <button type="submit" class="btn btn-ghost" style="font-size:0.78rem;padding:5px 10px;">Otorgar a este usuario</button>
+              {% elif p.accion_boton == "revocar" %}
+              <button type="submit" class="btn btn-ghost" style="font-size:0.78rem;padding:5px 10px;color:#EF4444;border-color:rgba(239,68,68,0.35);">Revocar para este usuario</button>
+              {% else %}
+              <button type="submit" class="btn btn-ghost" style="font-size:0.78rem;padding:5px 10px;">Quitar excepción</button>
+              {% endif %}
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}

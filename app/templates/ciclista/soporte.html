@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Soporte{% endblock %}
+{% block page_title %}Soporte{% endblock %}
+
+{% block content %}
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Conversación con soporte</span>
+  </div>
+  <div style="padding:20px;">
+    <p class="text-muted text-sm" style="margin-bottom:16px;">
+      Un miembro del equipo de Vigilancia o Administración te responderá aquí.
+      También puedes escribirnos a
+      <a href="mailto:{{ soporte_email }}" style="color:var(--primary);font-weight:600;">{{ soporte_email }}</a>.
+    </p>
+    {% include "componentes/hilo_soporte.html" with context %}
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/chat-soporte.js" defer></script>
+{% endblock %}

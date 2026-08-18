@@ -1,3 +1,52 @@
+x-airflow-common:
+  &airflow-common
+  build:
+    context: .
+    dockerfile: airflow/Dockerfile
+  environment:
+    &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres-airflow/airflow
+    AIRFLOW__CORE__FERNET_KEY: ''
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session'
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+    # Mismas variables que usan app/config.py y etl/07-09 (get_client/get_admin_client),
+    # pero apuntando al nombre de servicio Docker en vez de 127.0.0.1: dentro de la red
+    # de este compose, localhost no llega a los otros contenedores.
+    CLICKHOUSE_HOST: clickhouse
+    CLICKHOUSE_HTTP_PORT: 8123
+    CLICKHOUSE_DB: ${CLICKHOUSE_DB}
+    CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+    CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+    PB_URL: http://pocketbase:8090
+    PB_SUPERUSER_EMAIL: ${PB_SUPERUSER_EMAIL}
+    PB_SUPERUSER_PASSWORD: ${PB_SUPERUSER_PASSWORD}
+    # app.config exige SECRET_KEY desde que dejo de tener un valor por
+    # defecto inseguro (ver docs/HOJA_DE_RUTA.md, auditoria de
+    # seguridad): los scripts etl/07+ importan app.db.pocketbase, que
+    # arrastra app.config -- sin esto, cualquier script fallaba al
+    # arrancar dentro de este contenedor aunque nunca usara el secreto
+    # de sesion para nada real.
+    SECRET_KEY: ${SECRET_KEY}
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/logs:/opt/airflow/logs
+    - ./airflow/plugins:/opt/airflow/plugins
+    - ./etl:/opt/airflow/project/etl
+    - ./app:/opt/airflow/project/app
+    - ./datos:/opt/airflow/project/datos
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on:
+    &airflow-common-depends-on
+    postgres-airflow:
+      condition: service_healthy
+    clickhouse:
+      condition: service_healthy
+    pocketbase:
+      condition: service_healthy
+
 services:
   clickhouse:
     image: clickhouse/clickhouse-server:24.8
@@ -38,6 +87,91 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── Airflow (orquestacion del ETL real cada 1 hora) ──────────────────────
+  # LocalExecutor: sin Redis/Celery, innecesarios para un solo DAG. Ver
+  # docs/HOJA_DE_RUTA.md punto 13 (seccion 6) y airflow/Dockerfile.
+  postgres-airflow:
+    image: postgres:13
+    container_name: urbanbike_airflow_postgres
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres_airflow_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: urbanbike_airflow_init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        mkdir -p /opt/airflow/logs /opt/airflow/dags /opt/airflow/plugins
+        airflow db migrate
+        airflow users create \
+          --username "${AIRFLOW_ADMIN_USER:-admin}" \
+          --password "${AIRFLOW_ADMIN_PASSWORD:-admin}" \
+          --firstname UrbanBike \
+          --lastname Admin \
+          --role Admin \
+          --email admin@urbanbike.com || true
+    user: "0:0"
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: urbanbike_airflow_webserver
+    command: webserver
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: urbanbike_airflow_scheduler
+    command: scheduler
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-triggerer:
+    <<: *airflow-common
+    container_name: urbanbike_airflow_triggerer
+    command: triggerer
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
 volumes:
   clickhouse_data:
   pocketbase_data:
+  postgres_airflow_data:

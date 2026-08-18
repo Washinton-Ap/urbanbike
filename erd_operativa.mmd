@@ -1,0 +1,410 @@
+erDiagram
+    alquiler_eventos {
+        UUID id_alquiler FK
+        UInt8 secuencia
+        String estado_origen
+        String estado_destino
+        DateTime fecha
+        UUID id_actor FK
+        String rol_actor
+        String observacion
+    }
+    alquileres {
+        UUID id PK
+        String codigo
+        UUID id_usuario FK
+        UUID id_bicicleta FK
+        UUID id_tarifa FK
+        String id_promocion FK
+        UUID id_estacion_inicio FK
+        String id_estacion_fin FK
+        String modalidad
+        UInt16 cantidad_contratada
+        UInt32 minutos_contratados
+        DateTime fecha_reserva
+        DateTime fecha_inicio
+        DateTime fecha_fin
+        UInt32 minutos_reales
+        String estado
+        Decimal_10_2 subtotal
+        Decimal_10_2 descuento
+        Decimal_10_2 recargo
+        Decimal_10_2 total
+        DateTime version
+    }
+    auditoria {
+        DateTime fecha
+        UUID id_usuario FK
+        String usuario
+        String modulo
+        String accion
+        String detalle
+        String ip
+    }
+    bicicleta_fotos {
+        UUID id PK
+        UUID id_bicicleta FK
+        String url
+        String descripcion
+        UInt8 es_principal
+        UInt8 orden
+        DateTime version
+    }
+    bicicletas {
+        UUID id PK
+        String codigo
+        UUID id_modelo FK
+        UUID id_estacion FK
+        String numero_serie
+        String estado
+        Date fecha_adquisicion
+        Decimal_10_2 km_acumulados
+        UInt32 minutos_uso
+        Date fecha_ultimo_mantenimiento
+        String observacion
+        DateTime version
+    }
+    categorias {
+        UUID id PK
+        String nombre
+        String descripcion
+        UInt8 es_premium
+        UInt8 orden
+        UInt8 activa
+        DateTime version
+    }
+    checklist_items {
+        UUID id PK
+        String codigo
+        String nombre
+        String categoria
+        String descripcion
+        UInt8 obligatorio
+        UInt8 orden
+        UInt8 activo
+        DateTime version
+    }
+    cobros_automaticos {
+        UUID id PK
+        UUID id_garantia FK
+        UUID id_alquiler FK
+        String motivo
+        Decimal_10_2 monto
+        String estado
+        DateTime fecha_ejecucion
+        String referencia_pasarela
+        String detalle
+        DateTime version
+    }
+    estaciones {
+        UUID id PK
+        String codigo
+        String nombre
+        String direccion
+        Decimal_9_6 latitud
+        Decimal_9_6 longitud
+        UInt16 capacidad
+        UInt8 activa
+        DateTime version
+    }
+    factura_detalle {
+        UUID id PK
+        UUID id_factura FK
+        UInt8 linea
+        String concepto
+        Decimal_10_2 cantidad
+        Decimal_10_2 precio_unitario
+        Decimal_10_2 descuento
+        Decimal_10_2 subtotal
+        DateTime version
+    }
+    facturas {
+        UUID id PK
+        String serie
+        String numero
+        UUID id_alquiler FK
+        UUID id_usuario FK
+        DateTime fecha_emision
+        Decimal_10_2 subtotal
+        Decimal_10_2 descuento
+        Decimal_10_2 impuesto
+        Decimal_10_2 total
+        String estado
+        DateTime version
+    }
+    garantias {
+        UUID id PK
+        UUID id_alquiler FK
+        UUID id_metodo_pago FK
+        Decimal_10_2 monto_retenido
+        UInt8 fondos_validados
+        String codigo_autorizacion
+        String estado
+        DateTime fecha_solicitud
+        DateTime fecha_validacion
+        DateTime fecha_liberacion
+        String motivo_rechazo
+        DateTime version
+    }
+    gastos {
+        UUID id PK
+        DateTime fecha
+        String categoria
+        String concepto
+        Decimal_10_2 monto
+        String id_referencia
+        UUID id_registra FK
+        String comprobante
+    }
+    infracciones {
+        UUID id PK
+        UUID id_usuario FK
+        String id_alquiler FK
+        String tipo
+        String descripcion
+        Decimal_10_2 monto_multa
+        String estado
+        DateTime fecha
+        DateTime version
+    }
+    inspeccion_detalle {
+        UUID id PK
+        UUID id_inspeccion FK
+        UUID id_item FK
+        String resultado
+        String observacion
+        String foto_url
+        DateTime version
+    }
+    inspecciones {
+        UUID id PK
+        UUID id_alquiler FK
+        UUID id_bicicleta FK
+        UUID id_inspector FK
+        DateTime fecha_inicio
+        DateTime fecha_fin
+        String estado
+        UInt8 items_revisados
+        UInt8 items_totales
+        UInt8 tiene_dano
+        String id_orden_generada FK
+        String observacion
+        DateTime version
+    }
+    mantenimientos_programados {
+        UUID id PK
+        UUID id_bicicleta FK
+        UUID id_plan FK
+        Date fecha_programada
+        String tipo
+        String estado
+        String id_orden_generada FK
+        String observacion
+        DateTime version
+    }
+    marcas {
+        UUID id PK
+        String nombre
+        String pais
+        UInt8 activa
+        DateTime version
+    }
+    metodos_pago {
+        UUID id PK
+        UUID id_usuario FK
+        String tipo
+        String token_tarjeta
+        String marca_tarjeta
+        FixedString_4 ultimos4
+        UInt8 exp_mes
+        UInt16 exp_anio
+        UInt8 es_principal
+        String estado
+        DateTime version
+    }
+    modelos_bicicleta {
+        UUID id PK
+        UUID id_marca FK
+        UUID id_categoria FK
+        String nombre
+        UInt16 anio
+        String enfoque
+        UInt8 marchas
+        String tipo_frenos
+        String material_cuadro
+        String suspension
+        UInt8 rodado
+        Decimal_5_2 peso_kg
+        UInt8 es_electrica
+        UInt16 autonomia_km
+        UInt8 activo
+        DateTime version
+    }
+    movimientos_repuesto {
+        UUID id PK
+        UUID id_repuesto FK
+        String tipo
+        Int32 cantidad
+        Decimal_10_2 costo_unitario
+        String id_orden FK
+        String motivo
+        DateTime fecha
+        UUID id_usuario FK
+    }
+    orden_repuesto {
+        UUID id PK
+        UUID id_orden FK
+        UUID id_repuesto FK
+        Int32 cantidad
+        Decimal_10_2 costo_unitario
+        Decimal_10_2 subtotal
+        DateTime version
+    }
+    ordenes_mantenimiento {
+        UUID id PK
+        String codigo
+        UUID id_bicicleta FK
+        String origen
+        String id_programado FK
+        String id_inspeccion FK
+        String tipo_falla
+        String prioridad
+        String estado_reparacion
+        UUID id_tecnico FK
+        String diagnostico
+        DateTime fecha_apertura
+        DateTime fecha_cierre
+        Decimal_10_2 costo_repuestos
+        Decimal_10_2 costo_mano_obra
+        DateTime version
+    }
+    pagos {
+        UUID id PK
+        UUID id_factura FK
+        UUID id_alquiler FK
+        UUID id_usuario FK
+        String metodo
+        Decimal_10_2 monto
+        String estado
+        DateTime fecha
+        String id_verificador FK
+        DateTime fecha_verificacion
+        String referencia
+        String comprobante_url
+        DateTime version
+    }
+    planes_mantenimiento {
+        UUID id PK
+        String nombre
+        String id_categoria FK
+        String tipo
+        UInt16 intervalo_dias
+        UInt32 intervalo_km
+        String descripcion
+        UInt8 activo
+        DateTime version
+    }
+    promociones {
+        UUID id PK
+        String codigo
+        String nombre
+        String tipo_descuento
+        Decimal_10_2 valor
+        String aplica_a
+        String id_referencia
+        String dias_semana
+        Date fecha_inicio
+        Date fecha_fin
+        UInt32 usos_maximos
+        UInt32 usos_actuales
+        String estado
+        DateTime version
+    }
+    repuestos {
+        UUID id PK
+        String codigo
+        String nombre
+        String categoria
+        String unidad
+        Int32 stock_actual
+        Int32 stock_minimo
+        Decimal_10_2 costo_unitario
+        String proveedor
+        String ubicacion
+        UInt8 activo
+        DateTime version
+    }
+    tarifas {
+        UUID id PK
+        UUID id_bicicleta FK
+        String modalidad
+        Decimal_10_2 precio
+        UInt16 minutos_gracia
+        Decimal_10_2 recargo_minuto
+        Date vigente_desde
+        Date vigente_hasta
+        String estado
+        DateTime version
+    }
+    usuarios {
+        UUID id PK
+        String codigo
+        String nombre
+        String apellido
+        String email
+        String telefono
+        String rol
+        String estado
+        String motivo_bloqueo
+        DateTime fecha_registro
+        DateTime version
+    }
+    alquileres ||--o{ alquiler_eventos : "id_alquiler"
+    alquileres ||--o{ cobros_automaticos : "id_alquiler"
+    alquileres ||--o{ facturas : "id_alquiler"
+    alquileres ||--o{ garantias : "id_alquiler"
+    alquileres ||--o{ infracciones : "id_alquiler"
+    alquileres ||--o{ inspecciones : "id_alquiler"
+    alquileres ||--o{ pagos : "id_alquiler"
+    bicicletas ||--o{ alquileres : "id_bicicleta"
+    bicicletas ||--o{ bicicleta_fotos : "id_bicicleta"
+    bicicletas ||--o{ inspecciones : "id_bicicleta"
+    bicicletas ||--o{ mantenimientos_programados : "id_bicicleta"
+    bicicletas ||--o{ ordenes_mantenimiento : "id_bicicleta"
+    bicicletas ||--o{ tarifas : "id_bicicleta"
+    categorias ||--o{ modelos_bicicleta : "id_categoria"
+    categorias ||--o{ planes_mantenimiento : "id_categoria"
+    checklist_items ||--o{ inspeccion_detalle : "id_item"
+    estaciones ||--o{ alquileres : "id_estacion_fin"
+    estaciones ||--o{ alquileres : "id_estacion_inicio"
+    estaciones ||--o{ bicicletas : "id_estacion"
+    facturas ||--o{ factura_detalle : "id_factura"
+    facturas ||--o{ pagos : "id_factura"
+    garantias ||--o{ cobros_automaticos : "id_garantia"
+    inspecciones ||--o{ inspeccion_detalle : "id_inspeccion"
+    inspecciones ||--o{ ordenes_mantenimiento : "id_inspeccion"
+    mantenimientos_programados ||--o{ ordenes_mantenimiento : "id_programado"
+    marcas ||--o{ modelos_bicicleta : "id_marca"
+    metodos_pago ||--o{ garantias : "id_metodo_pago"
+    modelos_bicicleta ||--o{ bicicletas : "id_modelo"
+    ordenes_mantenimiento ||--o{ inspecciones : "id_orden_generada"
+    ordenes_mantenimiento ||--o{ mantenimientos_programados : "id_orden_generada"
+    ordenes_mantenimiento ||--o{ movimientos_repuesto : "id_orden"
+    ordenes_mantenimiento ||--o{ orden_repuesto : "id_orden"
+    planes_mantenimiento ||--o{ mantenimientos_programados : "id_plan"
+    promociones ||--o{ alquileres : "id_promocion"
+    repuestos ||--o{ movimientos_repuesto : "id_repuesto"
+    repuestos ||--o{ orden_repuesto : "id_repuesto"
+    tarifas ||--o{ alquileres : "id_tarifa"
+    usuarios ||--o{ alquiler_eventos : "id_actor"
+    usuarios ||--o{ alquileres : "id_usuario"
+    usuarios ||--o{ auditoria : "id_usuario"
+    usuarios ||--o{ facturas : "id_usuario"
+    usuarios ||--o{ gastos : "id_registra"
+    usuarios ||--o{ infracciones : "id_usuario"
+    usuarios ||--o{ inspecciones : "id_inspector"
+    usuarios ||--o{ metodos_pago : "id_usuario"
+    usuarios ||--o{ movimientos_repuesto : "id_usuario"
+    usuarios ||--o{ ordenes_mantenimiento : "id_tecnico"
+    usuarios ||--o{ pagos : "id_usuario"
+    usuarios ||--o{ pagos : "id_verificador"
