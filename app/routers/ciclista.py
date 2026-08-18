@@ -798,12 +798,14 @@ async def finalizar(
     ninguna otra pantalla debe ofrecerla como disponible.
 
     Mientras nadie de Vigilancia valide la entrega real
-    (/empleado/vigilancia/devolver/{id}, ver empleado.py), el costo
-    sigue corriendo a la tarifa normal -- el mismo cálculo en vivo que
-    ya usaba el cronómetro de viaje-activo, ahora también visible para
-    Vigilancia en devoluciones.html. El monto real se congela recién
-    cuando Vigilancia confirma, con la duración real hasta ESE momento,
-    no hasta este clic."""
+    (/empleado/vigilancia/devolver/{id}, ver empleado.py), el monto
+    base ya queda fijo con la hora real de este reporte (fecha_fin) --
+    decisión de negocio reconfirmada con Washington 17-ago-2026: la
+    espera hasta que Vigilancia confirme NO es tiempo de uso real. Solo
+    el recargo por demora (tras 5h de gracia desde este reporte) sigue
+    corriendo hasta que Vigilancia confirme -- mismo cálculo en vivo
+    que ya usaba el cronómetro de viaje-activo, ahora también visible
+    para Vigilancia en devoluciones.html."""
     user = getattr(request.state, "user", {})
     try:
         pb = _pb()

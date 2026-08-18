@@ -23,14 +23,15 @@ const MINUTOS_GRACIA_DEMORA = 300;
    (subtotalCerrados, fijo -- ver alquileres_repo.total_segmentos_cerrados(),
    Tarea 6) + el segmento de modalidad todavía ABIERTO. El segmento
    abierto se calcula distinto según su modalidad, igual que
-   vig_devolver(): 'hora' sigue el reloj REAL hasta 'ahora' -- incluso
-   después de que el ciclista reportó la devolución, la espera hasta
-   que Vigilancia confirma se sigue cobrando como parte del subtotal
-   (ya NO se congela en fechaFinISO, a diferencia de la versión anterior
-   de esta función -- ese congelamiento quedó obsoleto con el rediseño
-   de la Tarea 7: la "espera" para 'hora' es tiempo de uso real, no
-   demora); 'dia'/'semana' son tarifa plana, ya se cobran completas al
-   abrir el segmento.
+   vig_devolver(): 'hora' se CONGELA en fechaFinISO (el momento en que
+   el ciclista reportó la devolución) -- decisión de negocio
+   reconfirmada con Washington 17-ago-2026: la espera hasta que
+   Vigilancia confirme la devolución física NO es tiempo de uso real,
+   es tiempo de espera, y solo el recargo por demora (tras la gracia)
+   cobra por esa espera, nunca el subtotal. Mientras el viaje sigue
+   'activo' (fechaFinISO todavía vacío), el segmento 'hora' sigue el
+   reloj real contra 'ahora', igual que siempre; 'dia'/'semana' son
+   tarifa plana, ya se cobran completas al abrir el segmento.
    El recargo por demora es un cargo aparte, 0 durante las 5h de
    gracia desde su punto de referencia (que también depende de la
    modalidad, ver abajo), después crece aparte -- y SIEMPRE se calcula
@@ -50,7 +51,13 @@ function costoDetallado(fechaInicioSegmentoISO, fechaFinISO, precioModalidad, mo
 
   let subtotalSegmentoAbierto;
   if (modalidad === 'hora') {
-    const horas = Math.max(0, (ahora - inicioSegmento) / 3600000);
+    // El subtotal se congela en fechaFinISO (el momento en que el
+    // ciclista reporto la devolucion) -- decision de negocio
+    // reconfirmada con Washington 17-ago-2026, ver
+    // empleado.py:vig_devolver(). Mientras el viaje sigue 'activo'
+    // (fechaFinISO vacio), sigue el reloj real contra 'ahora'.
+    const finSegmento = fechaFinISO ? new Date(fechaFinISO) : ahora;
+    const horas = Math.max(0, (finSegmento - inicioSegmento) / 3600000);
     subtotalSegmentoAbierto = horas * precioModalidad;
   } else {
     subtotalSegmentoAbierto = precioModalidad; // tarifa plana, ya se cobra completa

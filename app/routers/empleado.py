@@ -1520,9 +1520,13 @@ async def vig_devolver(
     estación por formulario, como siempre) y 'pendiente_validacion' (el
     ciclista ya reportó dónde la dejó desde /ciclista/finalizar -- la
     estación real ya vive en el viaje, no hace falta pedirla de nuevo).
-    La duración/monto se calculan aquí, con la hora REAL de este
-    momento, nunca con la hora en que el ciclista reportó -- eso es lo
-    que hace que la espera cuente como parte del cobro real."""
+    La duración (duracion_minutos) y el recargo por demora se calculan
+    aquí con la hora REAL de este momento -- pero el subtotal del
+    segmento 'hora' se CONGELA en fecha_fin (el momento en que el
+    ciclista reportó la devolución), no en 'ahora': la espera hasta
+    esta confirmación es tiempo de espera, no tiempo de uso real
+    (decisión de negocio reconfirmada con Washington 17-ago-2026, ver
+    el bloque de cálculo del segmento 'hora' más abajo)."""
     user = getattr(request.state, "user", {})
     try:
         pb = _pb()
@@ -1540,11 +1544,13 @@ async def vig_devolver(
         if origen_pendiente_validacion:
             motivo = "reportada por el ciclista, validada"
 
-        # Cierre del ULTIMO segmento (punto 4 del spec) -- con la hora
-        # REAL de confirmacion de Vigilancia, nunca con la hora que
-        # reporto el ciclista (mismo criterio de siempre). Todo esto es
-        # solo calculo en Python, sin escribir nada todavia -- si algo
-        # falla aca, el viaje queda exactamente como estaba.
+        # Cierre del ULTIMO segmento (punto 4 del spec) -- 'ahora' es la
+        # hora REAL de confirmacion de Vigilancia, usada para
+        # duracion_minutos y para el recargo por demora; el subtotal
+        # del segmento 'hora' en si se congela en fecha_fin (ver mas
+        # abajo), no en 'ahora'. Todo esto es solo calculo en Python,
+        # sin escribir nada todavia -- si algo falla aca, el viaje
+        # queda exactamente como estaba.
         ahora = datetime.now(timezone.utc)
         ahora_str = _ahora()
         modalidad_final = viaje.get("modalidad_actual") or "hora"
@@ -1584,18 +1590,30 @@ async def vig_devolver(
             inicio_dt = datetime.fromisoformat(inicio_segmento_final.replace("Z", "+00:00"))
 
             if modalidad_final == "hora":
-                # Piso de 1 minuto (decidido con Washington, 16-ago-2026):
-                # mismo criterio que el codigo original (duracion = max(1,
-                # int(...))) -- restaura la paridad exacta con la seccion 70.
-                minutos_ultimo_segmento = max(1, int((ahora - inicio_dt).total_seconds() / 60))
-                subtotal_ultimo_segmento = round(minutos_ultimo_segmento / 60 * precio_modalidad_final_con_promo, 2)
                 # Gracia de 5h desde que el ciclista reporto la devolucion
-                # (fecha_fin del viaje), NO desde el inicio del segmento --
-                # igual que antes de este cambio (ver seccion 70).
+                # (fecha_fin del viaje), NO desde el inicio del segmento.
                 fecha_fin_reportada = viaje.get("fecha_fin", "")
-                if fecha_fin_reportada:
-                    fin_dt = datetime.fromisoformat(fecha_fin_reportada.replace("Z", "+00:00"))
-                    retraso_min = max(0.0, (ahora - fin_dt).total_seconds() / 60 - 300)
+                fin_dt = (datetime.fromisoformat(fecha_fin_reportada.replace("Z", "+00:00"))
+                          if fecha_fin_reportada else ahora)
+
+                # El subtotal del segmento abierto se CONGELA en fecha_fin
+                # (el momento en que el ciclista reporto la devolucion) --
+                # decision de negocio reconfirmada con Washington 17-ago-2026:
+                # la espera hasta que Vigilancia confirme NO es tiempo de uso
+                # real, es tiempo de espera -- solo el recargo por demora
+                # (tras 5h de gracia) cobra por esa espera, nunca el
+                # subtotal. Restaura el diseno original de la seccion 70 de
+                # docs/HOJA_DE_RUTA.md, que la Tarea 7 del plan
+                # "modalidad-tarifa-real" habia revertido sin reconfirmar.
+                # Si el viaje no fue reportado antes (Vigilancia cierra un
+                # viaje todavia 'activo'), fecha_fin_reportada esta vacio y
+                # fin_dt = ahora -- mismo resultado que antes de este cambio,
+                # porque no hubo espera que congelar.
+                # Piso de 1 minuto (mismo criterio de siempre).
+                minutos_ultimo_segmento = max(1, int((fin_dt - inicio_dt).total_seconds() / 60))
+                subtotal_ultimo_segmento = round(minutos_ultimo_segmento / 60 * precio_modalidad_final_con_promo, 2)
+
+                retraso_min = max(0.0, (ahora - fin_dt).total_seconds() / 60 - 300) if fecha_fin_reportada else 0.0
                 precio_hora_display = precio_modalidad_final  # SIN promo -- multiplicador del recargo
             else:
                 subtotal_ultimo_segmento = precio_modalidad_final_con_promo
