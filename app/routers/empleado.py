@@ -2289,6 +2289,12 @@ async def vig_mantenimiento_certificar(
         bici_id = orden.get("bicicleta_id", "")
         if bici_id:
             pb.update_record("bicicletas", bici_id, {"estado": "disponible"})
+            notificaciones_repo.notificar_rol(
+                "empleado-operacion", tipo="bici_disponible",
+                titulo="Bicicleta disponible",
+                mensaje=f"{orden.get('bicicleta_codigo', oid)} completó mantenimiento y está disponible nuevamente.",
+                enlace="/empleado/operacion/bicicletas",
+            )
         registrar_auditoria(
             user.get("pb_token", ""), user.get("id", ""), user.get("name") or user.get("email", ""),
             user.get("email", ""), "editar", "ordenes_mant",
