@@ -912,6 +912,13 @@ async def op_pagos_rechazar_transferencia(
             f"Transferencia rechazada: {motivo.strip()}", request,
             usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
         )
+        notificaciones_repo.notificar_usuario(
+            pb, registro.get("ciclista_id", ""), tipo="pago_rechazado",
+            titulo="Transferencia rechazada",
+            mensaje=f"Tu comprobante de transferencia fue rechazado. Motivo: {motivo.strip()}. "
+                    "Puedes intentar de nuevo desde Historial de Pagos.",
+            enlace="/ciclista/pagos",
+        )
         return _flash(request, "/empleado/operacion/pagos", "success", "Transferencia rechazada. Se notificó al ciclista.")
     except Exception as e:
         return _flash(request, "/empleado/operacion/pagos", "error", str(e))
