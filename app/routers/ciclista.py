@@ -518,8 +518,9 @@ def _crear_viaje(
     estacion_inicio_id: str, estacion_inicio_nombre: str, modalidad: str,
     lat: float, lng: float, codigo_valido: dict | None, grupo_reserva_id: str = "",
 ) -> dict:
-    """Crea UN viaje real + marca la bicicleta en_uso + registra auditoria --
-    logica compartida entre reservar() (una bicicleta) y reservar_grupo()
+    """Crea UN viaje real + marca la bicicleta en_uso -- la auditoria la
+    registra cada LLAMADOR (reservar()/reservar_grupo()), no esta funcion.
+    Logica compartida entre reservar() (una bicicleta) y reservar_grupo()
     (varias a la vez, Tarea C2 del plan de factura unica). El codigo de
     descuento, si viene, solo se marca usado por el LLAMADOR (una sola vez
     por reserva, nunca una vez por bicicleta del grupo)."""
@@ -663,6 +664,58 @@ async def reservar(
         return RedirectResponse("/ciclista/alquilar", status_code=302)
 
 
+def _revertir_reserva_grupal(pb, grupo_reserva_id: str, user_id: str) -> None:
+    """Deshace TODO lo que un intento fallido de reservar_grupo() ya haya
+    escrito para este request (Tarea C2, ronda de fix 1 -- hallazgo real
+    de revision: sin esto, un fallo a mitad del lote -- ej. un
+    bicicleta_id invalido, o un error transitorio de PocketBase -- dejaba
+    viajes 'activo' huerfanos, bicicletas atascadas en 'en_uso' y cero
+    rastro en auditoria).
+
+    Busca por grupo_reserva_id (unico por request, generado ANTES del
+    primer create_record) en vez de confiar en una lista local en
+    memoria: _crear_viaje() puede crear la fila de 'viajes' y fallar
+    DESPUES, al marcar la bicicleta en_uso (ej. bicicleta_id que no
+    existe) -- en ese caso el llamador nunca llega a registrar ese viaje
+    puntual en su propia lista, pero la fila ya quedo escrita con este
+    grupo_reserva_id, así que SI aparece en esta busqueda. Best-effort en
+    cada paso (no se corta en el primer error) para revertir lo maximo
+    posible aunque algo de esto tambien falle."""
+    try:
+        creados = pb.list_records(
+            "viajes", filter=f'grupo_reserva_id = {filter_literal(grupo_reserva_id)}', per_page=50,
+        ).get("items", [])
+    except Exception:
+        creados = []
+
+    for viaje in creados:
+        viaje_id = viaje.get("id", "")
+        bicicleta_id = viaje.get("bicicleta_id", "")
+        try:
+            notifs = pb.list_records(
+                "notificaciones",
+                filter=f'usuario_id = {filter_literal(user_id)} && tipo = "viaje_iniciado" '
+                       f'&& enlace = {filter_literal(f"/ciclista/viaje-activo/{viaje_id}")}',
+                per_page=5,
+            ).get("items", [])
+            for notif in notifs:
+                try:
+                    pb.delete_record("notificaciones", notif["id"])
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        if bicicleta_id:
+            try:
+                pb.update_record("bicicletas", bicicleta_id, {"estado": "disponible"})
+            except Exception:
+                pass
+        try:
+            pb.delete_record("viajes", viaje_id)
+        except Exception:
+            pass
+
+
 @router.post("/reservar-grupo")
 async def reservar_grupo(
     request: Request,
@@ -691,6 +744,10 @@ async def reservar_grupo(
         return RedirectResponse("/ciclista/alquilar", status_code=302)
     if not (len(bicicleta_codigos) == len(estaciones_ids) == len(estaciones_nombres) == len(latitudes) == len(longitudes) == n):
         request.session["flash"] = {"type": "error", "msg": "Datos de la reserva grupal incompletos."}
+        return RedirectResponse("/ciclista/alquilar", status_code=302)
+    if len(set(bicicleta_ids)) != n:
+        request.session["flash"] = {"type": "error", "msg":
+            "No puedes reservar la misma bicicleta más de una vez en el mismo grupo."}
         return RedirectResponse("/ciclista/alquilar", status_code=302)
 
     if modalidad not in ("hora", "dia", "semana"):
@@ -750,9 +807,10 @@ async def reservar_grupo(
             return RedirectResponse("/ciclista/alquilar", status_code=302)
 
     grupo_reserva_id = uuid.uuid4().hex
+    pb = None
+    viajes_creados: list[dict] = []
     try:
         pb = _pb()
-        viajes_creados = []
         for i in range(n):
             viaje = _crear_viaje(
                 pb, user, user_id, bicicleta_ids[i], bicicleta_codigos[i],
@@ -786,6 +844,26 @@ async def reservar_grupo(
         return RedirectResponse(f"/ciclista/viaje-activo/{viajes_creados[0]['id']}", status_code=302)
 
     except Exception as e:
+        # Todo-o-nada real (Tarea C2, ronda de fix 1): CUALQUIER fallo desde
+        # aca hasta el return de exito de arriba -- dentro del bucle de
+        # creacion, marcando el codigo de descuento usado, o registrando la
+        # auditoria de exito -- debe dejar CERO viajes/bicicletas en_uso de
+        # este intento, no un subconjunto. Se revierte por grupo_reserva_id
+        # (ver _revertir_reserva_grupal) y SIEMPRE se deja un rastro real en
+        # auditoria del intento fallido, para que no sea invisible salvo
+        # inspeccionando la base directamente.
+        if pb is not None:
+            try:
+                _revertir_reserva_grupal(pb, grupo_reserva_id, user_id)
+            except Exception:
+                pass
+        registrar_auditoria(
+            user.get("pb_token", ""), user_id, user.get("name") or user.get("email", ""),
+            user.get("email", ""), "crear", "viajes",
+            f"Reserva grupal fallida, revertida: {len(viajes_creados)} "
+            f"de {n} bicicletas, motivo: {e}", request,
+            usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
+        )
         request.session["flash"] = {"type": "error", "msg": f"Error al iniciar la reserva grupal: {e}"}
         return RedirectResponse("/ciclista/alquilar", status_code=302)
 
