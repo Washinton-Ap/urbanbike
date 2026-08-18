@@ -632,6 +632,13 @@ async def reservar(
             usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
         )
 
+        notificaciones_repo.notificar_usuario(
+            pb, user_id, tipo="viaje_iniciado",
+            titulo="Viaje iniciado",
+            mensaje=f"Iniciaste un viaje con la bicicleta {bicicleta_codigo} desde {estacion_inicio_nombre}.",
+            enlace=f"/ciclista/viaje-activo/{nuevo_viaje['id']}",
+        )
+
         request.session["flash"] = {"type": "success", "msg": f"Viaje iniciado en {estacion_inicio_nombre}. Buen viaje."}
         return RedirectResponse(f"/ciclista/viaje-activo/{nuevo_viaje['id']}", status_code=302)
 
