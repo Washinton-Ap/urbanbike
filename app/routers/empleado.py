@@ -1728,6 +1728,14 @@ async def vig_devolver(
                     enlace="/ciclista/pagos",
                 )
 
+            notificaciones_repo.notificar_usuario(
+                pb, viaje.get("ciclista_id", ""), tipo="devolucion_validada",
+                titulo="Devolución confirmada",
+                mensaje=f"Vigilancia confirmó la devolución de {viaje.get('bicicleta_codigo', '—')}. "
+                        f"Duración real: {duracion} min.",
+                enlace="/ciclista/historial",
+            )
+
         detalle = f"Devolución {motivo} en {estacion_fin_nombre} (duración real: {duracion} min) — bicicleta retenida para inspección"
         if observaciones:
             detalle += f" — {observaciones}"
