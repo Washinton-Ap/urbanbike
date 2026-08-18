@@ -267,6 +267,13 @@ async def registro_post(
         "Registro público de ciclista (pendiente de verificación)", request, usuario_rol="ciclista",
     )
 
+    notificaciones_repo.notificar_rol(
+        "admin", tipo="registro_nuevo",
+        titulo="Nuevo registro de ciclista",
+        mensaje=f"{nombre_completo} ({email}) se registró como ciclista.",
+        enlace="/admin/usuarios",
+    )
+
     request.session["verificar_email"] = email
     request.session["flash"] = {
         "type": "info",
