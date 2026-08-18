@@ -831,6 +831,14 @@ async def finalizar(
             usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
         )
 
+        notificaciones_repo.notificar_rol(
+            "empleado-vigilancia", tipo="devolucion_pendiente_validar",
+            titulo="Devolución por validar",
+            mensaje=f"{user.get('name') or user.get('email', '')} reportó la devolución en "
+                    f"{estacion_fin_nombre} -- pendiente de confirmar la entrega física.",
+            enlace="/empleado/vigilancia/devoluciones",
+        )
+
         # Código de descuento por buena conducta (punto 13): se genera acá,
         # al reportar la devolución, si el ciclista no tiene infracciones
         # activas EN ESTE MOMENTO (no depende del resultado de la
