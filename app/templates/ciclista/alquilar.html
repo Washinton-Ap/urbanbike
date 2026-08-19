@@ -38,6 +38,20 @@
   </div>
 </div>
 
+<div id="barra-carrito" style="display:none;position:sticky;bottom:16px;z-index:5;margin:0 0 20px;padding:14px 20px;border-radius:var(--radius);background:var(--primary);color:#fff;align-items:center;justify-content:space-between;gap:12px;">
+  <span id="barra-carrito-texto">0 bicicletas seleccionadas</span>
+  <div style="display:flex;gap:8px;">
+    <button type="button" class="btn btn-ghost" id="btn-limpiar-carrito" style="color:#fff;border-color:#fff;">Limpiar</button>
+    <button type="button" class="btn" style="background:#fff;color:var(--primary);" id="btn-reservar-carrito">Reservar seleccionadas</button>
+  </div>
+</div>
+
+<form id="form-reservar-grupo" method="post" action="/ciclista/reservar-grupo" style="display:none;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <input type="hidden" name="modalidad" id="rg-modalidad">
+  <div id="rg-campos"></div>
+</form>
+
 <div class="card" style="padding:0;overflow:hidden;margin-bottom:20px;">
   <div class="card-header" style="border-bottom:1px solid var(--border);">
     <span class="card-title">Estaciones disponibles</span>
@@ -332,6 +346,100 @@ ESTACIONES.forEach(est => {
     .addTo(map)
     .bindTooltip(est.nombre)
     .on('click', () => mostrarEstacion(est));
+});
+
+// Carrito de reserva grupal (Tarea C3, punto 0.3: factura unica para varias
+// bicicletas). Selecciona por checkbox en cada tarjeta del catalogo de
+// arriba y arma un solo POST a /ciclista/reservar-grupo con listas
+// paralelas (una posicion por bicicleta), mismo backend que ya valida
+// todo-o-nada (Tarea C2).
+const seleccionGrupo = new Set();
+const barraCarrito = document.getElementById('barra-carrito');
+const barraCarritoTexto = document.getElementById('barra-carrito-texto');
+
+function actualizarBarraCarrito() {
+  if (seleccionGrupo.size === 0) {
+    barraCarrito.style.display = 'none';
+    return;
+  }
+  barraCarrito.style.display = 'flex';
+  barraCarritoTexto.textContent = `${seleccionGrupo.size} bicicleta${seleccionGrupo.size !== 1 ? 's' : ''} seleccionada${seleccionGrupo.size !== 1 ? 's' : ''}`;
+}
+
+document.querySelectorAll('.chk-seleccion-grupo').forEach(function (chk) {
+  chk.addEventListener('change', function () {
+    if (chk.checked) seleccionGrupo.add(chk.dataset.codigo);
+    else seleccionGrupo.delete(chk.dataset.codigo);
+    actualizarBarraCarrito();
+  });
+});
+
+document.getElementById('btn-limpiar-carrito').addEventListener('click', function () {
+  seleccionGrupo.clear();
+  document.querySelectorAll('.chk-seleccion-grupo').forEach(function (chk) { chk.checked = false; });
+  actualizarBarraCarrito();
+});
+
+// Datos reales de UNA bicicleta puntual (id de PocketBase + estacion actual)
+// para el POST a reservar-grupo. `catalogo_bicicletas` (bici.* en la tarjeta,
+// arriba) es un catalogo por MODELO+categoria armado por
+// _catalogo_bicicletas() en ciclista.py -- confirmado leyendo esa funcion
+// (Tarea C3, nota del brief) que NO trae id de PocketBase ni estacion por
+// unidad, asi que data-id/data-estacion-id/data-estacion-nombre/data-lat/
+// data-lng en la tarjeta quedan vacios y no sirven como fuente. Los datos
+// reales por unidad SI estan ya cargados en esta misma pagina en
+// BICICLETAS/ESTACIONES (ver arriba, mismo JSON que usa el mapa), con el
+// mismo criterio de match por nombre normalizado que bicicleta_detalle()
+// usa en el backend para resolver la estacion de una bicicleta.
+function datosBiciParaCarrito(codigo) {
+  const b = BICICLETAS.find(function (x) { return x.codigo === codigo; });
+  if (!b) return null;
+  const est = ESTACIONES.find(function (e) { return normalizar(e.nombre) === normalizar(b.estacion); });
+  return {
+    id: b.id || '',
+    codigo: b.codigo || '',
+    estacionId: est ? est.id : '',
+    estacionNombre: b.estacion || '',
+    lat: est ? est.latitud : 0,
+    lng: est ? est.longitud : 0,
+  };
+}
+
+const NOMBRE_CAMPO_CARRITO = {
+  id: 'bicicleta_ids', codigo: 'bicicleta_codigos',
+  estacionId: 'estaciones_ids', estacionNombre: 'estaciones_nombres',
+  lat: 'latitudes', lng: 'longitudes',
+};
+
+document.getElementById('btn-reservar-carrito').addEventListener('click', function () {
+  if (seleccionGrupo.size < 2) {
+    alert('Selecciona al menos 2 bicicletas para una reserva grupal.');
+    return;
+  }
+  const modalidadActiva = document.querySelector('#catalogo-modalidad .modalidad-btn.activo').dataset.modalidad;
+  const campos = document.getElementById('rg-campos');
+  campos.innerHTML = '';
+  const codigosSinDatos = [];
+  seleccionGrupo.forEach(function (codigo) {
+    const datos = datosBiciParaCarrito(codigo);
+    if (!datos || !datos.id || !datos.estacionId) {
+      codigosSinDatos.push(codigo);
+      return;
+    }
+    Object.keys(NOMBRE_CAMPO_CARRITO).forEach(function (campo) {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = NOMBRE_CAMPO_CARRITO[campo];
+      input.value = datos[campo];
+      campos.appendChild(input);
+    });
+  });
+  if (codigosSinDatos.length > 0) {
+    alert('No se pudo resolver la estacion actual de: ' + codigosSinDatos.join(', ') + '. Recarga la pagina e intenta de nuevo.');
+    return;
+  }
+  document.getElementById('rg-modalidad').value = modalidadActiva;
+  document.getElementById('form-reservar-grupo').submit();
 });
 </script>
 {% endblock %}

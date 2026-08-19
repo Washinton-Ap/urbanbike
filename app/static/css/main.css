@@ -1196,6 +1196,7 @@ tr:hover td { background: var(--bg); }
 }
 
 .tarjeta-bicicleta {
+  position: relative;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
