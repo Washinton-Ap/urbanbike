@@ -1710,6 +1710,7 @@ async def vig_devolver(
                 "fecha_pago":        "",
                 "fecha_generado":    _ahora(),
                 "comprobante_numero": "",
+                "grupo_reserva_id":  viaje.get("grupo_reserva_id") or "",
             })
 
             # Aviso real de que hay algo que pagar (punto 13/11.1): antes solo

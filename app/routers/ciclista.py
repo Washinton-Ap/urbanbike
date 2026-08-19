@@ -1477,6 +1477,61 @@ def _construir_factura_pago(registro: dict, viaje: dict, user: dict) -> DatosFac
     )
 
 
+def _construir_factura_grupo(pagos: list[dict], viajes_por_id: dict, user: dict) -> DatosFactura:
+    """Factura unica para un grupo de bicicletas reservadas a la vez (punto
+    0.3): agrega las lineas de CADA pago del grupo (reusa la misma
+    _construir_factura_pago() por pago para no duplicar el desglose de
+    segmentos/recargo/danos/descuento, solo le antepone el codigo de la
+    bicicleta a cada linea) y suma los totales, incluido el IVA ya
+    calculado por cada factura individual (evita recalcularlo aparte con
+    un segundo desglosar_iva() -- misma fuente de verdad, un solo lugar).
+    Solo se llama cuando YA se confirmo que todos los pagos del grupo
+    estan 'pagado' (ver comprobante_grupo() mas abajo) -- no valida eso
+    aca."""
+    todas_las_lineas: list[LineaFactura] = []
+    total_grupo = 0.0
+    subtotal_grupo = 0.0
+    iva_grupo = 0.0
+    descuento_grupo = 0.0
+    bicicletas_desc = []
+
+    for registro in pagos:
+        viaje = viajes_por_id.get(registro.get("viaje_id", ""), {})
+        factura_individual = _construir_factura_pago(registro, viaje, user)
+        prefijo = f"{viaje.get('bicicleta_codigo', '—')} — "
+        for linea in factura_individual.lineas:
+            todas_las_lineas.append(LineaFactura(
+                prefijo + linea.descripcion, linea.cantidad, linea.precio_unitario, linea.importe,
+            ))
+        total_grupo += factura_individual.total
+        subtotal_grupo += factura_individual.subtotal
+        iva_grupo += factura_individual.iva
+        descuento_grupo += factura_individual.descuento
+        bicicletas_desc.append(viaje.get("bicicleta_codigo", "—"))
+
+    primer_pago = pagos[0]
+    fecha_pago = max(
+        (p.get("fecha_pago") or p.get("fecha_generado") or "")[:19].replace("T", " ") for p in pagos
+    )
+    grupo_reserva_id = primer_pago.get("grupo_reserva_id", "")
+
+    return DatosFactura(
+        numero=f"GRUPO-{grupo_reserva_id[:8]}",
+        fecha_emision=fecha_pago,
+        fecha_vencimiento=fecha_pago,
+        numero_pedido=grupo_reserva_id,
+        cliente_nombre=primer_pago.get("ciclista_nombre") or user.get("name") or user.get("email", ""),
+        cliente_cedula=user.get("cedula", ""),
+        cliente_extra=f"Reserva grupal de {len(pagos)} bicicletas: {', '.join(bicicletas_desc)}",
+        metodo_pago="Varios" if len({p.get("metodo_pago") for p in pagos}) > 1 else (primer_pago.get("metodo_pago") or "—").capitalize(),
+        lineas=todas_las_lineas,
+        subtotal=subtotal_grupo,
+        iva=iva_grupo,
+        descuento=descuento_grupo,
+        total=total_grupo,
+    )
+
+
 @router.get("/comprobante/{pago_id}", response_class=HTMLResponse)
 async def comprobante(request: Request, pago_id: str):
     user = getattr(request.state, "user", {})
@@ -1502,6 +1557,42 @@ async def comprobante(request: Request, pago_id: str):
     return templates.TemplateResponse(request, "ciclista/comprobante.html", _ctx(request,
         title="Comprobante de Pago", pago=registro, viaje=viaje,
         factura=_construir_factura_pago(registro, viaje, user),
+        soporte_email=settings.support_email,
+    ))
+
+
+@router.get("/comprobante-grupo/{grupo_reserva_id}", response_class=HTMLResponse)
+async def comprobante_grupo(request: Request, grupo_reserva_id: str):
+    user = getattr(request.state, "user", {})
+    pb = _pb()
+    try:
+        viajes_grupo = pb.list_records(
+            "viajes", filter=f'grupo_reserva_id = {filter_literal(grupo_reserva_id)}', per_page=50,
+        ).get("items", [])
+    except Exception:
+        viajes_grupo = []
+
+    if not viajes_grupo or any(v.get("ciclista_id") != user.get("id", "") for v in viajes_grupo):
+        request.session["flash"] = {"type": "error", "msg": "Reserva grupal no encontrada."}
+        return RedirectResponse("/ciclista/historial", status_code=302)
+
+    viajes_por_id = {v["id"]: v for v in viajes_grupo}
+    try:
+        pagos_grupo = pb.list_records(
+            "pagos", filter=f'grupo_reserva_id = {filter_literal(grupo_reserva_id)}', per_page=50,
+        ).get("items", [])
+    except Exception:
+        pagos_grupo = []
+
+    if len(pagos_grupo) < len(viajes_grupo) or any(p.get("estado") != "pagado" for p in pagos_grupo):
+        request.session["flash"] = {"type": "info", "msg":
+            "La factura de esta reserva grupal todavía no está lista: faltan bicicletas del grupo "
+            "por devolver o pagar."}
+        return RedirectResponse("/ciclista/historial", status_code=302)
+
+    datos = _construir_factura_grupo(pagos_grupo, viajes_por_id, user)
+    return templates.TemplateResponse(request, "ciclista/comprobante.html", _ctx(request,
+        title="Factura de reserva grupal", pago={"id": grupo_reserva_id}, factura=datos, es_grupo=True,
         soporte_email=settings.support_email,
     ))
 
