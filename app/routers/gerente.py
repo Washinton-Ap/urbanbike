@@ -8,7 +8,7 @@ from datetime import date, datetime, time, timezone
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from app.db import bicicletas_repo, estaciones_repo, promociones_repo, tarifas_repo, clickhouse as ch
+from app.db import bicicletas_repo, estaciones_repo, notificaciones_repo, promociones_repo, tarifas_repo, clickhouse as ch
 from app.db.pocketbase import get_admin_client, registrar_auditoria
 from app.middleware.permisos import requiere_permiso
 from app.reportes.excel import ColumnaReporte, generar_excel_reporte
@@ -1850,6 +1850,12 @@ def promociones_crear(
         )
         promo = promociones_repo.obtener(nuevo_id)
         _log(request, "Crear promoción", f"Promoción creada: {promo['codigo']} — {promo['nombre']}")
+        notificaciones_repo.notificar_rol(
+            "ciclista", tipo="promocion_nueva",
+            titulo="Nueva promoción disponible",
+            mensaje=f"Hay una nueva promoción activa: {promo['nombre']} ({promo['codigo']}).",
+            enlace="/ciclista/promociones",
+        )
         return _flash(request, "/gerente/promociones", "success", f"Promoción {promo['codigo']} creada correctamente.")
     except Exception as e:
         return _flash(request, "/gerente/promociones/nueva", "error", str(e))

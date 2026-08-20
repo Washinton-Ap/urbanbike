@@ -231,10 +231,11 @@ setInterval(actualizarTiemposYBotones, 30000);
 // /static/js/costo-en-vivo.js, costoDetallado()), para que ambas
 // pantallas muestren siempre el mismo número mientras el ciclista
 // espera la validación: subtotal = segmentos ya cerrados (fijo) + el
-// segmento abierto actual (para 'hora' sigue el reloj real, ya no se
-// congela en fecha_fin -- ver Tarea 7/9) + recargo por demora, que
-// solo aparece pasadas las 5h de gracia (mismo cálculo exacto que usa
-// empleado.py:vig_devolver() para el cobro real).
+// segmento abierto actual (para 'hora' se congela en fecha_fin, el
+// momento en que el ciclista reportó la devolución -- decisión de
+// negocio reconfirmada con Washington 17-ago-2026) + recargo por
+// demora, que solo aparece pasadas las 5h de gracia (mismo cálculo
+// exacto que usa empleado.py:vig_devolver() para el cobro real).
 function actualizarMontosEnVivo() {
   document.querySelectorAll('.monto-en-vivo-celda').forEach(celda => {
     const precioModalidad = parseFloat(celda.dataset.precioHora) || 0;

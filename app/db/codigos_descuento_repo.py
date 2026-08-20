@@ -70,3 +70,20 @@ def marcar_usado(id_codigo: str, viaje_id_uso: str) -> None:
     _pb().update_record("codigos_descuento", id_codigo, {
         "usado": True, "fecha_usado": _ahora(), "viaje_id_uso": viaje_id_uso,
     })
+
+
+def revertir_uso(id_codigo: str) -> None:
+    """Deshace marcar_usado() -- para cuando una reserva que ya lo marcó
+    usado termina revertida por completo (ej. reservar_grupo() falla a
+    mitad del lote y hace rollback de los viajes creados, ver
+    _revertir_reserva_grupal() en ciclista.py). Sin esto, el código
+    queda quemado para un ciclista que en los hechos nunca completó la
+    reserva -- hallazgo real de la 3a ronda de revisión de la Task C5,
+    ya había quedado señalado sin resolver en el fix round 1 de C2 (ver
+    docs/HOJA_DE_RUTA.md). Seguro de llamar incluso si el código nunca
+    llegó a marcarse usado -- deja los mismos valores por defecto que
+    generar() ya usa, así que no hay diferencia observable entre
+    "nunca se marcó" y "se marcó y se revirtió"."""
+    _pb().update_record("codigos_descuento", id_codigo, {
+        "usado": False, "fecha_usado": "", "viaje_id_uso": "",
+    })

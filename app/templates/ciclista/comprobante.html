@@ -1,6 +1,6 @@
 {% extends "base.html" %}
-{% block title %}Comprobante de Pago{% endblock %}
-{% block page_title %}Comprobante de Pago{% endblock %}
+{% block title %}{{ "Factura de reserva grupal" if es_grupo else "Comprobante de Pago" }}{% endblock %}
+{% block page_title %}{{ "Factura de reserva grupal" if es_grupo else "Comprobante de Pago" }}{% endblock %}
 
 {% block content %}
 
@@ -9,7 +9,7 @@
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
     Imprimir
   </button>
-  <a href="/ciclista/comprobante/{{ pago.id }}/pdf" class="btn btn-ghost">
+  <a href="{{ '/ciclista/comprobante-grupo/' ~ pago.id ~ '/pdf' if es_grupo else '/ciclista/comprobante/' ~ pago.id ~ '/pdf' }}" class="btn btn-ghost">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
     Descargar PDF
   </a>

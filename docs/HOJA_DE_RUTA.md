@@ -5973,7 +5973,8 @@ esta tarea, anotado para una tarea futura).
 completas, cada una con su propio revisor y `review clean` según
 `progress.md`:**
 - B1 `679b94f` -- 8 tipos nuevos en `notificaciones.tipo`
-  (`etl/17_ampliar_tipos_notificacion_ronda2.py`, idempotente).
+  (`etl/19_ampliar_tipos_notificacion_ronda2.py`, idempotente; renombrado
+  desde `etl/17_...` por colisión de numeración con `etl/17_eliminar_tarifas_pocketbase.py`).
 - B2 `2481ad3` -- ciclista notificado al iniciar viaje.
 - B3 `0907853` -- ciclista notificado si se rechaza su transferencia.
 - B4 `39c78ac` -- ciclistas notificados de promoción nueva.
@@ -6425,6 +6426,8 @@ de llamar incondicionalmente, y que `notificar_usuario()` traga sus propias
 excepciones de punta a punta (así que mover el orden auditoría→notificación no
 puede dejar un rastro de auditoría inconsistente).
 
+Los 3 hallazgos de la sección 76 quedan **cerrados**, no solo documentados.
+
 ## 78. Cierre del Plan de Mejoras V2 P0 -- Tasks C6-C7, revisión final de rama completa, y 3 deudas conocidas que quedan deliberadamente fuera de alcance (19-ago-2026)
 
 Continúa la sección 77. Fuente real: `.superpowers/sdd/2026-08-17-plan-mejoras-v2-p0/progress.md`
@@ -6548,5 +6551,3 @@ bloqueo real de la revisión final confirmado cerrado de forma estructural (no s
 alrededor del caso), listo para una recomendación de fusión -- pendiente de que Washington
 decida el momento/proceso (esta sesión no fusiona ni pushea por su cuenta). Los 3 puntos de
 arriba quedan fuera de alcance, deliberadamente, no olvidados.
-
-Los 3 hallazgos de la sección 76 quedan **cerrados**, no solo documentados.

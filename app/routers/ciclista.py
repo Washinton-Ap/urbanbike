@@ -1,6 +1,7 @@
 """Rutas para el rol Ciclista — reservas, viaje activo, historial."""
 
 import json
+import uuid
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
@@ -512,6 +513,88 @@ async def alquilar(request: Request):
     ))
 
 
+def _crear_viaje(
+    pb, user: dict, user_id: str, bicicleta_id: str, bicicleta_codigo: str,
+    estacion_inicio_id: str, estacion_inicio_nombre: str, modalidad: str,
+    lat: float, lng: float, codigo_valido: dict | None, grupo_reserva_id: str = "",
+) -> dict:
+    """Crea UN viaje real + marca la bicicleta en_uso -- la auditoria la
+    registra cada LLAMADOR (reservar()/reservar_grupo()), no esta funcion.
+    Logica compartida entre reservar() (una bicicleta) y reservar_grupo()
+    (varias a la vez, Tarea C2 del plan de factura unica). El codigo de
+    descuento, si viene, solo se marca usado por el LLAMADOR (una sola vez
+    por reserva, nunca una vez por bicicleta del grupo)."""
+    nuevo_viaje = pb.create_record("viajes", {
+        "ciclista_id":            user_id,
+        "ciclista_nombre":        user.get("name") or user.get("email", ""),
+        "bicicleta_id":           bicicleta_id,
+        "bicicleta_codigo":       bicicleta_codigo,
+        "estacion_inicio_id":     estacion_inicio_id,
+        "estacion_inicio_nombre": estacion_inicio_nombre,
+        "latitud_inicio":         lat,
+        "longitud_inicio":        lng,
+        "latitud_actual":         lat,
+        "longitud_actual":        lng,
+        "estado":                 "activo",
+        "fecha_inicio":           _ahora(),
+        "descuento_codigo":       codigo_valido["codigo"] if codigo_valido else "",
+        "descuento_porcentaje":   codigo_valido["porcentaje"] if codigo_valido else 0,
+        "modalidad_actual":       modalidad,
+        "inicio_segmento_actual": _ahora(),
+        "grupo_reserva_id":       grupo_reserva_id,
+    })
+    pb.update_record("bicicletas", bicicleta_id, {"estado": "en_uso"})
+    return nuevo_viaje
+
+
+def _validar_reserva_comun(user: dict, user_id: str, bicicleta_codigos: list[str]) -> str | None:
+    """Reglas de negocio compartidas entre reservar() (una bicicleta) y
+    reservar_grupo() (varias a la vez) -- ronda de fix dedicada tras el
+    hallazgo real de la 3a revisión independiente de la Task C5 (las dos
+    funciones traían ~50 líneas de esta validación duplicadas, con
+    riesgo real de que una regla cambiada en una no se replicara en la
+    otra). Deja fuera la validación de modalidad y el tope
+    MAX_VIAJES_ACTIVOS a propósito -- cada llamador ya los revisa antes
+    de llegar acá, en el mismo orden relativo de siempre (modalidad,
+    tope, y recién después esto). Devuelve el mensaje de error real si
+    algo bloquea la reserva (bicicleta exclusiva de suscriptor,
+    infracción activa, pago pendiente o cuenta bloqueada por rechazos
+    repetidos), o None si no hay ningún bloqueo -- no toca la sesión ni
+    redirige, eso lo hace el llamador."""
+    exclusivas_nuevas = _bicicletas_exclusivas_nuevas()
+    if any(codigo in exclusivas_nuevas for codigo in bicicleta_codigos):
+        tipo_membresia_actual = membresias_repo.tipo_membresia_real(user.get("email", ""))
+        if tipo_membresia_actual != "member":
+            for codigo in bicicleta_codigos:
+                if codigo in exclusivas_nuevas:
+                    fecha_liberacion = exclusivas_nuevas[codigo].strftime("%d/%m/%Y")
+                    return (f"{codigo} es una bicicleta nueva con acceso anticipado exclusivo para "
+                            f"suscriptores hasta el {fecha_liberacion}.")
+
+    if _infracciones_activas(user_id) > 0:
+        return "Tienes infracciones pendientes de resolución. No puedes reservar hasta que sean resueltas."
+
+    try:
+        pb_check = _pb()
+        pendientes = pb_check.list_records(
+            "pagos",
+            filter=f'ciclista_id = {filter_literal(user_id)} && (estado = "pendiente_efectivo" || estado = "verificacion_pendiente")',
+            per_page=1,
+        )
+        if pendientes.get("totalItems", 0) > 0:
+            return "Tienes pagos pendientes. Regula tu situación antes de hacer una nueva reserva."
+
+        rechazados = pb_check.list_records(
+            "pagos", filter=f'ciclista_id = {filter_literal(user_id)} && estado = "rechazado"', per_page=1,
+        )
+        if rechazados.get("totalItems", 0) > 2:
+            return "Tu cuenta ha sido bloqueada temporalmente por pagos rechazados. Contacta a soporte."
+    except Exception:
+        pass
+
+    return None
+
+
 @router.post("/reservar")
 async def reservar(
     request: Request,
@@ -539,49 +622,12 @@ async def reservar(
             f"Ya tienes el máximo de bicicletas alquiladas a la vez ({MAX_VIAJES_ACTIVOS})."}
         return RedirectResponse(f"/ciclista/viaje-activo/{viajes_activos_actuales[0]['id']}", status_code=302)
 
-    # Punto 4: acceso anticipado -- una bicicleta recién adquirida no se
-    # puede reservar todavía si el ciclista no tiene membresía activa.
-    # Bloqueo real (no solo cosmético): _catalogo_bicicletas()/
-    # detalle_bicicleta.html ya ocultan el botón, pero esto es lo único
-    # que de verdad importa contra un POST directo.
-    exclusivas_nuevas = _bicicletas_exclusivas_nuevas()
-    if bicicleta_codigo in exclusivas_nuevas:
-        tipo_membresia_actual = membresias_repo.tipo_membresia_real(user.get("email", ""))
-        if tipo_membresia_actual != "member":
-            fecha_liberacion = exclusivas_nuevas[bicicleta_codigo].strftime("%d/%m/%Y")
-            request.session["flash"] = {"type": "error", "msg":
-                f"{bicicleta_codigo} es una bicicleta nueva con acceso anticipado exclusivo para "
-                f"suscriptores hasta el {fecha_liberacion}."}
-            return RedirectResponse("/ciclista/alquilar", status_code=302)
-
-    # Verificar infracciones activas: no se permite reservar mientras haya alguna sin resolver
-    if _infracciones_activas(user_id) > 0:
-        request.session["flash"] = {"type": "error", "msg":
-            "Tienes infracciones pendientes de resolución. No puedes reservar hasta que sean resueltas."}
+    # Punto 4/infracciones/garantía de pago -- reglas compartidas con
+    # reservar_grupo(), ver _validar_reserva_comun().
+    error_comun = _validar_reserva_comun(user, user_id, [bicicleta_codigo])
+    if error_comun:
+        request.session["flash"] = {"type": "error", "msg": error_comun}
         return RedirectResponse("/ciclista/alquilar", status_code=302)
-
-    # Garantía de pago: bloquear nuevas reservas si tiene pagos pendientes o rechazos repetidos
-    try:
-        pb_check = _pb()
-        pendientes = pb_check.list_records(
-            "pagos",
-            filter=f'ciclista_id = {filter_literal(user_id)} && (estado = "pendiente_efectivo" || estado = "verificacion_pendiente")',
-            per_page=1,
-        )
-        if pendientes.get("totalItems", 0) > 0:
-            request.session["flash"] = {"type": "error", "msg":
-                "Tienes pagos pendientes. Regula tu situación antes de hacer una nueva reserva."}
-            return RedirectResponse("/ciclista/alquilar", status_code=302)
-
-        rechazados = pb_check.list_records(
-            "pagos", filter=f'ciclista_id = {filter_literal(user_id)} && estado = "rechazado"', per_page=1,
-        )
-        if rechazados.get("totalItems", 0) > 2:
-            request.session["flash"] = {"type": "error", "msg":
-                "Tu cuenta ha sido bloqueada temporalmente por pagos rechazados. Contacta a soporte."}
-            return RedirectResponse("/ciclista/alquilar", status_code=302)
-    except Exception:
-        pass
 
     # Codigo de descuento personal (punto 13): se valida ANTES de crear el
     # viaje -- un codigo invalido/ajeno/usado corta aca, sin dejar un viaje
@@ -600,30 +646,12 @@ async def reservar(
         lat = float(latitud)
         lng = float(longitud)
 
-        # Crear viaje
-        nuevo_viaje = pb.create_record("viajes", {
-            "ciclista_id":            user_id,
-            "ciclista_nombre":        user.get("name") or user.get("email", ""),
-            "bicicleta_id":           bicicleta_id,
-            "bicicleta_codigo":       bicicleta_codigo,
-            "estacion_inicio_id":     estacion_inicio_id,
-            "estacion_inicio_nombre": estacion_inicio_nombre,
-            "latitud_inicio":         lat,
-            "longitud_inicio":        lng,
-            "latitud_actual":         lat,
-            "longitud_actual":        lng,
-            "estado":                 "activo",
-            "fecha_inicio":           _ahora(),
-            "descuento_codigo":       codigo_valido["codigo"] if codigo_valido else "",
-            "descuento_porcentaje":   codigo_valido["porcentaje"] if codigo_valido else 0,
-            "modalidad_actual":       modalidad,
-            "inicio_segmento_actual": _ahora(),
-        })
+        nuevo_viaje = _crear_viaje(
+            pb, user, user_id, bicicleta_id, bicicleta_codigo,
+            estacion_inicio_id, estacion_inicio_nombre, modalidad, lat, lng, codigo_valido,
+        )
         if codigo_valido:
             codigos_descuento_repo.marcar_usado(codigo_valido["id"], nuevo_viaje["id"])
-
-        # Marcar bicicleta como en_uso
-        pb.update_record("bicicletas", bicicleta_id, {"estado": "en_uso"})
 
         registrar_auditoria(
             user.get("pb_token", ""), user_id, user.get("name") or user.get("email", ""),
@@ -632,11 +660,224 @@ async def reservar(
             usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
         )
 
+        notificaciones_repo.notificar_usuario(
+            pb, user_id, tipo="viaje_iniciado",
+            titulo="Viaje iniciado",
+            mensaje=f"Iniciaste un viaje con la bicicleta {bicicleta_codigo} desde {estacion_inicio_nombre}.",
+            enlace=f"/ciclista/viaje-activo/{nuevo_viaje['id']}",
+        )
+
         request.session["flash"] = {"type": "success", "msg": f"Viaje iniciado en {estacion_inicio_nombre}. Buen viaje."}
         return RedirectResponse(f"/ciclista/viaje-activo/{nuevo_viaje['id']}", status_code=302)
 
     except Exception as e:
         request.session["flash"] = {"type": "error", "msg": f"Error al iniciar viaje: {e}"}
+        return RedirectResponse("/ciclista/alquilar", status_code=302)
+
+
+def _revertir_reserva_grupal(pb, grupo_reserva_id: str, user_id: str) -> None:
+    """Deshace TODO lo que un intento fallido de reservar_grupo() ya haya
+    escrito para este request (Tarea C2, ronda de fix 1 -- hallazgo real
+    de revision: sin esto, un fallo a mitad del lote -- ej. un
+    bicicleta_id invalido, o un error transitorio de PocketBase -- dejaba
+    viajes 'activo' huerfanos, bicicletas atascadas en 'en_uso' y cero
+    rastro en auditoria).
+
+    Busca por grupo_reserva_id (unico por request, generado ANTES del
+    primer create_record) en vez de confiar en una lista local en
+    memoria: _crear_viaje() puede crear la fila de 'viajes' y fallar
+    DESPUES, al marcar la bicicleta en_uso (ej. bicicleta_id que no
+    existe) -- en ese caso el llamador nunca llega a registrar ese viaje
+    puntual en su propia lista, pero la fila ya quedo escrita con este
+    grupo_reserva_id, así que SI aparece en esta busqueda. Best-effort en
+    cada paso (no se corta en el primer error) para revertir lo maximo
+    posible aunque algo de esto tambien falle.
+
+    La limpieza de notificaciones de abajo es defensiva por las dudas --
+    desde la ronda de fix dedicada tras el hallazgo real de la 3a
+    revision de la Task C5, reservar_grupo() ya NO manda la notificacion
+    (ni el correo real que dispara notificar_usuario()) hasta que el
+    grupo entero esta confirmado, asi que en el camino normal esta
+    funcion nunca deberia encontrar ninguna que borrar."""
+    try:
+        creados = pb.list_records(
+            "viajes", filter=f'grupo_reserva_id = {filter_literal(grupo_reserva_id)}', per_page=50,
+        ).get("items", [])
+    except Exception:
+        creados = []
+
+    for viaje in creados:
+        viaje_id = viaje.get("id", "")
+        bicicleta_id = viaje.get("bicicleta_id", "")
+        try:
+            notifs = pb.list_records(
+                "notificaciones",
+                filter=f'usuario_id = {filter_literal(user_id)} && tipo = "viaje_iniciado" '
+                       f'&& enlace = {filter_literal(f"/ciclista/viaje-activo/{viaje_id}")}',
+                per_page=5,
+            ).get("items", [])
+            for notif in notifs:
+                try:
+                    pb.delete_record("notificaciones", notif["id"])
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        if bicicleta_id:
+            try:
+                pb.update_record("bicicletas", bicicleta_id, {"estado": "disponible"})
+            except Exception:
+                pass
+        try:
+            pb.delete_record("viajes", viaje_id)
+        except Exception:
+            pass
+
+
+@router.post("/reservar-grupo")
+async def reservar_grupo(
+    request: Request,
+    bicicleta_ids:          list[str] = Form(...),
+    bicicleta_codigos:      list[str] = Form(...),
+    estaciones_ids:         list[str] = Form(...),
+    estaciones_nombres:     list[str] = Form(...),
+    latitudes:              list[str] = Form(...),
+    longitudes:             list[str] = Form(...),
+    modalidad:              str = Form("hora"),
+    codigo_descuento:       str = Form(""),
+):
+    """Reserva de varias bicicletas en una sola accion (punto 0.3): crea N
+    viajes reales, todos con el mismo grupo_reserva_id, todo-o-nada -- si
+    cualquier validacion falla para cualquier bicicleta del lote, no se
+    crea ninguno (mismo criterio que el codigo de descuento en reservar():
+    "sin dejar un viaje a medias"). El codigo de descuento, si viene, se
+    aplica y se marca usado en el PRIMER viaje del grupo unicamente (es de
+    un solo uso, no tiene sentido duplicarlo N veces)."""
+    user = getattr(request.state, "user", {})
+    user_id = user.get("id", "")
+
+    n = len(bicicleta_ids)
+    if n < 2:
+        request.session["flash"] = {"type": "error", "msg": "Selecciona al menos 2 bicicletas para una reserva grupal."}
+        return RedirectResponse("/ciclista/alquilar", status_code=302)
+    if not (len(bicicleta_codigos) == len(estaciones_ids) == len(estaciones_nombres) == len(latitudes) == len(longitudes) == n):
+        request.session["flash"] = {"type": "error", "msg": "Datos de la reserva grupal incompletos."}
+        return RedirectResponse("/ciclista/alquilar", status_code=302)
+    if len(set(bicicleta_ids)) != n:
+        request.session["flash"] = {"type": "error", "msg":
+            "No puedes reservar la misma bicicleta más de una vez en el mismo grupo."}
+        return RedirectResponse("/ciclista/alquilar", status_code=302)
+
+    if modalidad not in ("hora", "dia", "semana"):
+        request.session["flash"] = {"type": "error", "msg": "Modalidad no válida."}
+        return RedirectResponse("/ciclista/alquilar", status_code=302)
+
+    viajes_activos_actuales = _viajes_activos(user_id)
+    if len(viajes_activos_actuales) + n > MAX_VIAJES_ACTIVOS:
+        request.session["flash"] = {"type": "error", "msg":
+            f"No puedes tener más de {MAX_VIAJES_ACTIVOS} bicicletas alquiladas a la vez "
+            f"(ya tienes {len(viajes_activos_actuales)}, intentas agregar {n})."}
+        return RedirectResponse("/ciclista/alquilar", status_code=302)
+
+    # Punto 4/infracciones/garantía de pago -- reglas compartidas con
+    # reservar(), ver _validar_reserva_comun().
+    error_comun = _validar_reserva_comun(user, user_id, bicicleta_codigos)
+    if error_comun:
+        request.session["flash"] = {"type": "error", "msg": error_comun}
+        return RedirectResponse("/ciclista/alquilar", status_code=302)
+
+    codigo_valido = None
+    if codigo_descuento.strip():
+        codigo_valido = codigos_descuento_repo.obtener_valido(codigo_descuento, user_id)
+        if not codigo_valido:
+            request.session["flash"] = {"type": "error", "msg":
+                "El código de descuento no es válido, ya fue usado, o no te pertenece."}
+            return RedirectResponse("/ciclista/alquilar", status_code=302)
+
+    grupo_reserva_id = uuid.uuid4().hex
+    pb = None
+    viajes_creados: list[dict] = []
+    try:
+        pb = _pb()
+        for i in range(n):
+            viaje = _crear_viaje(
+                pb, user, user_id, bicicleta_ids[i], bicicleta_codigos[i],
+                estaciones_ids[i], estaciones_nombres[i], modalidad,
+                float(latitudes[i]), float(longitudes[i]),
+                codigo_valido if i == 0 else None,
+                grupo_reserva_id=grupo_reserva_id,
+            )
+            viajes_creados.append(viaje)
+
+        if codigo_valido:
+            codigos_descuento_repo.marcar_usado(codigo_valido["id"], viajes_creados[0]["id"])
+
+        registrar_auditoria(
+            user.get("pb_token", ""), user_id, user.get("name") or user.get("email", ""),
+            user.get("email", ""), "crear", "viajes",
+            f"Reserva grupal de {n} bicicletas iniciada: {', '.join(bicicleta_codigos)} "
+            f"(grupo {grupo_reserva_id})", request,
+            usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
+        )
+
+        # Notificaciones (con correo real, ver notificaciones_repo.notificar_usuario())
+        # recién ACA, con el grupo entero ya confirmado -- ronda de fix
+        # dedicada tras el hallazgo real de la 3a revisión de la Task C5:
+        # antes se mandaban una por una DENTRO del bucle de creación, así
+        # que un fallo a mitad del lote (ej. la bicicleta 3 de 3 con un
+        # id invalido) ya habia mandado el correo real de las bicicletas
+        # 1 y 2 -- el rollback de _revertir_reserva_grupal() borra el
+        # registro de la campana, pero un correo real ya enviado no se
+        # puede recuperar. Con esto, si algo falla antes de esta linea,
+        # CERO correos/notificaciones salen para un intento que termino
+        # revertido por completo.
+        for viaje in viajes_creados:
+            notificaciones_repo.notificar_usuario(
+                pb, user_id, tipo="viaje_iniciado",
+                titulo="Viaje iniciado",
+                mensaje=f"Iniciaste un viaje con la bicicleta {viaje.get('bicicleta_codigo', '—')} "
+                        f"(reserva grupal de {n} bicicletas).",
+                enlace=f"/ciclista/viaje-activo/{viaje['id']}",
+            )
+
+        request.session["flash"] = {"type": "success", "msg":
+            f"Reserva grupal de {n} bicicletas iniciada. Al devolver y pagar todas, recibirás una sola factura."}
+        return RedirectResponse(f"/ciclista/viaje-activo/{viajes_creados[0]['id']}", status_code=302)
+
+    except Exception as e:
+        # Todo-o-nada real (Tarea C2, ronda de fix 1): CUALQUIER fallo desde
+        # aca hasta el return de exito de arriba -- dentro del bucle de
+        # creacion, marcando el codigo de descuento usado, o registrando la
+        # auditoria de exito -- debe dejar CERO viajes/bicicletas en_uso de
+        # este intento, no un subconjunto. Se revierte por grupo_reserva_id
+        # (ver _revertir_reserva_grupal) y SIEMPRE se deja un rastro real en
+        # auditoria del intento fallido, para que no sea invisible salvo
+        # inspeccionando la base directamente.
+        if pb is not None:
+            try:
+                _revertir_reserva_grupal(pb, grupo_reserva_id, user_id)
+            except Exception:
+                pass
+        if codigo_valido:
+            # Ronda de fix dedicada tras el hallazgo real de la 3a revisión
+            # de la Task C5 (ya senalado sin resolver en el fix round 1 de
+            # C2): si marcar_usado() ya se aplico del lado de PocketBase
+            # antes de que algo mas fallara, el codigo quedaba quemado para
+            # una reserva que en los hechos nunca se concreto. Seguro de
+            # llamar incluso si nunca llego a marcarse usado (ver docstring
+            # de revertir_uso()).
+            try:
+                codigos_descuento_repo.revertir_uso(codigo_valido["id"])
+            except Exception:
+                pass
+        registrar_auditoria(
+            user.get("pb_token", ""), user_id, user.get("name") or user.get("email", ""),
+            user.get("email", ""), "crear", "viajes",
+            f"Reserva grupal fallida, revertida: {len(viajes_creados)} "
+            f"de {n} bicicletas, motivo: {e}", request,
+            usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
+        )
+        request.session["flash"] = {"type": "error", "msg": f"Error al iniciar la reserva grupal: {e}"}
         return RedirectResponse("/ciclista/alquilar", status_code=302)
 
 
@@ -798,12 +1039,14 @@ async def finalizar(
     ninguna otra pantalla debe ofrecerla como disponible.
 
     Mientras nadie de Vigilancia valide la entrega real
-    (/empleado/vigilancia/devolver/{id}, ver empleado.py), el costo
-    sigue corriendo a la tarifa normal -- el mismo cálculo en vivo que
-    ya usaba el cronómetro de viaje-activo, ahora también visible para
-    Vigilancia en devoluciones.html. El monto real se congela recién
-    cuando Vigilancia confirma, con la duración real hasta ESE momento,
-    no hasta este clic."""
+    (/empleado/vigilancia/devolver/{id}, ver empleado.py), el monto
+    base ya queda fijo con la hora real de este reporte (fecha_fin) --
+    decisión de negocio reconfirmada con Washington 17-ago-2026: la
+    espera hasta que Vigilancia confirme NO es tiempo de uso real. Solo
+    el recargo por demora (tras 5h de gracia desde este reporte) sigue
+    corriendo hasta que Vigilancia confirme -- mismo cálculo en vivo
+    que ya usaba el cronómetro de viaje-activo, ahora también visible
+    para Vigilancia en devoluciones.html."""
     user = getattr(request.state, "user", {})
     try:
         pb = _pb()
@@ -820,6 +1063,14 @@ async def finalizar(
             user.get("email", ""), "editar", "viajes",
             f"Devolución reportada en {estacion_fin_nombre} -- pendiente de validación de Vigilancia", request,
             usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
+        )
+
+        notificaciones_repo.notificar_rol(
+            "empleado-vigilancia", tipo="devolucion_pendiente_validar",
+            titulo="Devolución por validar",
+            mensaje=f"{user.get('name') or user.get('email', '')} reportó la devolución en "
+                    f"{estacion_fin_nombre} -- pendiente de confirmar la entrega física.",
+            enlace="/empleado/vigilancia/devoluciones",
         )
 
         # Código de descuento por buena conducta (punto 13): se genera acá,
@@ -1021,6 +1272,12 @@ async def confirmar_pago(
                 f"Pago marcado para efectivo: código {comprobante}", request,
                 usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
             )
+            notificaciones_repo.notificar_rol(
+                "empleado-operacion", tipo="cobro_pendiente",
+                titulo="Cobro en efectivo pendiente",
+                mensaje=f"Un ciclista se acercará a pagar en efectivo con el código {comprobante}.",
+                enlace="/empleado/operacion/pagos",
+            )
             request.session["flash"] = {"type": "info", "msg":
                 f"Dirígete al empleado de operación más cercano con el código de pago: {comprobante} para completar el pago."}
             return RedirectResponse(f"/ciclista/pago/{pago_id}", status_code=302)
@@ -1089,6 +1346,12 @@ async def confirmar_pago(
                 user.get("email", ""), "editar", "pagos",
                 f"Comprobante de transferencia subido para verificación: {comprobante}", request,
                 usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
+            )
+            notificaciones_repo.notificar_rol(
+                "empleado-operacion", tipo="cobro_pendiente",
+                titulo="Transferencia pendiente de verificar",
+                mensaje=f"Un ciclista subió un comprobante de transferencia (código {comprobante}) que espera verificación.",
+                enlace="/empleado/operacion/pagos",
             )
             request.session["flash"] = {"type": "info", "msg":
                 "Tu pago está en verificación. El empleado de operación lo confirmará en breve."}
@@ -1227,6 +1490,61 @@ def _construir_factura_pago(registro: dict, viaje: dict, user: dict) -> DatosFac
     )
 
 
+def _construir_factura_grupo(pagos: list[dict], viajes_por_id: dict, user: dict) -> DatosFactura:
+    """Factura unica para un grupo de bicicletas reservadas a la vez (punto
+    0.3): agrega las lineas de CADA pago del grupo (reusa la misma
+    _construir_factura_pago() por pago para no duplicar el desglose de
+    segmentos/recargo/danos/descuento, solo le antepone el codigo de la
+    bicicleta a cada linea) y suma los totales, incluido el IVA ya
+    calculado por cada factura individual (evita recalcularlo aparte con
+    un segundo desglosar_iva() -- misma fuente de verdad, un solo lugar).
+    Solo se llama cuando YA se confirmo que todos los pagos del grupo
+    estan 'pagado' (ver comprobante_grupo() mas abajo) -- no valida eso
+    aca."""
+    todas_las_lineas: list[LineaFactura] = []
+    total_grupo = 0.0
+    subtotal_grupo = 0.0
+    iva_grupo = 0.0
+    descuento_grupo = 0.0
+    bicicletas_desc = []
+
+    for registro in pagos:
+        viaje = viajes_por_id.get(registro.get("viaje_id", ""), {})
+        factura_individual = _construir_factura_pago(registro, viaje, user)
+        prefijo = f"{viaje.get('bicicleta_codigo', '—')} — "
+        for linea in factura_individual.lineas:
+            todas_las_lineas.append(LineaFactura(
+                prefijo + linea.descripcion, linea.cantidad, linea.precio_unitario, linea.importe,
+            ))
+        total_grupo += factura_individual.total
+        subtotal_grupo += factura_individual.subtotal
+        iva_grupo += factura_individual.iva
+        descuento_grupo += factura_individual.descuento
+        bicicletas_desc.append(viaje.get("bicicleta_codigo", "—"))
+
+    primer_pago = pagos[0]
+    fecha_pago = max(
+        (p.get("fecha_pago") or p.get("fecha_generado") or "")[:19].replace("T", " ") for p in pagos
+    )
+    grupo_reserva_id = primer_pago.get("grupo_reserva_id", "")
+
+    return DatosFactura(
+        numero=f"GRUPO-{grupo_reserva_id[:8]}",
+        fecha_emision=fecha_pago,
+        fecha_vencimiento=fecha_pago,
+        numero_pedido=grupo_reserva_id,
+        cliente_nombre=primer_pago.get("ciclista_nombre") or user.get("name") or user.get("email", ""),
+        cliente_cedula=user.get("cedula", ""),
+        cliente_extra=f"Reserva grupal de {len(pagos)} bicicletas: {', '.join(bicicletas_desc)}",
+        metodo_pago="Varios" if len({p.get("metodo_pago") for p in pagos}) > 1 else (primer_pago.get("metodo_pago") or "—").capitalize(),
+        lineas=todas_las_lineas,
+        subtotal=subtotal_grupo,
+        iva=iva_grupo,
+        descuento=descuento_grupo,
+        total=total_grupo,
+    )
+
+
 @router.get("/comprobante/{pago_id}", response_class=HTMLResponse)
 async def comprobante(request: Request, pago_id: str):
     user = getattr(request.state, "user", {})
@@ -1254,6 +1572,73 @@ async def comprobante(request: Request, pago_id: str):
         factura=_construir_factura_pago(registro, viaje, user),
         soporte_email=settings.support_email,
     ))
+
+
+def _grupo_reserva_facturable(pb, grupo_reserva_id: str, user_id: str) -> tuple[list[dict] | None, dict | None, dict | None]:
+    """Trae y valida un grupo de reserva para facturación (Tasks C4/C5):
+    devuelve (pagos_grupo, viajes_por_id, None) si el grupo existe, le
+    pertenece al usuario, y TODOS sus pagos ya estan 'pagado'; en
+    cualquier otro caso devuelve (None, None, flash) con el flash listo
+    para sesión -- compartido entre comprobante_grupo() (HTML) y
+    comprobante_grupo_pdf() para que las dos vistas nunca puedan divergir
+    en qué cuenta como un grupo válido/completo."""
+    try:
+        viajes_grupo = pb.list_records(
+            "viajes", filter=f'grupo_reserva_id = {filter_literal(grupo_reserva_id)}', per_page=50,
+        ).get("items", [])
+    except Exception:
+        viajes_grupo = []
+
+    if not viajes_grupo or any(v.get("ciclista_id") != user_id for v in viajes_grupo):
+        return None, None, {"type": "error", "msg": "Reserva grupal no encontrada."}
+
+    viajes_por_id = {v["id"]: v for v in viajes_grupo}
+    try:
+        pagos_grupo = pb.list_records(
+            "pagos", filter=f'grupo_reserva_id = {filter_literal(grupo_reserva_id)}', per_page=50,
+        ).get("items", [])
+    except Exception:
+        pagos_grupo = []
+
+    if len(pagos_grupo) < len(viajes_grupo) or any(p.get("estado") != "pagado" for p in pagos_grupo):
+        return None, None, {"type": "info", "msg":
+            "La factura de esta reserva grupal todavía no está lista: faltan bicicletas del grupo "
+            "por devolver o pagar."}
+
+    return pagos_grupo, viajes_por_id, None
+
+
+@router.get("/comprobante-grupo/{grupo_reserva_id}", response_class=HTMLResponse)
+async def comprobante_grupo(request: Request, grupo_reserva_id: str):
+    user = getattr(request.state, "user", {})
+    pagos_grupo, viajes_por_id, flash = _grupo_reserva_facturable(_pb(), grupo_reserva_id, user.get("id", ""))
+    if flash:
+        request.session["flash"] = flash
+        return RedirectResponse("/ciclista/historial", status_code=302)
+
+    datos = _construir_factura_grupo(pagos_grupo, viajes_por_id, user)
+    return templates.TemplateResponse(request, "ciclista/comprobante.html", _ctx(request,
+        title="Factura de reserva grupal", pago={"id": grupo_reserva_id}, factura=datos, es_grupo=True,
+        soporte_email=settings.support_email,
+    ))
+
+
+@router.get("/comprobante-grupo/{grupo_reserva_id}/pdf")
+async def comprobante_grupo_pdf(request: Request, grupo_reserva_id: str):
+    """PDF con marca UrbanBike de la factura de una reserva grupal --
+    mismo contenido que comprobante_grupo() (HTML), mismo generador que
+    comprobante_pago_pdf()/membresia_comprobante_pdf()
+    (app.reportes.factura.generar_factura_pdf, ver punto 11)."""
+    user = getattr(request.state, "user", {})
+    pagos_grupo, viajes_por_id, flash = _grupo_reserva_facturable(_pb(), grupo_reserva_id, user.get("id", ""))
+    if flash:
+        request.session["flash"] = flash
+        return RedirectResponse("/ciclista/historial", status_code=302)
+
+    datos = _construir_factura_grupo(pagos_grupo, viajes_por_id, user)
+    return generar_factura_pdf(
+        datos, nombre_archivo=f"urbanbike_factura_grupo_{grupo_reserva_id[:8]}.pdf",
+    )
 
 
 @router.get("/comprobante/{pago_id}/pdf")
@@ -1567,6 +1952,11 @@ async def historial_pagos(
     except Exception:
         pb_ok = False
 
+    grupos_completos = {
+        gid for gid in {p.get("grupo_reserva_id") for p in pagos if p.get("grupo_reserva_id")}
+        if all(p.get("estado") == "pagado" for p in pagos if p.get("grupo_reserva_id") == gid)
+    }
+
     filtrados = _filtrar_pagos_ciclista(pagos, estado, metodo, desde, hasta)
     total = len(filtrados)
     total_paginas = max(1, -(-total // _PAGOS_POR_PAGINA))
@@ -1579,6 +1969,7 @@ async def historial_pagos(
         pagos=pagina_items, total=total, pagina=pagina, total_paginas=total_paginas,
         estado=estado, metodo=metodo, desde=desde, hasta=hasta,
         estados_pago=_ESTADOS_PAGO_LABEL, metodos_pago=_METODOS_PAGO_LABEL,
+        grupos_completos=grupos_completos,
     ))
 
 

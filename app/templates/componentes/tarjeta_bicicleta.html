@@ -55,7 +55,14 @@
 } %}
 {% set frase_beneficio = BENEFICIOS_ENFOQUE.get(bici.enfoque, bici.enfoque) %}
 
-<div class="tarjeta-bicicleta" data-marca="{{ bici.marca }}" data-enfoque="{{ bici.enfoque }}">
+<div class="tarjeta-bicicleta" data-marca="{{ bici.marca }}" data-enfoque="{{ bici.enfoque }}"
+     data-codigo="{{ bici.codigo }}">
+
+  {% if bici.estado == "disponible" and not bici.bloqueada_exclusiva %}
+  <label class="tarjeta-bicicleta-seleccion" style="position:absolute;top:44px;right:10px;z-index:2;background:var(--bg);border-radius:6px;padding:4px;display:flex;align-items:center;">
+    <input type="checkbox" class="chk-seleccion-grupo" data-codigo="{{ bici.codigo }}" title="Seleccionar para reserva grupal">
+  </label>
+  {% endif %}
 
   <div class="tarjeta-bicicleta-foto">
     {% if bici.es_premium %}
