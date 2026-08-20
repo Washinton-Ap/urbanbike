@@ -5937,3 +5937,616 @@ de mapa devuelven `3.83`. De paso se encontró y corrigió un bug
 relacionado en el filtro `tojson` (`app/templating.py`): no serializaba
 `date` (campo `exclusiva_hasta` de `catalogo_bicicletas`) -- se agregó
 `default=str` a ese `json.dumps()`.
+
+## 72. Plan de mejoras V2, Prioridad 0 -- Tareas A1 y B1-B6 completadas y revisadas, viven en un worktree aislado, NO en `main` todavía (17-18 de agosto de 2026)
+
+**Ubicación real del trabajo**: todo lo de esta sección se ejecutó en el
+git worktree `.claude/worktrees/plan-mejoras-v2-p0` (rama
+`worktree-plan-mejoras-v2-p0`), creado con consentimiento explícito de
+Washington vía `superpowers:subagent-driven-development` sobre el plan
+`docs/superpowers/plans/2026-08-17-plan-mejoras-v2-p0.md`. El checkout
+principal (`main`, lo que corre normalmente en `:8000`) **todavía tiene
+el código viejo** -- nada de esto está fusionado. Ledger completo,
+brief y report de cada tarea, y el diff exacto revisado en cada gate:
+`.superpowers/sdd/2026-08-17-plan-mejoras-v2-p0/` dentro del worktree
+(`progress.md`, `task-*-brief.md`, `task-*-report.md`,
+`review-<base>..<head>.diff`).
+
+**Task A1 (punto 0.1) -- completa, commit `3e2bf2c`.** Restaura el
+congelamiento del subtotal en `fecha_fin` para la modalidad `hora`
+(`empleado.py:vig_devolver()` + `costo-en-vivo.js`), revirtiendo la
+Tarea 7/9 del plan `2026-08-16-modalidad-tarifa-real` que lo había
+roto sin reconfirmar (ver auditoría que motivó este plan). **Revisor
+independiente real, verificado leyendo su transcript completo**: no
+se limitó a leer código -- re-ejecutó la fórmula vieja y la nueva
+contra el viaje real `UB-009`, dos corridas con 72s reales de
+diferencia (fórmula vieja: $122.82 → $122.88, moviéndose; fórmula
+nueva: $109.26 las dos veces, congelada), confirmó por `curl` que el
+servidor real sirve el JS corregido, y confirmó por PocketBase que
+los 5 viajes/1 pago/2 cuentas de prueba de la verificación E2E del
+implementador fueron borrados. **Veredicto: Approved, 0 Critical, 0
+Important, 1 Minor diferido** (comentario viejo sin corregir en
+`viaje_activo.html:~162-171`, fuera del alcance de las 4 archivos de
+esta tarea, anotado para una tarea futura).
+
+**Tasks B1-B6 (punto 0.4, 6 de los 8 ganchos de notificación) --
+completas, cada una con su propio revisor y `review clean` según
+`progress.md`:**
+- B1 `679b94f` -- 8 tipos nuevos en `notificaciones.tipo`
+  (`etl/17_ampliar_tipos_notificacion_ronda2.py`, idempotente).
+- B2 `2481ad3` -- ciclista notificado al iniciar viaje.
+- B3 `0907853` -- ciclista notificado si se rechaza su transferencia.
+- B4 `39c78ac` -- ciclistas notificados de promoción nueva.
+- B5 `951bf39` -- ciclista notificado cuando Vigilancia valida la
+  devolución.
+- B6 `6e16267` -- Operación notificada de cobro pendiente de
+  verificar (efectivo/transferencia).
+
+**Esta lista de "pendiente" quedó desactualizada casi de inmediato -- corregida en la sección 73.**
+El trabajo real de B7 a C2 se hizo el mismo 18-ago-2026, en una sesión de ejecución
+`subagent-driven-development` cuyo ledger (`.superpowers/sdd/2026-08-17-plan-mejoras-v2-p0/progress.md`,
+dentro del worktree, no comiteado a `main`) nunca se resumió en este documento hasta ahora. Ese
+ledger es la fuente real: B7, B8, B9, C1 y C2 (+ 1 ronda de fix de C2) están completos, cada uno con
+commit real y revisor independiente (verdicto "review clean" registrado por tarea), salvo B7 que
+Washington aceptó sin revisor separado (ver progress.md línea 70). Ver sección 73 para el detalle
+verificado de B9 y C1 específicamente, a pedido de Washington tras notar que ese cierre no le había
+llegado.
+
+**Hallazgo operativo real, repetido 6 veces en esta sesión de
+ejecución (B2 a B6)**: el auto-reload de `uvicorn --reload`
+(`watchfiles`) logueaba `"Reloading..."` pero **no siempre respawneaba
+el worker** -- confirmado cada vez comparando el PID/`StartTime` del
+worker antes y después vía `Get-CimInstance`/PowerShell, no solo por
+el código de estado HTTP. No es el mismo mecanismo que el hallazgo de
+la sección 51 (`taskkill //PID` de git-bash no matando el proceso) --
+aquí el proceso de reload ni siquiera lo intenta. Washington decidió,
+cada una de las 6 veces, mantener `--reload` y reiniciar
+manualmente por incidente (autorización explícita antes de tocar
+cualquier proceso -- regla añadida a mitad de sesión tras un intento
+no autorizado de `Stop-Process` del implementador de A1, ver
+`progress.md` línea 28-34) en vez de cambiar de estrategia. Sigue sin
+resolverse de raíz.
+
+## 73. Cierre real de B9 y C1, pedido explícitamente por Washington tras notar que nunca le llegó (19-ago-2026)
+
+Washington notó que la sesión anterior pasó de reportar trabajo a "C2 completo" sin
+que le llegara el cierre de B9 (notificación a Admin de registro público) ni de C1
+(campo `grupo_reserva_id`). Investigación real de esta sesión: **ambas tareas sí
+tenían commit, verificación E2E real y revisor independiente** -- registrado en
+`.superpowers/sdd/2026-08-17-plan-mejoras-v2-p0/progress.md` (líneas 78-84) y en
+`task-B9-report.md`/`task-C1-report.md`, dentro del worktree. El problema no era que
+faltara evidencia: era que ese ledger nunca se resumió aquí, en el documento que
+Washington realmente lee. Corrección de la sección 72 hecha arriba.
+
+**Verificación fresca repetida en esta sesión (19-ago-2026), a pedido explícito de
+Washington, independiente de la del 18-ago-2026:**
+
+**B9 -- notificación a Admin de registro público nuevo.** Commit `54c725c`, rama
+`worktree-plan-mejoras-v2-p0` (**no en `main`**). `POST /auth/registro` real
+(`prueba.b9.verificacion@urbanbike.test`, cédula `1798765432`) → `302` (éxito) →
+notificación real creada en PocketBase (`rol_destino="admin"`,
+`tipo="registro_nuevo"`, mensaje con nombre/correo correctos) → confirmado visible
+llamando al endpoint real que usa la campana de la UI, `GET /notificaciones`, con
+una sesión real de `admin@urbanbike.com` (login real vía `POST /auth/login`,
+contraseña de prueba documentada `Urbanbike123!`, no adivinada). Limpieza
+confirmada: notificación y usuario de prueba borrados, 0 rastros en
+`notificaciones`, `users` ni `auditoria` tras la limpieza. Revisor independiente:
+sí (verdicto "review clean", progress.md línea 80).
+
+**C1 -- campo `grupo_reserva_id` en `viajes`/`pagos`.** Commit `d57922f`, misma
+rama (**no en `main`**). Corrida real #3 de `etl/18_agregar_grupo_reserva.py`
+contra PocketBase real: `viajes: los campos nuevos ya existen, sin cambios` /
+`pagos: los campos nuevos ya existen, sin cambios` -- confirmado además por schema
+que el campo aparece exactamente 1 vez en cada colección (sin duplicados).
+Idempotencia confirmada por tercera vez (las corridas #1 y #2 ya estaban
+documentadas del 18-ago-2026). Revisor independiente: sí (verdicto "review clean",
+progress.md línea 84).
+
+Checkboxes de B9 (Steps 1-4) y C1 (Steps 2-3) marcados `[x]` en
+`docs/superpowers/plans/2026-08-17-plan-mejoras-v2-p0.md` (ambas copias, `main` y
+worktree) solo con esta evidencia en mano -- no antes.
+
+**Regla nueva de Washington para el resto de este plan (Grupo C, C3 en adelante):**
+ninguna tarea se reporta como "completa" sin las dos cosas juntas -- evidencia de
+ejecución real Y revisión (propia o independiente, según el tamaño del cambio). Si
+una de las dos falta, debe decirse explícitamente en el resumen, nunca dejarse
+implícito. Precedente ya visible en este mismo plan: B7 se cerró sin revisor
+independiente (Washington lo aceptó explícitamente, progress.md línea 70) -- ese
+tipo de excepción es válido, pero debe quedar dicho, no callado.
+
+**Nota aparte -- reconciliada el 19-ago-2026 (ver sección 74):** `docs/HOJA_DE_RUTA.md`
+en `main` y la copia dentro del worktree habían divergido (la del worktree quedó
+atrás, sin las secciones 72-73). Confirmado con diff ignorando fin de línea que la
+copia del worktree era subconjunto exacto de esta -- cero contenido único, nada que
+fusionar -- así que se copió esta versión sobre la del worktree tal cual, a pedido
+explícito de Washington de no dejarlo para el cierre del plan.
+
+## 74. Task C3 completa -- selección múltiple real en el catálogo, con 3 bugs reales encontrados y corregidos antes de comitear (19-ago-2026)
+
+Commit real: `a992af6` ("feat: agregar seleccion multiple (carrito) al catalogo
+para reservar varias bicicletas a la vez"), rama `worktree-plan-mejoras-v2-p0`,
+**no en `main`**.
+Archivos: `app/templates/componentes/tarjeta_bicicleta.html`,
+`app/templates/ciclista/alquilar.html`, `app/static/css/main.css` (el tercero no
+estaba en el brief original -- necesario para que el checkbox fuera visible, ver
+abajo).
+
+**El código del brief ya estaba escrito y sin commitear** de una sesión anterior
+(Steps 1-3 del Task C3). Esta sesión lo verificó de punta a punta en vez de darlo
+por bueno:
+
+**Bug 1 -- checkbox invisible.** `.tarjeta-bicicleta` no tenía `position:relative`
+en `main.css`, así que el checkbox de selección (`position:absolute;top:10px;
+right:10px`) escapaba a un ancestro lejano de la página (aparecía cerca de la
+topbar, confirmado con `getBoundingClientRect()` real en el navegador: el checkbox
+medía top=10,left=1499 en viewport, no dentro de la tarjeta). Encontrado durante la
+verificación visual en un navegador real, antes de que llegara la revisión
+independiente. Corregido agregando `position:relative` a `.tarjeta-bicicleta`.
+
+**Bug 2 -- checkbox chocando con el badge de estado.** Ya con `position:relative`,
+el checkbox (top:10px;right:10px) quedaba pegado al badge "Disponible"/"En
+uso"/etc (`.tarjeta-bicicleta-estado`, también top:12px;right:12px), superpuesto
+visualmente. Corregido moviendo el checkbox a `top:44px`, debajo de esa fila de
+badges.
+
+**Bug 3 -- barra de carrito visible desde la carga de la página.** Encontrado por
+la revisión independiente (`code-review`, nivel medium), no por la verificación
+manual: `#barra-carrito` tenía `display:none` y, más adelante en el mismo atributo
+`style`, `display:flex` -- en CSS, la última declaración de una misma propiedad en
+un mismo atributo gana, así que la barra en realidad SIEMPRE se renderizaba visible
+(con "0 bicicletas seleccionadas") desde que se carga `/ciclista/alquilar`, no solo
+cuando hay algo seleccionado. La verificación manual de esta sesión vio la barra
+visible en la primera captura de pantalla y no lo marcó como bug -- la revisión
+independiente sí lo detectó. Corregido quitando el `display:flex` duplicado; el JS
+(`actualizarBarraCarrito()`) ya controla `style.display` directamente.
+
+**Hallazgo adicional de la revisión (no un bug de comportamiento, código muerto y
+engañoso):** los 5 `data-*` que proponía el brief original en `.tarjeta-bicicleta`
+(`data-id`, `data-estacion-id`, `data-estacion-nombre`, `data-lat`, `data-lng`)
+nunca se llenan -- `_catalogo_bicicletas()` en `ciclista.py` no trae esos campos
+por unidad (confirmado leyendo la función completa) y el JS del carrito nunca los
+lee: usa `BICICLETAS`/`ESTACIONES` (el mismo JSON que ya alimenta el mapa de la
+página) con el mismo criterio de match por nombre normalizado que
+`bicicleta_detalle()` usa en el backend. El docstring del componente afirmaba,
+incorrectamente, que esos campos se "enriquecían en `ciclista.alquilar()`" -- nunca
+pasó. Se eliminaron los 5 atributos vacíos y ese comentario; quedó solo
+`data-codigo`, que sí se usa.
+
+**Verificación E2E real, en dos partes:**
+1. **Navegador real** (Chrome vía automatización): login real, checkboxes visibles
+   y clicables tras el fix del Bug 1/2, selección real actualiza la barra de
+   carrito correctamente, resolución de datos por bicicleta
+   (`datosBiciParaCarrito()`) confirmada contra los datos reales de
+   `BICICLETAS`/`ESTACIONES` de la página.
+2. **Submit real del formulario, vía clic de DOM real** (`element.click()`) en vez
+   de un clic de mouse sintetizado por el SO -- el clic de mouse real dejó de
+   entregarse de forma fiable a mitad de esta verificación (3 intentos con
+   coordenadas y con `ref` de la extensión de Chrome, uno de ellos disparó un
+   `alert()` real del navegador que congeló la pestaña por completo; la pestaña se
+   cerró y no se reintentó indefinidamente, siguiendo la guía de no insistir más de
+   2-3 veces con lo mismo). El clic de DOM real disparó el mismo listener de
+   `click` que un clic de mouse real habría disparado, y desde ahí todo fue tráfico
+   HTTP real: `POST /ciclista/reservar-grupo` real → 2 viajes reales creados
+   (`UB-010`, `UB-008`) con el mismo `grupo_reserva_id` no vacío → ambas bicicletas
+   `en_uso` → 2 notificaciones `viaje_iniciado` reales → redirect real a
+   `/ciclista/viaje-activo/{id}` de la primera bicicleta del grupo.
+
+**Cuenta de prueba:** se registró una cuenta ciclista desechable nueva
+(`prueba.c3.carrito@urbanbike.test`) en vez de reutilizar `ciclista@urbanbike.com`,
+porque esa cuenta compartida ya tenía 3 viajes activos/pendientes acumulados de
+sesiones anteriores (`UB-009` pendiente_validacion, `UB-010` activo -- el mismo
+huérfano ya señalado en la sección 72 como "flagged for Washington to decide", no
+tocado --, `UB-004` pendiente_validacion) y el tope `MAX_VIAJES_ACTIVOS=4` hubiera
+bloqueado la reserva de 2 bicicletas más sin que fuera un problema real de C3.
+
+**Limpieza confirmada:** 2 viajes de prueba borrados, ambas bicicletas restauradas
+a `disponible`, 2 notificaciones `viaje_iniciado` borradas, y también la
+notificación `registro_nuevo` que generó el registro de la cuenta de prueba
+desechable (efecto colateral esperado del gancho de la Task B9 -- se había pasado
+por alto en la primera limpieza y se encontró al re-verificar 0 rastros). Usuario
+de prueba borrado. 0 rastros confirmados en `viajes`, `notificaciones`, `users` y
+`auditoria`.
+
+**Revisor independiente:** sí, `code-review` (nivel medium) sobre el diff completo
+antes de comitear -- encontró el Bug 3 y el hallazgo de código muerto de arriba.
+Ambos corregidos y reverificados contra el HTML real servido antes del commit.
+
+Checkboxes de Task C3 (Steps 4-6) marcados `[x]` en
+`docs/superpowers/plans/2026-08-17-plan-mejoras-v2-p0.md` (ambas copias) solo con
+esta evidencia en mano.
+
+## 75. Task C4 completa -- factura única real para reserva grupal, ciclo E2E de punta a punta con pago real (19-ago-2026)
+
+Commit real: `865a176` ("feat: emitir una sola factura para una reserva grupal
+cuando todas sus bicicletas estan pagadas"), rama `worktree-plan-mejoras-v2-p0`,
+**no en `main`**. Archivos: `app/routers/empleado.py` (denormaliza
+`grupo_reserva_id` en el pago), `app/routers/ciclista.py`
+(`_construir_factura_grupo()` + `GET /ciclista/comprobante-grupo/{grupo_reserva_id}`),
+`app/templates/ciclista/comprobante.html` (no estaba en el brief original --
+necesario, ver hallazgos abajo).
+
+**2 hallazgos reales encontrados leyendo el template antes de confiar en el brief**
+(no llegaron por la revisión independiente, se encontraron auditando
+`comprobante.html`/`componentes/factura.html` antes de escribir el endpoint,
+siguiendo la misma disciplina que ya pedía la propia "nota para quien implemente"
+del brief):
+1. `es_grupo` no estaba conectado a nada en el template -- el enlace "Descargar
+   PDF" (individual) seguía apareciendo siempre, apuntando a
+   `/ciclista/comprobante/{{ pago.id }}/pdf` con `pago.id` = `grupo_reserva_id`
+   (no un id de `pagos` real -- hubiera dado 404 al hacer clic). Corregido
+   envolviendo ese enlace en `{% if not es_grupo %}`.
+2. El `title="Factura de reserva grupal"` que pasa el endpoint no hacía nada --
+   los blocks `{% block title %}`/`{% block page_title %}` del template estaban
+   fijos en "Comprobante de Pago", sin leer ningún context var. Corregido
+   haciéndolos condicionales a `es_grupo`.
+
+También se agregó `soporte_email=settings.support_email` al contexto de
+`comprobante_grupo()` (el brief no lo incluía) porque `componentes/factura.html`
+lo usa en el pie de página -- sin esto, el pie de la factura de grupo hubiera
+quedado con el contacto de soporte vacío.
+
+**Desviación deliberada de simplificación:** el IVA de la factura de grupo se
+acumula desde `factura_individual.iva` (ya calculado una vez por
+`_construir_factura_pago()`) en vez de recalcularlo aparte con un segundo
+`facturas_repo.desglosar_iva()` como proponía el brief -- mismo resultado, una
+sola fuente de verdad.
+
+**Verificación E2E real, ciclo completo de punta a punta, sin atajos:**
+1. Cuenta ciclista de prueba desechable registrada y verificada (no
+   `ciclista@urbanbike.com`, ya con viajes activos acumulados de sesiones
+   anteriores -- mismo criterio que la sección 74).
+2. Reserva grupal real de 2 bicicletas (UB-010 + UB-008, evitando UB-001 que es
+   `bloqueada_exclusiva`) vía `POST /ciclista/reservar-grupo` (Task C2/C3).
+3. Ambos viajes finalizados por el ciclista (`POST /ciclista/finalizar`).
+4. Ambas devoluciones validadas por una cuenta Vigilancia real
+   (`empleado.vig@urbanbike.com`, `POST /empleado/vigilancia/devolver/{id}`) --
+   2 pagos reales creados, ambos con `grupo_reserva_id` correctamente
+   denormalizado (confirmado leyendo los registros reales en PocketBase).
+5. **Confirmado el caso "todavía no está lista" dos veces**: con 0 de 2 pagos
+   pagados, y de nuevo con 1 de 2 pagados (justo el caso explícito que pedía el
+   brief) -- ambas veces `GET /ciclista/comprobante-grupo/{id}` redirige a
+   `/ciclista/historial` con el flash correspondiente.
+6. Pagados ambos pagos con la tarjeta de pruebas real (`4242 4242 4242 4242`,
+   Luhn válido).
+7. Con los 2 pagados, `GET /ciclista/comprobante-grupo/{id}` devuelve `200` con
+   la factura real: título "Factura de reserva grupal" (confirma el fix del
+   hallazgo 2), ambas líneas presentes (`UB-010 — Tarifa por día`,
+   `UB-008 — Tarifa por día`), enlace de PDF individual correctamente ausente
+   (confirma el fix del hallazgo 1), Subtotal $55.65 + IVA $8.35 = TOTAL $64.00
+   -- verificado a mano contra la suma real de los 2 `monto_total`
+   ($35.20 + $28.80 = $64.00).
+
+**Limpieza confirmada:** 2 pagos, 2 viajes y 9 notificaciones reales borradas
+(registro_nuevo, viaje_iniciado ×2, devolucion_pendiente_validar ×2,
+devolucion_validada ×2, pago_aprobado ×2 -- los 9 disparados por los ganchos
+reales de las Tasks B2/B5/B7/B9 a lo largo del ciclo completo, no solo los que
+esta tarea toca directamente), 2 bicicletas restauradas a `disponible`, usuario
+de prueba borrado. 0 rastros confirmados en `viajes`, `pagos`, `notificaciones`,
+`users` y `auditoria`.
+
+**Revisor independiente:** sí, `code-review` (nivel medium) sobre el diff
+completo antes de comitear -- encontró 1 hallazgo real: `_construir_factura_grupo()`
+hace una consulta a ClickHouse por pago del grupo (patrón N+1, vía
+`_construir_factura_pago()`) en vez de una sola consulta batched. **Diferido
+explícitamente, no corregido**: el tope real de tamaño de grupo es
+`MAX_VIAJES_ACTIVOS=4`, así que el peor caso son 4 consultas secuenciales en una
+pantalla de bajo tráfico (se visita una vez por grupo, después de pagar todo);
+corregirlo bien requeriría tocar la lógica de reconciliación de segmentos de
+`_construir_factura_pago()` (Important #1/#2 de su propio docstring), que el plan
+pide explícitamente reutilizar sin reescribir. Queda anotado para una futura
+sesión de optimización si el tamaño de grupo real crece más allá de 4.
+
+Checkboxes de Task C4 (Steps 1-6) marcados `[x]` en
+`docs/superpowers/plans/2026-08-17-plan-mejoras-v2-p0.md` (ambas copias) solo con
+esta evidencia en mano.
+
+## 76. Task C5 completa -- PDF real de la factura de grupo, 3 rondas de revisión, 2 bugs reales corregidos (19-ago-2026)
+
+Commit real: `ec73bde` ("feat: agregar descarga PDF de la factura de reserva
+grupal"), rama `worktree-plan-mejoras-v2-p0`, **no en `main`**. Archivos:
+`app/routers/ciclista.py` (`GET /ciclista/comprobante-grupo/{grupo_reserva_id}/pdf`
++ helper compartido nuevo), `app/templates/ciclista/comprobante.html` (no estaba
+en el brief original -- necesario, ver Bug 1 abajo).
+
+**Desviación real aplicada desde el inicio** (antes de que llegara cualquier
+revisión): el brief proponía `nombre_archivo=f"factura-grupo-{grupo_reserva_id[:8]}"`
+para `generar_factura_pdf()` -- sin extensión `.pdf`, inconsistente con los otros 2
+llamadores reales de esa función (`comprobante_pago_pdf()`, `membresia_comprobante_pdf()`,
+ambos con `.pdf` y prefijo `urbanbike_`). Corregido a
+`urbanbike_factura_grupo_{grupo_reserva_id[:8]}.pdf` antes de la primera
+verificación, no como fix posterior.
+
+**2 bugs reales encontrados por la revisión independiente, ambos corregidos:**
+
+1. **Botón "Descargar PDF" desconectado del endpoint nuevo.** La Task C4 había
+   envuelto ese botón en `{% if not es_grupo %}` porque C5 todavía no existía --
+   correcto en su momento. Al completar C5, ese `if` seguía ahí sin actualizar:
+   el endpoint nuevo quedaba compilado, comiteado, y **completamente inalcanzable
+   desde la UI real** (código muerto). Corregido: el botón ahora apunta a
+   `/ciclista/comprobante-grupo/{{ pago.id }}/pdf` cuando `es_grupo` es verdadero,
+   o al PDF individual en caso contrario. Reverificado siguiendo el `href` real
+   del botón (no solo llamando al endpoint directo) hasta una descarga real de
+   218KB con magic bytes `%PDF-` reales.
+2. **Validación duplicada verbatim entre `comprobante_grupo()` (HTML, Task C4) y
+   `comprobante_grupo_pdf()` (PDF, esta tarea).** ~20 líneas idénticas (fetch de
+   viajes/pagos, ownership, "todos pagados") copiadas sin extraer -- riesgo real
+   de que una futura sesión cambie la regla de "grupo completo" en una vista y no
+   en la otra. Extraído a `_grupo_reserva_facturable(pb, grupo_reserva_id,
+   user_id) -> (pagos_grupo, viajes_por_id, flash_o_None)`, compartido por las
+   dos rutas. Reverificado con un ciclo E2E completo tras el refactor, incluyendo
+   un caso nuevo que no se había probado antes: acceso al PDF con 0 de 2 y con 1
+   de 2 pagos pagados (ambas veces redirige correctamente).
+
+**Verificación E2E real, 3 ciclos completos, cada uno con cuenta ciclista
+desechable nueva:**
+1. Ciclo 1: reserva real (UB-010+UB-008) → devolución validada por Vigilancia
+   real → 2 pagos reales con tarjeta de pruebas → `GET .../pdf` directo →
+   PDF real confirmado con `pdftotext` (poppler, ya instalado en el sistema):
+   ambas líneas de bicicleta, TOTAL correcto, `Content-Disposition` con nombre de
+   archivo `.pdf` real.
+2. Ciclo 2 (tras el fix del Bug 1): mismo ciclo completo, esta vez extrayendo el
+   `href` real del botón "Descargar PDF" del HTML servido y descargando por ESE
+   link (no por la URL construida a mano) -- confirmado que coincide con la URL
+   esperada y que la descarga real funciona.
+3. Ciclo 3 (tras el fix del Bug 2): mismo ciclo, más 2 verificaciones nuevas
+   explícitas: `GET .../pdf` con 0 de 2 pagado (antes de finalizar ningún viaje)
+   y con 1 de 2 pagado -- ambas redirigen correctamente a `/ciclista/historial`
+   con el flash de "todavía no está lista", igual que ya se había confirmado
+   para la vista HTML en la Task C4 pero nunca para el endpoint del PDF
+   específicamente.
+
+**Limpieza confirmada las 3 veces:** pagos, viajes y bicicletas de cada grupo de
+prueba borrados/restaurados; 11 notificaciones reales borradas por ciclo (mismo
+conjunto que en la sección 75: registro_nuevo, viaje_iniciado ×2,
+devolucion_pendiente_validar ×2, devolucion_validada ×2, pago_pendiente ×2,
+pago_aprobado ×2); usuario de prueba borrado cada vez. 0 rastros confirmados tras
+cada limpieza.
+
+**Nota aparte -- hallazgo de la 3ª ronda de revisión, fuera del alcance de esta
+tarea, no corregido aquí:** la 3ª pasada de `code-review` no encontró nada nuevo
+dentro del diff real de C5 (confirmado con `git diff --stat`: el diff sin
+comitear en ese momento no tocaba `reservar_grupo()` en absoluto) -- amplió el
+alcance por su cuenta y volvió a encontrar, sobre código YA comiteado de la Task
+C2, 3 hallazgos:
+1. `reservar_grupo()` notifica "viaje iniciado" por bicicleta DENTRO del loop de
+   creación, antes de que se confirme el grupo completo -- si una bicicleta
+   posterior del mismo lote falla y dispara el rollback (`_revertir_reserva_grupal()`),
+   las notificaciones ya enviadas a las bicicletas anteriores no se pueden
+   recuperar. Nuevo, no estaba documentado antes.
+2. `reservar_grupo()` duplica ~50 líneas de validación de `reservar()`
+   (bicicleta exclusiva/membresía, infracciones activas, pagos pendientes/rechazados)
+   en vez de compartir un helper. Nuevo, no estaba documentado antes.
+3. Si `codigos_descuento_repo.marcar_usado()` ya aplicó el cambio del lado de
+   PocketBase pero la excepción llega igual (ej. timeout justo después), el
+   rollback borra los viajes pero nunca desmarca el código de descuento -- queda
+   quemado para una reserva que en los hechos nunca se concretó. **Este ya era
+   conocido**: quedó anotado explícitamente en el fix round 1 de C2 (ver sección
+   72/`progress.md` línea 88) como "flagged for the final review's triage" --
+   nunca se le dio ese triage final. Esta pasada lo volvió a encontrar de forma
+   independiente.
+
+Ninguno de los 3 se corrigió en este commit -- son C2, no C5, y tocar
+`reservar_grupo()` de nuevo sin que Washington lo pida específicamente se sale
+del alcance que se confirmó para esta sesión. Quedan documentados aquí para que
+Washington decida si abrir una ronda de fix dedicada a C2.
+
+Checkboxes de Task C5 (Steps 1-4) marcados `[x]` en
+`docs/superpowers/plans/2026-08-17-plan-mejoras-v2-p0.md` (ambas copias) solo con
+esta evidencia en mano.
+
+## 77. Ronda de fix dedicada para los 3 huecos reales de reservar_grupo() (Task C2) que encontró la 3ª ronda de revisión de la Task C5 (19-ago-2026)
+
+Commit real: `940be8c` ("fix: reservar_grupo() -- diferir notificaciones hasta
+grupo confirmado, revertir codigo de descuento en rollback, compartir validacion
+con reservar()"), rama `worktree-plan-mejoras-v2-p0`, **no en `main`**. Archivos:
+`app/routers/ciclista.py`, `app/db/codigos_descuento_repo.py`.
+
+**Origen real de estos 3 hallazgos**: no salieron de un nuevo audit de la Task
+C2 -- salieron sin que se pidieran, en la 3ª pasada de `code-review` de la Task
+C5 (sección 76), que amplió su alcance por su cuenta más allá del diff real de
+C5 y volvió a leer `reservar_grupo()` (ya comiteado desde la Task C2). Washington
+pidió explícitamente abrir una ronda de fix dedicada para los 3, antes de seguir
+con C6.
+
+**Auditoría real antes de arreglar** (leyendo `_crear_viaje()`, `reservar()`,
+`_revertir_reserva_grupal()` y `reservar_grupo()` completos, no solo el
+resumen del hallazgo): confirmado que `notificaciones_repo.notificar_usuario()`
+**sí manda un correo real** (`app/email_client.py:enviar_notificacion()`), no
+solo el registro de la campana -- así que el hallazgo #1 era real y no exagerado:
+un correo real de verdad no se puede "revertir" borrando el registro de
+PocketBase después.
+
+**Fix #3 primero, es el que toca dinero real (pedido explícito de Washington,
+no dejarlo pasar de nuevo):** `codigos_descuento_repo.py` gana
+`revertir_uso(id_codigo)`, la contraparte exacta de `marcar_usado()` -- resetea
+`usado=False, fecha_usado="", viaje_id_uso=""` (los mismos valores por defecto
+que ya usa `generar()`, así que es seguro llamarla incluso si el código nunca
+llegó a marcarse usado -- no hay diferencia observable entre "nunca se marcó" y
+"se marcó y se revirtió"). `reservar_grupo()` la llama en el bloque `except`,
+justo después de `_revertir_reserva_grupal()`, cada vez que `codigo_valido` no
+es `None` -- sin intentar adivinar si `marcar_usado()` alcanzó a correr o no
+antes de la excepción, porque no hace falta saberlo.
+
+**Fix #1:** el loop de creación de viajes de `reservar_grupo()` ya NO llama a
+`notificaciones_repo.notificar_usuario()` por cada bicicleta dentro del loop.
+Las notificaciones (con su correo real) se mandan en un loop nuevo, **después**
+de `registrar_auditoria()` del éxito completo -- con el grupo entero ya
+confirmado. `_revertir_reserva_grupal()` conserva su limpieza de notificaciones
+huérfanas como red de seguridad defensiva (docstring actualizado explicando por
+qué ya no debería encontrar nada que borrar en el camino normal).
+
+**Fix #2:** ~50 líneas de validación idénticas entre `reservar()` y
+`reservar_grupo()` (bicicleta exclusiva de suscriptor, infracciones activas,
+pagos pendientes/rechazados) extraídas a `_validar_reserva_comun(user, user_id,
+bicicleta_codigos)` -- devuelve el mensaje de error real o `None`, sin tocar la
+sesión ni redirigir (eso lo sigue haciendo cada llamador). Deja fuera a
+propósito la validación de modalidad y el tope `MAX_VIAJES_ACTIVOS` -- cada
+función ya los revisaba antes de este punto, en el mismo orden relativo de
+siempre, y el mensaje del tope difiere entre las dos (una bicicleta vs. "ya
+tienes X, intentas agregar Y").
+
+**Verificación E2E real, con datos reales, 4 pruebas:**
+1. **Fix #1, prueba clave**: `reservar_grupo()` con una `bicicleta_id` inválida
+   como segunda bicicleta de un lote de 2 (la primera, UB-008, real y válida).
+   Confirmado: 0 viajes creados para el ciclista de prueba, UB-008 restaurada a
+   `disponible`, y **0 notificaciones** para ese ciclista -- antes del fix,
+   la bicicleta 1 ya habría disparado una notificación real (y un correo real)
+   antes de que la bicicleta 2 fallara.
+2. **Fix #3, prueba directa del repo contra PocketBase real**: generar un código
+   real (`codigos_descuento_repo.generar()`), marcarlo usado
+   (`marcar_usado()`), confirmar que `obtener_valido()` ya no lo encuentra
+   (correctamente quemado), llamar `revertir_uso()`, confirmar que
+   `obtener_valido()` **vuelve a encontrarlo** -- prueba real de que el código
+   queda genuinamente utilizable de nuevo, no solo que los campos cambiaron.
+3. **Camino feliz individual** (`reservar()`): una bicicleta real (UB-008),
+   reserva exitosa, 1 notificación real creada -- confirma que el helper
+   compartido no rompió el caso de una sola bicicleta.
+4. **Camino feliz grupal con código de descuento real** (`reservar_grupo()`):
+   2 bicicletas reales (UB-008 + UB-010) + un código de descuento real generado
+   para el mismo ciclista. Confirmado: 2 viajes creados con el mismo
+   `grupo_reserva_id`, el descuento (15%) aplicado solo a la PRIMERA bicicleta
+   del lote (nunca duplicado), el código marcado `usado=True` con el
+   `viaje_id_uso` correcto, y 2 notificaciones reales creadas -- confirma que
+   diferir las notificaciones no rompió el camino feliz (se siguen mandando,
+   solo que después del loop en vez de durante).
+
+**Limpieza confirmada las 2 veces que se creó una cuenta de prueba:** pagos,
+viajes y códigos de descuento de prueba borrados; bicicletas restauradas a
+`disponible` (incluida una que un ciclo de devolución real había dejado en
+`mantenimiento` pendiente de inspección -- estado real esperado del flujo, no
+un bug, restaurada a `disponible` para no dejar el fixture de prueba en un
+estado distinto al que tenía antes de esta sesión); notificaciones borradas (5
+en el segundo ciclo); usuarios de prueba borrados. 0 rastros confirmados.
+
+**Revisor independiente:** sí, `code-review` (nivel medium) sobre el diff
+completo -- **0 hallazgos**. Confirmó explícitamente que el orden de las
+validaciones extraídas es idéntico al original, que `revertir_uso()` es segura
+de llamar incondicionalmente, y que `notificar_usuario()` traga sus propias
+excepciones de punta a punta (así que mover el orden auditoría→notificación no
+puede dejar un rastro de auditoría inconsistente).
+
+## 78. Cierre del Plan de Mejoras V2 P0 -- Tasks C6-C7, revisión final de rama completa, y 3 deudas conocidas que quedan deliberadamente fuera de alcance (19-ago-2026)
+
+Continúa la sección 77. Fuente real: `.superpowers/sdd/2026-08-17-plan-mejoras-v2-p0/progress.md`
+y `final-review-fix-report.md`, dentro del worktree (no comiteados, gitignored). Con esto,
+**los 17 tasks del plan (A1, B1-B9, C1-C7) están completos** y la revisión final de la rama
+completa también, con dos rondas de fix ya aplicadas y verificadas.
+
+### Task C6 -- enlazar la factura grupal desde `pagos.html` (commit `b1970a8`)
+
+Tarea con historial accidentado: el implementador inicial (Haiku) falló 3 veces seguidas
+intentando el E2E real, cada vez con un bloqueo distinto (encoding de formularios en Python →
+manejo de sesión/CSRF → cuenta sin verificar rechazada en login), y su reporte final admitía
+"testing was deferred" mientras igual marcaba "task COMPLETE" -- el primer revisor detectó la
+contradicción y devolvió **Needs fixes (Important)**. El controlador comprobó por su cuenta
+contra el servidor real que el 3er bloqueo alegado ("el registro no persiste en PocketBase")
+era **falso** -- los 3 fallos fueron error del implementador, no del código. Un 4to
+implementador (Sonnet) completó entonces el ciclo E2E real de punta a punta: registro →
+verificación (bypass) → login → reserva grupal real (UB-008+UB-010) → finalización →
+validación de Vigilancia → pago de una bicicleta → HTML real verificado en ambos estados →
+pago de la segunda → HTML final verificado → PDF real descargado (200, `application/pdf`,
+218549 bytes) → limpieza confirmada.
+
+Incidente aparte: `task-C6-brief.md` apareció en 0 bytes (corrupción accidental de un archivo
+de scratch, no versionado) -- restaurado desde una lectura anterior de la misma conversación,
+cruzado contra el diff real del commit `b1970a8` para confirmar consistencia.
+
+**Re-revisión, veredicto "ADDRESSED WITH DOUBT":** como el código de plantilla no cambió en
+esta ronda final, no había diff nuevo que revisar -- se despachó un re-revisor a auditar la
+credibilidad del reporte de E2E del 4to implementador contra el código real, no a revisar un
+diff. Verificó 5/5 afirmaciones de forma independiente (nombres de campos de formulario,
+redirects, literales de transición de estado, lógica de guarda, HTML exacto renderizado en
+ambos estados de pago incluido el texto del tooltip) y encontró coincidencia byte a byte con
+el router y el template reales; además verificó por su cuenta la fórmula del sufijo del
+comprobante (`pago_id[-4:].upper()`) contra dos IDs de pago distintos, obteniendo los mismos
+valores que el reporte afirmaba. **La duda que dejó registrada es puramente estructural, no
+una sospecha concreta**: un revisor de texto no puede re-ejecutar peticiones HTTP, así que no
+puede descartar con 100% de certeza que el reporte sea una reconstrucción muy cuidadosa en vez
+de una ejecución real -- la misma limitación categórica de cualquier revisión basada en texto
+en todo este plan, no algo específico de C6. Se aceptó como suficiente para cerrar la tarea
+porque no se encontró ninguna inconsistencia real en 5 verificaciones cruzadas más una prueba
+de valor derivado (una barra más alta que la mayoría de los "review clean" del resto del
+plan), y porque volver a correr el ciclo completo en vivo por segunda vez solo para cerrar ese
+límite estructural costaba otro ciclo E2E entero por una ganancia marginal de certeza sobre un
+código ya confirmado correcto por dos revisores independientes.
+
+**Corroboración adicional, más allá de esa re-revisión**: la revisión final de rama completa
+(ver abajo) volvió a evaluar la evidencia de C6 al analizar el hallazgo real que sí encontró
+en `pagos.html`, y confirmó explícitamente que ese hallazgo *no contradice* la evidencia E2E
+de C6 (el reporte de C6 solo probó el caso de grupo completamente pagado) -- un tercer
+revisor independiente, con otro enfoque, también trató la narrativa E2E de C6 como
+internamente consistente con el código real. Las dos rondas de fix posteriores (más abajo)
+volvieron a ejercitar el mismo flujo de pagos con datos reales sin encontrar ninguna
+contradicción con lo que C6 había descrito.
+
+2 minores heredados textualmente del código de la propia tarea (no desviación del
+implementador), diferidos: falta `or "—"` de respaldo en el comprobante pendiente de un pago
+agrupado; `rechazado` renderiza la misma copia que `pendiente`. Ambos quedaron cerrados en la
+ronda de fix final (ver abajo).
+
+### Task C7 -- aviso de viaje grupal en `viaje-activo` (commits `b1970a8..0cc8a90`)
+
+Despachada directo a Sonnet con la receta E2E ya probada de C6 (sesión persistente, CSRF real,
+bypass de verificación, bicicletas no exclusivas conocidas). Éxito al primer intento: un viaje
+grupal real (UB-008+UB-010) mostró el aviso nuevo en `viaje-activo`; un viaje individual real
+no lo mostró. Revisor explícitamente instruido a escrutar la credibilidad de la evidencia E2E
+dado el historial de C6 -- encontró IDs reales, un hash de `grupo_reserva_id` real, códigos
+HTTP reales y HTML consistente con el diff real; **Approved, 0 hallazgos**.
+
+### Revisión final de la rama completa (Opus, base `3c9568e..0cc8a90`, 21 commits)
+
+Veredicto inicial: **"Ready to merge? With fixes."** 0 Critical, 3 Important, 5 Minor.
+
+**Important #1 (bloqueante real, ya corregido en 2 rondas):** `pagos.html:96-101` ataba el
+enlace a la factura grupal al `estado` del pago INDIVIDUAL, no a si el grupo estaba completo
+-- en la ventana de pago parcial el ciclista que ya pagó podía perder el único enlace a su
+propio comprobante si el viaje hermano nunca se validaba. Ronda 1 (commit `0049e1a`) lo
+corrigió parcialmente pero una re-revisión encontró un hueco residual: `grupos_completos` solo
+mira pagos que YA existen, y un pago solo existe cuando Vigilancia valida esa devolución
+concreta -- en el caso ordinario de devoluciones escalonadas (no simultáneas) el único pago
+existente podía marcar el grupo "completo" antes de tiempo, mostrando un enlace grupal muerto.
+Washington autorizó una ronda de fix adicional, fuera del proceso normal de "una sola ronda"
+(commit `100b088`): el enlace individual ahora es incondicional siempre que `p.estado ==
+'pagado'`, y el enlace/insignia de grupo es puramente aditivo. Re-revisión independiente
+confirmó **ADDRESSED**, verificado directo contra el archivo: la ruta que renderiza el enlace
+y la que el endpoint exige ya no pueden desacoplarse, la clase de falla queda estructuralmente
+imposible. Evidencia E2E real ejercitó específicamente la ventana de devolución escalonada que
+había roto la ronda 1 (47/47 aserciones), con limpieza confirmada.
+
+### Deuda conocida -- 3 seguimientos deliberadamente fuera de alcance de este plan
+
+El revisor de la rama completa marcó estos 3 puntos como hallazgos reales pero explícitamente
+fuera del alcance de lo que este plan prometía entregar -- no se corrigieron a propósito, y
+quedan documentados aquí para que no se pierdan (mismo problema que pasó antes con el cierre
+de B7, ver sección 73):
+
+1. **Estado de lectura compartido en notificaciones masivas.**
+   `notificaciones_repo.notificar_rol("ciclista", ...)` (usado desde B4, promociones nuevas)
+   crea una única notificación de broadcast para un rol público sin acotar -- el primer
+   ciclista que hace "marcar todas leídas" la oculta para todos los demás ciclistas también.
+   Patrón preexistente al plan, este es el primer broadcast real a un rol masivo. Decisión
+   de diseño real (¿lectura por-usuario vs. compartida?) que le corresponde definir a
+   Washington, no una corrección mecánica.
+2. **Condición de carrera al marcar una bicicleta "en uso".** `_crear_viaje()` marca una
+   bicicleta `en_uso` sin re-chequear disponibilidad justo antes del `UPDATE` -- condición de
+   carrera preexistente, no introducida por este plan, pero `reservar_grupo()` (Task C2)
+   multiplica el radio de impacto a N bicicletas en una sola solicitud en vez de 1. Nota
+   menor asociada, contingente a este punto: `_revertir_reserva_grupal()` restaura las
+   bicicletas a `disponible` de forma incondicional (correcto mientras no exista la
+   condición de carrera; solo corregible junto con el punto de fondo).
+3. **Ruta muerta `comprobante_alquiler_pdf`.** `app/routers/ciclista.py:1644`
+   (`comprobante_pago_pdf`) y `:2043` (`comprobante_alquiler_pdf`) registran la misma ruta
+   `/ciclista/comprobante/{...}/pdf`. FastAPI resuelve siempre al primer handler registrado,
+   dejando el segundo permanentemente inalcanzable. Preexistente al plan, encontrado durante
+   la 2da ronda de fix de Important #1; no afecta ningún enlace que este plan cree o toque.
+
+Ninguno de los 3 fue actuado unilateralmente -- corresponde a Washington decidir si y cuándo
+priorizarlos como trabajo aparte.
+
+**Estado del plan: RESUELTO.** Los 17 tasks completos, el único hallazgo con severidad de
+bloqueo real de la revisión final confirmado cerrado de forma estructural (no solo probado
+alrededor del caso), listo para una recomendación de fusión -- pendiente de que Washington
+decida el momento/proceso (esta sesión no fusiona ni pushea por su cuenta). Los 3 puntos de
+arriba quedan fuera de alcance, deliberadamente, no olvidados.
+
+Los 3 hallazgos de la sección 76 quedan **cerrados**, no solo documentados.
