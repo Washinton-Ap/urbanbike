@@ -547,6 +547,54 @@ def _crear_viaje(
     return nuevo_viaje
 
 
+def _validar_reserva_comun(user: dict, user_id: str, bicicleta_codigos: list[str]) -> str | None:
+    """Reglas de negocio compartidas entre reservar() (una bicicleta) y
+    reservar_grupo() (varias a la vez) -- ronda de fix dedicada tras el
+    hallazgo real de la 3a revisión independiente de la Task C5 (las dos
+    funciones traían ~50 líneas de esta validación duplicadas, con
+    riesgo real de que una regla cambiada en una no se replicara en la
+    otra). Deja fuera la validación de modalidad y el tope
+    MAX_VIAJES_ACTIVOS a propósito -- cada llamador ya los revisa antes
+    de llegar acá, en el mismo orden relativo de siempre (modalidad,
+    tope, y recién después esto). Devuelve el mensaje de error real si
+    algo bloquea la reserva (bicicleta exclusiva de suscriptor,
+    infracción activa, pago pendiente o cuenta bloqueada por rechazos
+    repetidos), o None si no hay ningún bloqueo -- no toca la sesión ni
+    redirige, eso lo hace el llamador."""
+    exclusivas_nuevas = _bicicletas_exclusivas_nuevas()
+    if any(codigo in exclusivas_nuevas for codigo in bicicleta_codigos):
+        tipo_membresia_actual = membresias_repo.tipo_membresia_real(user.get("email", ""))
+        if tipo_membresia_actual != "member":
+            for codigo in bicicleta_codigos:
+                if codigo in exclusivas_nuevas:
+                    fecha_liberacion = exclusivas_nuevas[codigo].strftime("%d/%m/%Y")
+                    return (f"{codigo} es una bicicleta nueva con acceso anticipado exclusivo para "
+                            f"suscriptores hasta el {fecha_liberacion}.")
+
+    if _infracciones_activas(user_id) > 0:
+        return "Tienes infracciones pendientes de resolución. No puedes reservar hasta que sean resueltas."
+
+    try:
+        pb_check = _pb()
+        pendientes = pb_check.list_records(
+            "pagos",
+            filter=f'ciclista_id = {filter_literal(user_id)} && (estado = "pendiente_efectivo" || estado = "verificacion_pendiente")',
+            per_page=1,
+        )
+        if pendientes.get("totalItems", 0) > 0:
+            return "Tienes pagos pendientes. Regula tu situación antes de hacer una nueva reserva."
+
+        rechazados = pb_check.list_records(
+            "pagos", filter=f'ciclista_id = {filter_literal(user_id)} && estado = "rechazado"', per_page=1,
+        )
+        if rechazados.get("totalItems", 0) > 2:
+            return "Tu cuenta ha sido bloqueada temporalmente por pagos rechazados. Contacta a soporte."
+    except Exception:
+        pass
+
+    return None
+
+
 @router.post("/reservar")
 async def reservar(
     request: Request,
@@ -574,49 +622,12 @@ async def reservar(
             f"Ya tienes el máximo de bicicletas alquiladas a la vez ({MAX_VIAJES_ACTIVOS})."}
         return RedirectResponse(f"/ciclista/viaje-activo/{viajes_activos_actuales[0]['id']}", status_code=302)
 
-    # Punto 4: acceso anticipado -- una bicicleta recién adquirida no se
-    # puede reservar todavía si el ciclista no tiene membresía activa.
-    # Bloqueo real (no solo cosmético): _catalogo_bicicletas()/
-    # detalle_bicicleta.html ya ocultan el botón, pero esto es lo único
-    # que de verdad importa contra un POST directo.
-    exclusivas_nuevas = _bicicletas_exclusivas_nuevas()
-    if bicicleta_codigo in exclusivas_nuevas:
-        tipo_membresia_actual = membresias_repo.tipo_membresia_real(user.get("email", ""))
-        if tipo_membresia_actual != "member":
-            fecha_liberacion = exclusivas_nuevas[bicicleta_codigo].strftime("%d/%m/%Y")
-            request.session["flash"] = {"type": "error", "msg":
-                f"{bicicleta_codigo} es una bicicleta nueva con acceso anticipado exclusivo para "
-                f"suscriptores hasta el {fecha_liberacion}."}
-            return RedirectResponse("/ciclista/alquilar", status_code=302)
-
-    # Verificar infracciones activas: no se permite reservar mientras haya alguna sin resolver
-    if _infracciones_activas(user_id) > 0:
-        request.session["flash"] = {"type": "error", "msg":
-            "Tienes infracciones pendientes de resolución. No puedes reservar hasta que sean resueltas."}
+    # Punto 4/infracciones/garantía de pago -- reglas compartidas con
+    # reservar_grupo(), ver _validar_reserva_comun().
+    error_comun = _validar_reserva_comun(user, user_id, [bicicleta_codigo])
+    if error_comun:
+        request.session["flash"] = {"type": "error", "msg": error_comun}
         return RedirectResponse("/ciclista/alquilar", status_code=302)
-
-    # Garantía de pago: bloquear nuevas reservas si tiene pagos pendientes o rechazos repetidos
-    try:
-        pb_check = _pb()
-        pendientes = pb_check.list_records(
-            "pagos",
-            filter=f'ciclista_id = {filter_literal(user_id)} && (estado = "pendiente_efectivo" || estado = "verificacion_pendiente")',
-            per_page=1,
-        )
-        if pendientes.get("totalItems", 0) > 0:
-            request.session["flash"] = {"type": "error", "msg":
-                "Tienes pagos pendientes. Regula tu situación antes de hacer una nueva reserva."}
-            return RedirectResponse("/ciclista/alquilar", status_code=302)
-
-        rechazados = pb_check.list_records(
-            "pagos", filter=f'ciclista_id = {filter_literal(user_id)} && estado = "rechazado"', per_page=1,
-        )
-        if rechazados.get("totalItems", 0) > 2:
-            request.session["flash"] = {"type": "error", "msg":
-                "Tu cuenta ha sido bloqueada temporalmente por pagos rechazados. Contacta a soporte."}
-            return RedirectResponse("/ciclista/alquilar", status_code=302)
-    except Exception:
-        pass
 
     # Codigo de descuento personal (punto 13): se valida ANTES de crear el
     # viaje -- un codigo invalido/ajeno/usado corta aca, sin dejar un viaje
@@ -680,7 +691,14 @@ def _revertir_reserva_grupal(pb, grupo_reserva_id: str, user_id: str) -> None:
     puntual en su propia lista, pero la fila ya quedo escrita con este
     grupo_reserva_id, así que SI aparece en esta busqueda. Best-effort en
     cada paso (no se corta en el primer error) para revertir lo maximo
-    posible aunque algo de esto tambien falle."""
+    posible aunque algo de esto tambien falle.
+
+    La limpieza de notificaciones de abajo es defensiva por las dudas --
+    desde la ronda de fix dedicada tras el hallazgo real de la 3a
+    revision de la Task C5, reservar_grupo() ya NO manda la notificacion
+    (ni el correo real que dispara notificar_usuario()) hasta que el
+    grupo entero esta confirmado, asi que en el camino normal esta
+    funcion nunca deberia encontrar ninguna que borrar."""
     try:
         creados = pb.list_records(
             "viajes", filter=f'grupo_reserva_id = {filter_literal(grupo_reserva_id)}', per_page=50,
@@ -761,42 +779,12 @@ async def reservar_grupo(
             f"(ya tienes {len(viajes_activos_actuales)}, intentas agregar {n})."}
         return RedirectResponse("/ciclista/alquilar", status_code=302)
 
-    exclusivas_nuevas = _bicicletas_exclusivas_nuevas()
-    tipo_membresia_actual = membresias_repo.tipo_membresia_real(user.get("email", ""))
-    for codigo in bicicleta_codigos:
-        if codigo in exclusivas_nuevas and tipo_membresia_actual != "member":
-            fecha_liberacion = exclusivas_nuevas[codigo].strftime("%d/%m/%Y")
-            request.session["flash"] = {"type": "error", "msg":
-                f"{codigo} es una bicicleta nueva con acceso anticipado exclusivo para "
-                f"suscriptores hasta el {fecha_liberacion}."}
-            return RedirectResponse("/ciclista/alquilar", status_code=302)
-
-    if _infracciones_activas(user_id) > 0:
-        request.session["flash"] = {"type": "error", "msg":
-            "Tienes infracciones pendientes de resolución. No puedes reservar hasta que sean resueltas."}
+    # Punto 4/infracciones/garantía de pago -- reglas compartidas con
+    # reservar(), ver _validar_reserva_comun().
+    error_comun = _validar_reserva_comun(user, user_id, bicicleta_codigos)
+    if error_comun:
+        request.session["flash"] = {"type": "error", "msg": error_comun}
         return RedirectResponse("/ciclista/alquilar", status_code=302)
-
-    try:
-        pb_check = _pb()
-        pendientes = pb_check.list_records(
-            "pagos",
-            filter=f'ciclista_id = {filter_literal(user_id)} && (estado = "pendiente_efectivo" || estado = "verificacion_pendiente")',
-            per_page=1,
-        )
-        if pendientes.get("totalItems", 0) > 0:
-            request.session["flash"] = {"type": "error", "msg":
-                "Tienes pagos pendientes. Regula tu situación antes de hacer una nueva reserva."}
-            return RedirectResponse("/ciclista/alquilar", status_code=302)
-
-        rechazados = pb_check.list_records(
-            "pagos", filter=f'ciclista_id = {filter_literal(user_id)} && estado = "rechazado"', per_page=1,
-        )
-        if rechazados.get("totalItems", 0) > 2:
-            request.session["flash"] = {"type": "error", "msg":
-                "Tu cuenta ha sido bloqueada temporalmente por pagos rechazados. Contacta a soporte."}
-            return RedirectResponse("/ciclista/alquilar", status_code=302)
-    except Exception:
-        pass
 
     codigo_valido = None
     if codigo_descuento.strip():
@@ -820,13 +808,6 @@ async def reservar_grupo(
                 grupo_reserva_id=grupo_reserva_id,
             )
             viajes_creados.append(viaje)
-            notificaciones_repo.notificar_usuario(
-                pb, user_id, tipo="viaje_iniciado",
-                titulo="Viaje iniciado",
-                mensaje=f"Iniciaste un viaje con la bicicleta {bicicleta_codigos[i]} "
-                        f"(reserva grupal de {n} bicicletas).",
-                enlace=f"/ciclista/viaje-activo/{viaje['id']}",
-            )
 
         if codigo_valido:
             codigos_descuento_repo.marcar_usado(codigo_valido["id"], viajes_creados[0]["id"])
@@ -838,6 +819,26 @@ async def reservar_grupo(
             f"(grupo {grupo_reserva_id})", request,
             usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
         )
+
+        # Notificaciones (con correo real, ver notificaciones_repo.notificar_usuario())
+        # recién ACA, con el grupo entero ya confirmado -- ronda de fix
+        # dedicada tras el hallazgo real de la 3a revisión de la Task C5:
+        # antes se mandaban una por una DENTRO del bucle de creación, así
+        # que un fallo a mitad del lote (ej. la bicicleta 3 de 3 con un
+        # id invalido) ya habia mandado el correo real de las bicicletas
+        # 1 y 2 -- el rollback de _revertir_reserva_grupal() borra el
+        # registro de la campana, pero un correo real ya enviado no se
+        # puede recuperar. Con esto, si algo falla antes de esta linea,
+        # CERO correos/notificaciones salen para un intento que termino
+        # revertido por completo.
+        for viaje in viajes_creados:
+            notificaciones_repo.notificar_usuario(
+                pb, user_id, tipo="viaje_iniciado",
+                titulo="Viaje iniciado",
+                mensaje=f"Iniciaste un viaje con la bicicleta {viaje.get('bicicleta_codigo', '—')} "
+                        f"(reserva grupal de {n} bicicletas).",
+                enlace=f"/ciclista/viaje-activo/{viaje['id']}",
+            )
 
         request.session["flash"] = {"type": "success", "msg":
             f"Reserva grupal de {n} bicicletas iniciada. Al devolver y pagar todas, recibirás una sola factura."}
@@ -855,6 +856,18 @@ async def reservar_grupo(
         if pb is not None:
             try:
                 _revertir_reserva_grupal(pb, grupo_reserva_id, user_id)
+            except Exception:
+                pass
+        if codigo_valido:
+            # Ronda de fix dedicada tras el hallazgo real de la 3a revisión
+            # de la Task C5 (ya senalado sin resolver en el fix round 1 de
+            # C2): si marcar_usado() ya se aplico del lado de PocketBase
+            # antes de que algo mas fallara, el codigo quedaba quemado para
+            # una reserva que en los hechos nunca se concreto. Seguro de
+            # llamar incluso si nunca llego a marcarse usado (ver docstring
+            # de revertir_uso()).
+            try:
+                codigos_descuento_repo.revertir_uso(codigo_valido["id"])
             except Exception:
                 pass
         registrar_auditoria(
