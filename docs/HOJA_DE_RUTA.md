@@ -5973,7 +5973,8 @@ esta tarea, anotado para una tarea futura).
 completas, cada una con su propio revisor y `review clean` según
 `progress.md`:**
 - B1 `679b94f` -- 8 tipos nuevos en `notificaciones.tipo`
-  (`etl/17_ampliar_tipos_notificacion_ronda2.py`, idempotente).
+  (`etl/19_ampliar_tipos_notificacion_ronda2.py`, idempotente; renombrado
+  desde `etl/17_...` por colisión de numeración con `etl/17_eliminar_tarifas_pocketbase.py`).
 - B2 `2481ad3` -- ciclista notificado al iniciar viaje.
 - B3 `0907853` -- ciclista notificado si se rechaza su transferencia.
 - B4 `39c78ac` -- ciclistas notificados de promoción nueva.

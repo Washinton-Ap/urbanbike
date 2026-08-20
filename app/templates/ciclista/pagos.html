@@ -94,10 +94,16 @@
           </td>
           <td class="text-sm" style="font-family:monospace;">
             {% if p.grupo_reserva_id %}
-              {% if p.estado == "pagado" %}
-              <a href="/ciclista/comprobante-grupo/{{ p.grupo_reserva_id }}/pdf" style="color:var(--primary);font-weight:600;" title="Descargar factura de la reserva grupal (varias bicicletas)">{{ p.comprobante_numero }} <span class="badge badge-blue" style="font-size:0.7rem;">Grupal</span></a>
+              {% if p.estado == 'pagado' and p.comprobante_numero %}
+                {% if p.grupo_reserva_id in grupos_completos %}
+                <a href="/ciclista/comprobante-grupo/{{ p.grupo_reserva_id }}/pdf" style="color:var(--primary);font-weight:600;" title="Descargar factura de la reserva grupal (varias bicicletas)">{{ p.comprobante_numero }} <span class="badge badge-blue" style="font-size:0.7rem;">Grupal</span></a>
+                {% else %}
+                <a href="/ciclista/comprobante/{{ p.id }}/pdf" style="color:var(--primary);font-weight:600;" title="Descargar comprobante en PDF">{{ p.comprobante_numero }}</a>
+                <span class="badge badge-yellow" style="font-size:0.7rem;" title="La factura grupal unica se emite cuando todas las bicicletas del grupo esten pagadas">Grupal, pendiente</span>
+                {% endif %}
               {% else %}
-              <span style="color:var(--text-muted);" title="La factura grupal se emite cuando todas las bicicletas del grupo estén pagadas">{{ p.comprobante_numero }} <span class="badge badge-yellow" style="font-size:0.7rem;">Grupal, pendiente</span></span>
+                <span class="text-muted">{{ p.comprobante_numero or "—" }}</span>
+                <span class="badge badge-yellow" style="font-size:0.7rem;">Grupal, pendiente</span>
               {% endif %}
             {% else %}
             {% if p.estado == 'pagado' and p.comprobante_numero %}

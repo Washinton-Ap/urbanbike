@@ -171,12 +171,15 @@ if (selectFin) {
 // devoluciones.html del lado de Vigilancia (ver
 // /static/js/costo-en-vivo.js, costoDetallado()): el subtotal es la
 // suma de los segmentos de modalidad ya cerrados (SUBTOTAL_CERRADOS,
-// fijo) + el segmento abierto actual -- para 'hora' este último sigue
-// el reloj REAL (ya NO se congela al reportar la devolución, ver
-// Tarea 7/9), para 'dia'/'semana' es tarifa plana. El recargo por
-// demora solo aparece pasadas las 5h de gracia desde el punto de
-// referencia según la modalidad del segmento abierto -- mismo cálculo
-// exacto que usa empleado.py:vig_devolver() para el cobro real.
+// fijo) + el segmento abierto actual -- para 'hora' este último se
+// CONGELA en VIAJE.fecha_fin (el momento en que el ciclista reportó la
+// devolución) mientras se espera la validación de Vigilancia; solo el
+// recargo por demora (pasadas las 5h de gracia) sigue corriendo contra
+// el reloj real. Restaurado por la Tarea A1 de este mismo plan, revirtiendo
+// lo que la Tarea 7/9 de "modalidad-tarifa-real" había cambiado sin
+// reconfirmar con Washington. Para 'dia'/'semana' el subtotal es tarifa
+// plana. Mismo cálculo exacto que usa empleado.py:vig_devolver() para el
+// cobro real.
 const PRECIO_MODALIDAD    = {{ precio_hora }};
 const PRECIO_HORA_RECARGO = {{ precio_hora_recargo }};
 const SUBTOTAL_CERRADOS   = {{ subtotal_segmentos_cerrados }};

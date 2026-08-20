@@ -1574,7 +1574,7 @@ async def comprobante(request: Request, pago_id: str):
     ))
 
 
-def _grupo_reserva_facturable(pb, grupo_reserva_id: str, user_id: str) -> tuple[list[dict], dict, dict] | None:
+def _grupo_reserva_facturable(pb, grupo_reserva_id: str, user_id: str) -> tuple[list[dict] | None, dict | None, dict | None]:
     """Trae y valida un grupo de reserva para facturación (Tasks C4/C5):
     devuelve (pagos_grupo, viajes_por_id, None) si el grupo existe, le
     pertenece al usuario, y TODOS sus pagos ya estan 'pagado'; en
@@ -1952,6 +1952,11 @@ async def historial_pagos(
     except Exception:
         pb_ok = False
 
+    grupos_completos = {
+        gid for gid in {p.get("grupo_reserva_id") for p in pagos if p.get("grupo_reserva_id")}
+        if all(p.get("estado") == "pagado" for p in pagos if p.get("grupo_reserva_id") == gid)
+    }
+
     filtrados = _filtrar_pagos_ciclista(pagos, estado, metodo, desde, hasta)
     total = len(filtrados)
     total_paginas = max(1, -(-total // _PAGOS_POR_PAGINA))
@@ -1964,6 +1969,7 @@ async def historial_pagos(
         pagos=pagina_items, total=total, pagina=pagina, total_paginas=total_paginas,
         estado=estado, metodo=metodo, desde=desde, hasta=hasta,
         estados_pago=_ESTADOS_PAGO_LABEL, metodos_pago=_METODOS_PAGO_LABEL,
+        grupos_completos=grupos_completos,
     ))
 
 
