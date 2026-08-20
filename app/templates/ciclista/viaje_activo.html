@@ -17,6 +17,14 @@
 </div>
 {% endif %}
 
+{% if viaje.grupo_reserva_id %}
+<div class="flash info" style="margin-bottom:16px;">
+  Esta bicicleta es parte de una reserva grupal. Cuando devuelvas y pagues todas las bicicletas del grupo, recibirás
+  <strong>una sola factura</strong> con el detalle de todas, disponible en
+  <a href="/ciclista/pagos">Historial de Pagos</a>.
+</div>
+{% endif %}
+
 <div class="card" style="margin-bottom:20px;">
   <div class="card-header" style="flex-wrap:wrap;gap:12px;">
     <span class="card-title">Detalles del viaje</span>
