@@ -5,9 +5,11 @@
 
 {% block content %}
 
-<div class="flash info" style="max-width:560px;margin:0 auto 20px;font-weight:700;font-size:0.95rem;padding:14px 16px;">
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-  MODO DEMOSTRACIÓN — Ningún cargo real se procesa
+<div style="max-width:560px;margin:0 auto 12px;display:flex;justify-content:flex-end;">
+  <span title="Simulación académica: este sistema no tiene una pasarela de pago real conectada (Stripe, PayPal, etc.). Ningún cargo real se procesa." style="display:inline-flex;align-items:center;gap:5px;color:var(--text-muted);font-size:0.75rem;cursor:help;">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+    Simulado
+  </span>
 </div>
 
 <div style="max-width:560px;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;gap:8px;">
