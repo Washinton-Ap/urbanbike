@@ -373,14 +373,23 @@ def _infracciones_activas(user_id: str) -> int:
         return 0
 
 
-_UMBRAL_RECURRENTE = 5  # viajes completados para el 20% en vez de 10%, ver finalizar()
+_UMBRAL_RECURRENTE = 5  # viajes completados en los ultimos 30 dias para el 20% en vez de 10%, ver finalizar()
+_VENTANA_CLIENTE_FRECUENTE_DIAS = 30  # punto 0.2, redefinicion del 20-ago-2026 -- antes era "todo el historial"
 
 
-def _viajes_completados(user_id: str) -> int:
+def _viajes_completados_ultimos_30_dias(user_id: str) -> int:
+    """Cuenta viajes 'completado' cuyo fecha_fin cae dentro de los
+    ultimos _VENTANA_CLIENTE_FRECUENTE_DIAS dias. Redefinicion del punto
+    0.2 (20-ago-2026): antes contaba TODO el historial sin ventana de
+    tiempo -- ver docs/HOJA_DE_RUTA.md, decision explicita de Washington
+    tras encontrar que este mecanismo ya cubria (con otro criterio) lo
+    que 0.2 pedia como "cliente frecuente"."""
     try:
+        hace_30_dias = (datetime.now(timezone.utc) - timedelta(days=_VENTANA_CLIENTE_FRECUENTE_DIAS)).strftime("%Y-%m-%dT%H:%M:%SZ")
         res = _pb().list_records(
             "viajes",
-            filter=f'ciclista_id = {filter_literal(user_id)} && estado = "completado"',
+            filter=f'ciclista_id = {filter_literal(user_id)} && estado = "completado" && '
+                    f'fecha_fin >= {filter_literal(hace_30_dias)}',
             per_page=1,
         )
         return res.get("totalItems", 0)
@@ -1073,16 +1082,18 @@ async def finalizar(
             enlace="/empleado/vigilancia/devoluciones",
         )
 
-        # Código de descuento por buena conducta (punto 13): se genera acá,
-        # al reportar la devolución, si el ciclista no tiene infracciones
+        # Código de descuento por buena conducta + cliente frecuente
+        # (puntos 13 y 0.2, unificados el 20-ago-2026): se genera acá, al
+        # reportar la devolución, si el ciclista no tiene infracciones
         # activas EN ESTE MOMENTO (no depende del resultado de la
         # inspección de Vigilancia de ESTE viaje, que todavía no pasó --
         # es un premio a su historial limpio hasta ahora, no a este viaje
-        # en particular). 20% si ya completó _UMBRAL_RECURRENTE viajes o
-        # más, si no 10%.
+        # en particular). 20% si completó _UMBRAL_RECURRENTE viajes o más
+        # en los ULTIMOS 30 DIAS (antes era todo el historial, sin
+        # ventana -- ver docs/HOJA_DE_RUTA.md), si no 10%.
         mensaje_extra = ""
         if _infracciones_activas(user.get("id", "")) == 0:
-            porcentaje = 20 if _viajes_completados(user.get("id", "")) >= _UMBRAL_RECURRENTE else 10
+            porcentaje = 20 if _viajes_completados_ultimos_30_dias(user.get("id", "")) >= _UMBRAL_RECURRENTE else 10
             try:
                 codigo_nuevo = codigos_descuento_repo.generar(user.get("id", ""), porcentaje, viaje_id)
                 mensaje_extra = f" Ganaste un código de descuento del {porcentaje}%: {codigo_nuevo['codigo']}."
