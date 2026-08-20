@@ -849,8 +849,22 @@ async def reservar_grupo(
                 enlace=f"/ciclista/viaje-activo/{viaje['id']}",
             )
 
+        # Descuento de volumen (punto 0.2, 20-ago-2026): un codigo nuevo,
+        # de un solo uso, para una reserva FUTURA -- igual que el codigo
+        # de buena conducta, no se autoaplica a esta misma reserva (ya
+        # esta confirmada y notificada arriba). No exige 0 infracciones
+        # activas (es un premio al volumen de esta reserva, no a la
+        # conducta general -- distinto del codigo de finalizar()).
+        mensaje_volumen = ""
+        if n >= 3:
+            try:
+                codigo_volumen = codigos_descuento_repo.generar(user_id, 15, viajes_creados[0]["id"])
+                mensaje_volumen = f" Por reservar {n} bicicletas a la vez, ganaste un código de descuento del 15%: {codigo_volumen['codigo']}."
+            except Exception:
+                pass
+
         request.session["flash"] = {"type": "success", "msg":
-            f"Reserva grupal de {n} bicicletas iniciada. Al devolver y pagar todas, recibirás una sola factura."}
+            f"Reserva grupal de {n} bicicletas iniciada. Al devolver y pagar todas, recibirás una sola factura." + mensaje_volumen}
         return RedirectResponse(f"/ciclista/viaje-activo/{viajes_creados[0]['id']}", status_code=302)
 
     except Exception as e:
