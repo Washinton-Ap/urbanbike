@@ -1561,10 +1561,14 @@ async def comprobante(request: Request, pago_id: str):
     ))
 
 
-@router.get("/comprobante-grupo/{grupo_reserva_id}", response_class=HTMLResponse)
-async def comprobante_grupo(request: Request, grupo_reserva_id: str):
-    user = getattr(request.state, "user", {})
-    pb = _pb()
+def _grupo_reserva_facturable(pb, grupo_reserva_id: str, user_id: str) -> tuple[list[dict], dict, dict] | None:
+    """Trae y valida un grupo de reserva para facturación (Tasks C4/C5):
+    devuelve (pagos_grupo, viajes_por_id, None) si el grupo existe, le
+    pertenece al usuario, y TODOS sus pagos ya estan 'pagado'; en
+    cualquier otro caso devuelve (None, None, flash) con el flash listo
+    para sesión -- compartido entre comprobante_grupo() (HTML) y
+    comprobante_grupo_pdf() para que las dos vistas nunca puedan divergir
+    en qué cuenta como un grupo válido/completo."""
     try:
         viajes_grupo = pb.list_records(
             "viajes", filter=f'grupo_reserva_id = {filter_literal(grupo_reserva_id)}', per_page=50,
@@ -1572,9 +1576,8 @@ async def comprobante_grupo(request: Request, grupo_reserva_id: str):
     except Exception:
         viajes_grupo = []
 
-    if not viajes_grupo or any(v.get("ciclista_id") != user.get("id", "") for v in viajes_grupo):
-        request.session["flash"] = {"type": "error", "msg": "Reserva grupal no encontrada."}
-        return RedirectResponse("/ciclista/historial", status_code=302)
+    if not viajes_grupo or any(v.get("ciclista_id") != user_id for v in viajes_grupo):
+        return None, None, {"type": "error", "msg": "Reserva grupal no encontrada."}
 
     viajes_por_id = {v["id"]: v for v in viajes_grupo}
     try:
@@ -1585,9 +1588,19 @@ async def comprobante_grupo(request: Request, grupo_reserva_id: str):
         pagos_grupo = []
 
     if len(pagos_grupo) < len(viajes_grupo) or any(p.get("estado") != "pagado" for p in pagos_grupo):
-        request.session["flash"] = {"type": "info", "msg":
+        return None, None, {"type": "info", "msg":
             "La factura de esta reserva grupal todavía no está lista: faltan bicicletas del grupo "
             "por devolver o pagar."}
+
+    return pagos_grupo, viajes_por_id, None
+
+
+@router.get("/comprobante-grupo/{grupo_reserva_id}", response_class=HTMLResponse)
+async def comprobante_grupo(request: Request, grupo_reserva_id: str):
+    user = getattr(request.state, "user", {})
+    pagos_grupo, viajes_por_id, flash = _grupo_reserva_facturable(_pb(), grupo_reserva_id, user.get("id", ""))
+    if flash:
+        request.session["flash"] = flash
         return RedirectResponse("/ciclista/historial", status_code=302)
 
     datos = _construir_factura_grupo(pagos_grupo, viajes_por_id, user)
@@ -1595,6 +1608,24 @@ async def comprobante_grupo(request: Request, grupo_reserva_id: str):
         title="Factura de reserva grupal", pago={"id": grupo_reserva_id}, factura=datos, es_grupo=True,
         soporte_email=settings.support_email,
     ))
+
+
+@router.get("/comprobante-grupo/{grupo_reserva_id}/pdf")
+async def comprobante_grupo_pdf(request: Request, grupo_reserva_id: str):
+    """PDF con marca UrbanBike de la factura de una reserva grupal --
+    mismo contenido que comprobante_grupo() (HTML), mismo generador que
+    comprobante_pago_pdf()/membresia_comprobante_pdf()
+    (app.reportes.factura.generar_factura_pdf, ver punto 11)."""
+    user = getattr(request.state, "user", {})
+    pagos_grupo, viajes_por_id, flash = _grupo_reserva_facturable(_pb(), grupo_reserva_id, user.get("id", ""))
+    if flash:
+        request.session["flash"] = flash
+        return RedirectResponse("/ciclista/historial", status_code=302)
+
+    datos = _construir_factura_grupo(pagos_grupo, viajes_por_id, user)
+    return generar_factura_pdf(
+        datos, nombre_archivo=f"urbanbike_factura_grupo_{grupo_reserva_id[:8]}.pdf",
+    )
 
 
 @router.get("/comprobante/{pago_id}/pdf")
