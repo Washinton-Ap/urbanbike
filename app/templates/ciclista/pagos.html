@@ -93,10 +93,18 @@
             {% else %}<span class="badge badge-gray">Cancelado</span>{% endif %}
           </td>
           <td class="text-sm" style="font-family:monospace;">
+            {% if p.grupo_reserva_id %}
+              {% if p.estado == "pagado" %}
+              <a href="/ciclista/comprobante-grupo/{{ p.grupo_reserva_id }}/pdf" style="color:var(--primary);font-weight:600;" title="Descargar factura de la reserva grupal (varias bicicletas)">{{ p.comprobante_numero }} <span class="badge badge-blue" style="font-size:0.7rem;">Grupal</span></a>
+              {% else %}
+              <span style="color:var(--text-muted);" title="La factura grupal se emite cuando todas las bicicletas del grupo estén pagadas">{{ p.comprobante_numero }} <span class="badge badge-yellow" style="font-size:0.7rem;">Grupal, pendiente</span></span>
+              {% endif %}
+            {% else %}
             {% if p.estado == 'pagado' and p.comprobante_numero %}
             <a href="/ciclista/comprobante/{{ p.id }}/pdf" style="color:var(--primary);font-weight:600;" title="Descargar comprobante en PDF">{{ p.comprobante_numero }}</a>
             {% else %}
             <span class="text-muted">{{ p.comprobante_numero or "—" }}</span>
+            {% endif %}
             {% endif %}
           </td>
           <td class="text-sm" style="max-width:260px;">
