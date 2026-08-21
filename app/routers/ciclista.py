@@ -537,9 +537,10 @@ async def alquilar(request: Request):
 
 
 def _crear_viaje(
-    pb, user: dict, user_id: str, bicicleta_id: str, bicicleta_codigo: str,
+    pb, user: dict, user_id: str, bicicleta_id: str,
     estacion_inicio_id: str, estacion_inicio_nombre: str, modalidad: str,
-    lat: float, lng: float, codigo_valido: dict | None, grupo_reserva_id: str = "",
+    lat: float, lng: float, codigo_valido: dict | None,
+    exclusivas_nuevas: dict, tipo_membresia_actual: str, grupo_reserva_id: str = "",
 ) -> dict:
     """Crea UN viaje real + marca la bicicleta en_uso -- la auditoria la
     registra cada LLAMADOR (reservar()/reservar_grupo()), no esta funcion.
@@ -555,18 +556,44 @@ def _crear_viaje(
     concurrencia real. Ahora relee el estado real justo antes de escribir,
     dentro del lock de modulo (ver _lock_disponibilidad_bicicleta), asi
     dos solicitudes casi simultaneas no pueden pasar ambas la
-    verificacion antes de que cualquiera marque la bici en_uso."""
+    verificacion antes de que cualquiera marque la bici en_uso.
+
+    NO recibe `bicicleta_codigo` como parametro -- a proposito. Hallazgo
+    real de Washington (21-ago-2026, mismo worktree): reservar_grupo()
+    recibe `bicicleta_ids` y `bicicleta_codigos` como 2 arrays paralelos
+    INDEPENDIENTES, ambos enviados por el cliente. El chequeo de
+    exclusividad (punto 4) validaba contra `bicicleta_codigos`, pero la
+    escritura real (esta funcion) siempre uso `bicicleta_ids` -- nada
+    obligaba a que coincidieran. Un POST armado a mano con
+    bicicleta_ids=[id real de una bici exclusiva] pero
+    bicicleta_codigos=[codigo de OTRA bici no exclusiva] pasaba el
+    chequeo y reservaba la bici exclusiva real igual (reproducido real:
+    UB-001, exclusiva, quedo en_uso para una cuenta casual). El codigo
+    del cliente ahora se ignora por completo: `codigo_real` sale del
+    registro real de PocketBase (la misma lectura que ya hacia falta
+    para el chequeo de disponibilidad), y ES la fuente para el chequeo
+    de exclusividad, para el campo `bicicleta_codigo` guardado en el
+    viaje, y para todo mensaje/auditoria/notificacion que use el
+    llamador (via el `nuevo_viaje` devuelto) -- ya no hay dos fuentes
+    que puedan desincronizarse."""
     with _lock_disponibilidad_bicicleta:
         bici_actual = pb.get_record("bicicletas", bicicleta_id)
+        codigo_real = bici_actual.get("codigo", "")
         if bici_actual.get("estado") != "disponible":
             raise ValueError(
-                f"{bicicleta_codigo} ya no está disponible -- alguien más la reservó primero."
+                f"{codigo_real} ya no está disponible -- alguien más la reservó primero."
+            )
+        if codigo_real in exclusivas_nuevas and tipo_membresia_actual != "member":
+            fecha_liberacion = exclusivas_nuevas[codigo_real].strftime("%d/%m/%Y")
+            raise ValueError(
+                f"{codigo_real} es una bicicleta nueva con acceso anticipado exclusivo para "
+                f"suscriptores hasta el {fecha_liberacion}."
             )
         nuevo_viaje = pb.create_record("viajes", {
             "ciclista_id":            user_id,
             "ciclista_nombre":        user.get("name") or user.get("email", ""),
             "bicicleta_id":           bicicleta_id,
-            "bicicleta_codigo":       bicicleta_codigo,
+            "bicicleta_codigo":       codigo_real,
             "estacion_inicio_id":     estacion_inicio_id,
             "estacion_inicio_nombre": estacion_inicio_nombre,
             "latitud_inicio":         lat,
@@ -585,7 +612,7 @@ def _crear_viaje(
         return nuevo_viaje
 
 
-def _validar_reserva_comun(user: dict, user_id: str, bicicleta_codigos: list[str]) -> str | None:
+def _validar_reserva_comun(user: dict, user_id: str) -> str | None:
     """Reglas de negocio compartidas entre reservar() (una bicicleta) y
     reservar_grupo() (varias a la vez) -- ronda de fix dedicada tras el
     hallazgo real de la 3a revisión independiente de la Task C5 (las dos
@@ -595,20 +622,17 @@ def _validar_reserva_comun(user: dict, user_id: str, bicicleta_codigos: list[str
     MAX_VIAJES_ACTIVOS a propósito -- cada llamador ya los revisa antes
     de llegar acá, en el mismo orden relativo de siempre (modalidad,
     tope, y recién después esto). Devuelve el mensaje de error real si
-    algo bloquea la reserva (bicicleta exclusiva de suscriptor,
-    infracción activa, pago pendiente o cuenta bloqueada por rechazos
-    repetidos), o None si no hay ningún bloqueo -- no toca la sesión ni
-    redirige, eso lo hace el llamador."""
-    exclusivas_nuevas = _bicicletas_exclusivas_nuevas()
-    if any(codigo in exclusivas_nuevas for codigo in bicicleta_codigos):
-        tipo_membresia_actual = membresias_repo.tipo_membresia_real(user.get("email", ""))
-        if tipo_membresia_actual != "member":
-            for codigo in bicicleta_codigos:
-                if codigo in exclusivas_nuevas:
-                    fecha_liberacion = exclusivas_nuevas[codigo].strftime("%d/%m/%Y")
-                    return (f"{codigo} es una bicicleta nueva con acceso anticipado exclusivo para "
-                            f"suscriptores hasta el {fecha_liberacion}.")
+    algo bloquea la reserva (infracción activa, pago pendiente o cuenta
+    bloqueada por rechazos repetidos), o None si no hay ningún bloqueo
+    -- no toca la sesión ni redirige, eso lo hace el llamador.
 
+    Ya NO valida exclusividad de bicicleta nueva (punto 4) -- ese chequeo
+    se movio a _crear_viaje() (21-ago-2026, hallazgo real de Washington:
+    esta funcion recibia `bicicleta_codigos`, un array enviado por el
+    cliente e independiente de `bicicleta_ids` -- el que de verdad se
+    usaba para escribir --, permitiendo bypasear la exclusividad con un
+    codigo mentiroso. Ver el docstring de _crear_viaje() para el detalle
+    completo y la reproduccion real)."""
     if _infracciones_activas(user_id) > 0:
         return "Tienes infracciones pendientes de resolución. No puedes reservar hasta que sean resueltas."
 
@@ -637,7 +661,6 @@ def _validar_reserva_comun(user: dict, user_id: str, bicicleta_codigos: list[str
 async def reservar(
     request: Request,
     bicicleta_id:          str = Form(...),
-    bicicleta_codigo:      str = Form(...),
     estacion_inicio_id:    str = Form(...),
     estacion_inicio_nombre: str = Form(...),
     modalidad:              str = Form("hora"),
@@ -662,7 +685,7 @@ async def reservar(
 
     # Punto 4/infracciones/garantía de pago -- reglas compartidas con
     # reservar_grupo(), ver _validar_reserva_comun().
-    error_comun = _validar_reserva_comun(user, user_id, [bicicleta_codigo])
+    error_comun = _validar_reserva_comun(user, user_id)
     if error_comun:
         request.session["flash"] = {"type": "error", "msg": error_comun}
         return RedirectResponse("/ciclista/alquilar", status_code=302)
@@ -683,25 +706,32 @@ async def reservar(
         pb = _pb()
         lat = float(latitud)
         lng = float(longitud)
+        # Exclusividad (punto 4): resueltos UNA vez acá, no por bicicleta --
+        # ver el docstring de _crear_viaje() para por que ya no se confia en
+        # ningun codigo/estado enviado por el cliente para esta decision.
+        exclusivas_nuevas = _bicicletas_exclusivas_nuevas()
+        tipo_membresia_actual = membresias_repo.tipo_membresia_real(user.get("email", ""))
 
         nuevo_viaje = _crear_viaje(
-            pb, user, user_id, bicicleta_id, bicicleta_codigo,
+            pb, user, user_id, bicicleta_id,
             estacion_inicio_id, estacion_inicio_nombre, modalidad, lat, lng, codigo_valido,
+            exclusivas_nuevas, tipo_membresia_actual,
         )
         if codigo_valido:
             codigos_descuento_repo.marcar_usado(codigo_valido["id"], nuevo_viaje["id"])
 
+        codigo_real = nuevo_viaje.get("bicicleta_codigo", "—")
         registrar_auditoria(
             user.get("pb_token", ""), user_id, user.get("name") or user.get("email", ""),
             user.get("email", ""), "crear", "viajes",
-            f"Viaje iniciado: {bicicleta_codigo} desde {estacion_inicio_nombre}", request,
+            f"Viaje iniciado: {codigo_real} desde {estacion_inicio_nombre}", request,
             usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
         )
 
         notificaciones_repo.notificar_usuario(
             pb, user_id, tipo="viaje_iniciado",
             titulo="Viaje iniciado",
-            mensaje=f"Iniciaste un viaje con la bicicleta {bicicleta_codigo} desde {estacion_inicio_nombre}.",
+            mensaje=f"Iniciaste un viaje con la bicicleta {codigo_real} desde {estacion_inicio_nombre}.",
             enlace=f"/ciclista/viaje-activo/{nuevo_viaje['id']}",
         )
 
@@ -819,7 +849,7 @@ async def reservar_grupo(
 
     # Punto 4/infracciones/garantía de pago -- reglas compartidas con
     # reservar(), ver _validar_reserva_comun().
-    error_comun = _validar_reserva_comun(user, user_id, bicicleta_codigos)
+    error_comun = _validar_reserva_comun(user, user_id)
     if error_comun:
         request.session["flash"] = {"type": "error", "msg": error_comun}
         return RedirectResponse("/ciclista/alquilar", status_code=302)
@@ -832,6 +862,14 @@ async def reservar_grupo(
                 "El código de descuento no es válido, ya fue usado, o no te pertenece."}
             return RedirectResponse("/ciclista/alquilar", status_code=302)
 
+    # Exclusividad (punto 4): resueltos UNA vez para todo el lote, no por
+    # bicicleta -- ver el docstring de _crear_viaje() para el hallazgo real
+    # que motivo este cambio (bicicleta_codigos, recibido arriba, ya NO se
+    # usa para ninguna decision de seguridad ni se guarda tal cual --
+    # queda solo para el chequeo de longitudes de arriba).
+    exclusivas_nuevas = _bicicletas_exclusivas_nuevas()
+    tipo_membresia_actual = membresias_repo.tipo_membresia_real(user.get("email", ""))
+
     grupo_reserva_id = uuid.uuid4().hex
     pb = None
     viajes_creados: list[dict] = []
@@ -839,10 +877,11 @@ async def reservar_grupo(
         pb = _pb()
         for i in range(n):
             viaje = _crear_viaje(
-                pb, user, user_id, bicicleta_ids[i], bicicleta_codigos[i],
+                pb, user, user_id, bicicleta_ids[i],
                 estaciones_ids[i], estaciones_nombres[i], modalidad,
                 float(latitudes[i]), float(longitudes[i]),
                 codigo_valido if i == 0 else None,
+                exclusivas_nuevas, tipo_membresia_actual,
                 grupo_reserva_id=grupo_reserva_id,
             )
             viajes_creados.append(viaje)
@@ -850,10 +889,11 @@ async def reservar_grupo(
         if codigo_valido:
             codigos_descuento_repo.marcar_usado(codigo_valido["id"], viajes_creados[0]["id"])
 
+        codigos_reales = ", ".join(v.get("bicicleta_codigo", "—") for v in viajes_creados)
         registrar_auditoria(
             user.get("pb_token", ""), user_id, user.get("name") or user.get("email", ""),
             user.get("email", ""), "crear", "viajes",
-            f"Reserva grupal de {n} bicicletas iniciada: {', '.join(bicicleta_codigos)} "
+            f"Reserva grupal de {n} bicicletas iniciada: {codigos_reales} "
             f"(grupo {grupo_reserva_id})", request,
             usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
         )
