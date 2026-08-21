@@ -411,7 +411,7 @@ const NOMBRE_CAMPO_CARRITO = {
 
 document.getElementById('btn-reservar-carrito').addEventListener('click', function () {
   if (seleccionGrupo.size < 2) {
-    alert('Selecciona al menos 2 bicicletas para una reserva grupal.');
+    UB.toast('Selecciona al menos 2 bicicletas para una reserva grupal.', 'info');
     return;
   }
   const modalidadActiva = document.querySelector('#catalogo-modalidad .modalidad-btn.activo').dataset.modalidad;
@@ -433,7 +433,19 @@ document.getElementById('btn-reservar-carrito').addEventListener('click', functi
     });
   });
   if (codigosSinDatos.length > 0) {
-    alert('No se pudo resolver la estacion actual de: ' + codigosSinDatos.join(', ') + '. Recarga la pagina e intenta de nuevo.');
+    // Alguien mas reservo esta(s) bici(s) entre que se cargo la pagina y el
+    // clic (o el catalogo desfaso ClickHouse/PocketBase, ver TODO en
+    // ciclista.py junto a _catalogo_bicicletas) -- ya no estan en
+    // BICICLETAS (PocketBase real). Se sacan del carrito y se avisa con el
+    // motivo real, en vez de un alert() nativo o un mensaje generico de
+    // "estacion no resuelta".
+    codigosSinDatos.forEach(function (codigo) {
+      seleccionGrupo.delete(codigo);
+      var chk = document.querySelector('.chk-seleccion-grupo[data-codigo="' + codigo + '"]');
+      if (chk) chk.checked = false;
+    });
+    actualizarBarraCarrito();
+    UB.toast('Ya no disponible: ' + codigosSinDatos.join(', ') + '. Se quito del carrito, elige otra bicicleta.', 'error');
     return;
   }
   document.getElementById('rg-modalidad').value = modalidadActiva;

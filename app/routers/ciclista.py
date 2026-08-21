@@ -526,7 +526,21 @@ async def alquilar(request: Request):
         # El catalogo (esta pantalla) solo debe ofrecer lo que de verdad se
         # puede alquilar ahora mismo -- la ficha de detalle (bicicleta_detalle
         # mas abajo) sigue sin filtrar, sigue accesible por enlace directo.
-        catalogo_bicicletas = [b for b in catalogo_bicicletas if b["estado"] == "disponible"]
+        # `estado` de _catalogo_bicicletas() viene de ClickHouse, que puede
+        # estar desfasado del estado real (ver TODO junto a esa funcion):
+        # reservar()/finalizar() de este mismo router solo escriben en
+        # PocketBase, y el espejo hacia ClickHouse no existe en ese sentido.
+        # Bug real reproducido con UB-004 (alquilada en PocketBase, pero
+        # ClickHouse la seguia mostrando "disponible"): la tarjeta ofrecia
+        # el checkbox de reserva grupal, y el POST fallaba porque `bicicletas`
+        # (abajo, PocketBase real) no la incluye. Se exige ademas que el
+        # codigo este en ese set real para no ofrecer una bici que ya no se
+        # puede reservar.
+        codigos_disponibles_pb = {b.get("codigo") for b in bicicletas}
+        catalogo_bicicletas = [
+            b for b in catalogo_bicicletas
+            if b["estado"] == "disponible" and b["codigo"] in codigos_disponibles_pb
+        ]
     except Exception:
         catalogo_bicicletas = []
 

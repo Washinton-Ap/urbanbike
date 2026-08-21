@@ -182,7 +182,13 @@ exacto antes de usarlo en cualquier documento académico.
     a ClickHouse, y una vez hecho, eliminar el espejo por completo**
     (`_espejar_pocketbase` en `app/db/bicicletas_repo.py` y todas sus
     llamadas). No es arquitectura final — sin esta nota corre el
-    riesgo de quedarse para siempre.
+    riesgo de quedarse para siempre. **Sigue abierto** (21-ago-2026,
+    ver sección 81): se aplicó un parche puntual sobre una
+    manifestación concreta de este mismo desfase (checkbox de reserva
+    grupal ofrecido para una bici ya no disponible), NO la migración de
+    fondo de este punto — cualquier otra pantalla que confíe en el
+    `estado` de ClickHouse para una acción (no solo para mostrarlo)
+    puede tener el mismo bug hasta que este punto se resuelva de raíz.
 15. **Riesgo de ORDER BY en más tablas** — ver sección 0 (prioridad
     alta): el mismo bug de `bicicletas.estado` existe también en
     `alquileres`, `usuarios`, `garantias`, `pagos`, `promociones`,
@@ -6792,3 +6798,66 @@ legítimo, más una revisión independiente de alto esfuerzo que encontró y ya 
 4 hallazgos (3 arreglados, 1 anotado como deuda conocida de menor severidad, confirmado con
 Washington que se queda en la cola). Sin commitear a `main` -- corresponde a Washington revisar
 el worktree y decidir el momento/proceso de fusión.
+
+## 81. Bug reportado por Washington: `alert()` nativo en `/ciclista/alquilar` para UB-004 -- causa real NO era resolución de estación, parche puntual sobre el desfase del punto 14 (21-ago-2026)
+
+Washington reportó dos cosas juntas: un `alert()` nativo del navegador rompiendo la rúbrica
+académica ("No se pudo resolver la estación actual de UB-004..."), y pidió auditar la causa
+real antes de asumir nada, más una auditoría de cualquier otro `alert()`/`confirm()` nativo
+que quedara en el sistema.
+
+### Causa real -- no era un problema de nombre de estación
+
+El mensaje del `alert()` era engañoso. Se verificó contra ambas bases directamente (no se
+asumió): PocketBase (`bicicletas` real, la que `reservar-grupo` de verdad usa) tenía UB-004 en
+`estado="en_uso"`; ClickHouse (`urbanbike_operativa.bicicletas`, de donde
+`_catalogo_bicicletas()` lee el `estado` para decidir si mostrar la tarjeta/checkbox) seguía
+devolviendo `estado="disponible"`. Es una manifestación concreta y ya reproducida del mismo
+desfase documentado en la sección 0/punto 14 (`reservar()`/`finalizar()` de `ciclista.py`
+escriben el estado real SOLO en PocketBase; el espejo `_espejar_pocketbase` es unidireccional
+ClickHouse→PocketBase, nunca al revés). El catálogo ofrecía el checkbox de reserva grupal para
+una bici que la fuente real ya no tenía libre; al hacer clic, el JS no la encontraba en
+`BICICLETAS` (el array sí filtrado por PocketBase real) y disparaba el `alert()` con un motivo
+que no era el real.
+
+### Fix aplicado -- parche puntual, NO la solución de raíz del punto 14
+
+**Importante: esto no cierra el punto 14.** La migración de fondo del flujo de reserva del
+ciclista a ClickHouse (y la eliminación del espejo `_espejar_pocketbase`) sigue pendiente,
+íntegra, como ya estaba. Lo que se aplicó hoy es un parche acotado sobre una manifestación
+puntual de ese mismo desfase:
+
+1. `app/routers/ciclista.py:alquilar()` -- `catalogo_bicicletas` ahora exige, además del
+   `estado == "disponible"` de ClickHouse, que el código esté en el set de bicicletas
+   realmente disponibles según PocketBase (`bicicletas`, ya cargado en esa misma función con
+   `filter='estado = "disponible"'`). Evita que se vuelva a ofrecer el checkbox de una bici
+   que la fuente real ya no tiene libre -- pero cualquier OTRA pantalla que lea
+   `_catalogo_bicicletas()`/`_catalogo_agrupado()` para decidir si una acción es posible (no
+   solo para mostrarla) puede tener el mismo bug.
+2. `app/templates/ciclista/alquilar.html` -- se auditaron los 2 únicos `alert()` nativos que
+   quedaban en TODO el sistema (grep sin más resultados en `app/templates` y `app/static/js`;
+   el componente propio `window.UB` de `notificaciones.js`, cargado global en `base.html`, ya
+   existía desde antes). Ambos reemplazados por `UB.toast(...)`. El caso de carrera genuina que
+   sigue existiendo (alguien más reserva entre que carga la página y el clic) ya no usa
+   `alert()`: saca el código del carrito, desmarca el checkbox y avisa con el motivo real
+   ("Ya no disponible: ...").
+
+Verificado en navegador real (login como `ciclista@urbanbike.com`, servidor local): UB-004 ya
+no aparece en el catálogo tras el fix; el toast de "selecciona al menos 2" renderiza con
+diseño propio, sin diálogo nativo bloqueante.
+
+### Efecto colateral de la verificación -- revertido
+
+Un clic de prueba con 2 bicis ya seleccionadas completó una reserva grupal real
+(UB-009 + UB-010, grupo `07f4076318ce4a21b5106b2ec4d1206e`) en la cuenta de prueba. Revertido
+manualmente el mismo día (mismo patrón que `_revertir_reserva_grupal()` usa para un fallo
+real): los 2 viajes borrados de `viajes`, las 2 bicicletas devueltas a `estado="disponible"`,
+las 2 notificaciones de campana borradas. Confirmado que la reserva no había generado pagos ni
+códigos de descuento (n=2, el bono de volumen del punto 0.2 exige n≥3). Se dejó una entrada de
+auditoría compensatoria (`accion="eliminar"`) documentando la reversión, sin borrar la entrada
+original de "crear viajes" -- la bitácora se trata como registro append-only, no se edita.
+No hay forma de revertir el correo real de "Viaje iniciado" que `notificar_usuario()` ya
+disparó por SMTP (Brevo) a `ciclista@urbanbike.com` -- no es recuperable, se deja documentado
+acá por transparencia.
+
+Cambios sin commitear a propósito -- Washington los revisa primero.
