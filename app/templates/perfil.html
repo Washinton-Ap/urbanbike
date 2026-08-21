@@ -33,7 +33,7 @@
         <img src="/static/img/logo-urbanbike.png" alt="">
       </div>
       {% endif %}
-      <div>
+      <div style="min-width:0;overflow-wrap:break-word;">
         <div style="font-family:'Sora',sans-serif;font-size:1.1rem;font-weight:600;color:var(--text);">
           {{ user.name or "Sin nombre" }}
         </div>
@@ -111,7 +111,8 @@
 
       <div class="form-group">
         <label class="form-label">Foto de perfil</label>
-        <input class="form-input" type="file" name="avatar" id="edit-avatar" accept="image/jpeg,image/png,image/gif">
+        <input class="form-input" type="file" name="avatar" id="edit-avatar" accept="image/jpeg,image/png,image/gif" data-preview="edit-avatar-preview-nueva">
+        <div id="edit-avatar-preview-nueva" style="margin-top:8px;"></div>
         <span style="font-size:0.8rem;color:var(--text-muted);margin-top:4px;display:block;">JPG, PNG o GIF — máximo 2 MB. Deja vacío para no cambiarla.</span>
       </div>
 

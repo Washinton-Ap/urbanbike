@@ -102,6 +102,12 @@ def generar_pdf_reporte(
 
     nombre_style = ParagraphStyle("membrete_nombre", fontName="Sora-Bold", fontSize=16, textColor=azul, leading=20, alignment=TA_LEFT)
     sub_style = ParagraphStyle("membrete_sub", fontName="IBMPlexSans", fontSize=9, textColor=muted, leading=12, alignment=TA_LEFT)
+    celda_texto_style = ParagraphStyle(
+        "celda_texto", fontName="IBMPlexSans", fontSize=8.5, leading=10.5, textColor=colors.black,
+    )
+    celda_texto_total_style = ParagraphStyle(
+        "celda_texto_total", fontName="IBMPlexSans-Bold", fontSize=8.5, leading=10.5, textColor=azul,
+    )
 
     membrete = Table(
         [[_logo_bicicleta(), [Paragraph(f"UrbanBike — {titulo}", nombre_style), Paragraph(subtitulo, sub_style)]]],
@@ -117,15 +123,31 @@ def generar_pdf_reporte(
 
     elementos = [membrete, Spacer(1, 14)]
 
+    def _valor_celda(columna: ColumnaReporte, valor, *, estilo: ParagraphStyle = celda_texto_style):
+        """Envuelve las columnas de texto en un Paragraph para que reportlab
+        haga wrap real dentro del ancho de columna calculado -- una Table
+        con strings planos NO envuelve texto, un valor mas largo que su
+        columna se recorta visualmente contra la celda vecina (causa real
+        del desborde reportado en el punto 1.1). Los valores numericos se
+        dejan como string plano: Table los alinea a la derecha sin el
+        padding que Paragraph agrega, y no suelen desbordar. Una celda
+        Paragraph ignora los comandos FONTNAME/TEXTCOLOR de TableStyle (solo
+        aplican a celdas de texto plano) -- por eso la fila de totales recibe
+        su propio estilo en negrita/azul en vez de heredarlo de TableStyle."""
+        texto = formatear_valor(valor, columna.formato)
+        if columna.formato == "texto" and texto:
+            return Paragraph(texto, estilo)
+        return texto
+
     encabezados = [columna.titulo for columna in columnas]
     filas_texto = [
-        [formatear_valor(valor, columna.formato) for columna, valor in zip(columnas, fila)]
+        [_valor_celda(columna, valor) for columna, valor in zip(columnas, fila)]
         for fila in filas
     ]
     datos = [encabezados] + filas_texto
     if fila_total is not None:
         datos.append([
-            formatear_valor(valor, columna.formato) if valor is not None else ""
+            _valor_celda(columna, valor, estilo=celda_texto_total_style) if valor is not None else ""
             for columna, valor in zip(columnas, fila_total)
         ])
 

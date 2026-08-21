@@ -1583,7 +1583,24 @@ def informe(request: Request):
 # INFORME ESTRATÉGICO — evolución mensual (nivel estratégico, ver docs/HOJA_DE_RUTA.md)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _estrategico_meses() -> list[dict]:
+def _int_o_none(valor: str) -> int | None:
+    """Convierte el valor crudo de un <select> de filtro (querystring,
+    siempre str) a int, o None si viene vacío ("Año desde"/"Mes desde"
+    sin elegir) o no es un entero válido -- evita el 422 que FastAPI
+    tiraría si estos parámetros fueran tipados como int | None
+    directamente (una cadena vacía no es un int válido para Pydantic,
+    a diferencia de los filtros str existentes en el resto del archivo,
+    donde "" sí es un valor válido)."""
+    try:
+        return int(valor) if valor else None
+    except ValueError:
+        return None
+
+
+def _estrategico_meses(
+    *, anio_desde: int | None = None, mes_desde: int | None = None,
+    anio_hasta: int | None = None, mes_hasta: int | None = None,
+) -> list[dict]:
     """Lee resumen_mensual_ingresos + resumen_mensual_demanda de
     urbanbike_estrategica (precalculadas por etl/09_calcular_estrategica.py)
     y las combina por (anio, mes) -- sin agregar fact_viajes en vivo, mismo
@@ -1592,7 +1609,14 @@ def _estrategico_meses() -> list[dict]:
     re-agrega aquí por mes (sum/avg ponderado sobre una tabla ya chica,
     no sobre el hecho crudo -- misma distinción de la sección 33).
     Muestra todos los meses que ya tengan fila real, cualquiera que sea
-    el número -- no asume que sea exactamente uno."""
+    el número -- no asume que sea exactamente uno.
+
+    anio_desde/mes_desde/anio_hasta/mes_hasta: filtro opcional de rango de
+    mes/año, aplicado en Python sobre el resultado ya agregado (no en el
+    SELECT de ClickHouse) -- la tabla es chica (11 estaciones × meses
+    reales), mismo criterio de "agregación cara vs. lookup barato" que ya
+    usa esta función. Solo filtra qué filas ya calculadas se devuelven, no
+    cambia la agregación en sí."""
     ingresos_rows = ch.query(f"""
         SELECT anio, mes, total_alquileres, ingresos_brutos, descuentos,
                recargos, gastos, ganancia_neta
@@ -1624,17 +1648,27 @@ def _estrategico_meses() -> list[dict]:
             "total_viajes": int(d.get("total_viajes_mes") or 0),
             "duracion_prom_min": round(float(d.get("duracion_prom_min") or 0), 1),
         })
+    if anio_desde is not None and mes_desde is not None:
+        meses = [m for m in meses if (m["anio"], m["mes"]) >= (anio_desde, mes_desde)]
+    if anio_hasta is not None and mes_hasta is not None:
+        meses = [m for m in meses if (m["anio"], m["mes"]) <= (anio_hasta, mes_hasta)]
     return meses
 
 
 @router.get("/estrategico", response_class=HTMLResponse)
-def estrategico(request: Request):
+def estrategico(request: Request, anio_desde: str = Query(""), mes_desde: str = Query(""),
+                 anio_hasta: str = Query(""), mes_hasta: str = Query("")):
     flash = request.session.pop("flash", None)
     ch_ok = True
     meses: list[dict] = []
+    meses_disponibles: list[dict] = []
+    anio_desde, mes_desde = _int_o_none(anio_desde), _int_o_none(mes_desde)
+    anio_hasta, mes_hasta = _int_o_none(anio_hasta), _int_o_none(mes_hasta)
 
     try:
-        meses = _estrategico_meses()
+        meses_disponibles = _estrategico_meses()
+        meses = _estrategico_meses(anio_desde=anio_desde, mes_desde=mes_desde,
+                                    anio_hasta=anio_hasta, mes_hasta=mes_hasta)
     except Exception:
         ch_ok = False
 
@@ -1642,10 +1676,30 @@ def estrategico(request: Request):
     chart_ganancia = [m["ganancia_neta"] for m in meses]
     chart_viajes = [m["total_viajes"] for m in meses]
 
+    anios_disponibles = sorted({m["anio"] for m in meses_disponibles})
+    meses_num_disponibles = sorted({m["mes"] for m in meses_disponibles})
+
+    # Querystring del filtro activo, para reenviar a los exports -- solo
+    # incluye los parametros que realmente vienen seteados (ya convertidos
+    # a int/None arriba). Emitir los 4 siempre, aunque sea con valor vacio,
+    # obligaria a /estrategico/excel|pdf a aceptar "" como valor de un
+    # int -- mismo motivo por el que las 3 rutas reciben estos 4 filtros
+    # como str y los convierten con _int_o_none() en vez de tiparlos
+    # directo como int | None (a diferencia de los filtros str existentes
+    # como en gerente/bicicletas.html, donde "" ya es un valor valido).
+    filtro_qs = urllib.parse.urlencode({
+        k: v for k, v in {
+            "anio_desde": anio_desde, "mes_desde": mes_desde,
+            "anio_hasta": anio_hasta, "mes_hasta": mes_hasta,
+        }.items() if v is not None
+    })
+
     return templates.TemplateResponse(request, "gerente/estrategico.html", _ctx(request,
         title="Informe Estratégico — Gerente", flash=flash, ch_ok=ch_ok,
         titulo="Informe Estratégico", subtitulo="Evolución mensual — urbanbike_estrategica (precalculado)",
-        meses=meses,
+        meses=meses, anios_disponibles=anios_disponibles, meses_num_disponibles=meses_num_disponibles,
+        nombres_mes=NOMBRES_MES_CORTO, filtro_qs=filtro_qs,
+        anio_desde=anio_desde, mes_desde=mes_desde, anio_hasta=anio_hasta, mes_hasta=mes_hasta,
         chart_labels=json.dumps(chart_labels),
         chart_ganancia=json.dumps(chart_ganancia),
         chart_viajes=json.dumps(chart_viajes),
@@ -1684,8 +1738,10 @@ _ESTRATEGICO_SUBTITULO = (
 
 
 @router.get("/estrategico/excel")
-def estrategico_excel(request: Request):
-    meses = _estrategico_meses()
+def estrategico_excel(request: Request, anio_desde: str = Query(""), mes_desde: str = Query(""),
+                       anio_hasta: str = Query(""), mes_hasta: str = Query("")):
+    meses = _estrategico_meses(anio_desde=_int_o_none(anio_desde), mes_desde=_int_o_none(mes_desde),
+                                anio_hasta=_int_o_none(anio_hasta), mes_hasta=_int_o_none(mes_hasta))
     columnas, filas, fila_total = _estrategico_columnas_filas(meses)
     return generar_excel_reporte(
         titulo="UrbanBike — Informe Estratégico (Evolución Mensual)",
@@ -1699,8 +1755,10 @@ def estrategico_excel(request: Request):
 
 
 @router.get("/estrategico/pdf")
-def estrategico_pdf(request: Request):
-    meses = _estrategico_meses()
+def estrategico_pdf(request: Request, anio_desde: str = Query(""), mes_desde: str = Query(""),
+                     anio_hasta: str = Query(""), mes_hasta: str = Query("")):
+    meses = _estrategico_meses(anio_desde=_int_o_none(anio_desde), mes_desde=_int_o_none(mes_desde),
+                                anio_hasta=_int_o_none(anio_hasta), mes_hasta=_int_o_none(mes_hasta))
     columnas, filas, fila_total = _estrategico_columnas_filas(meses)
     return generar_pdf_reporte(
         titulo="Informe Estratégico — Evolución Mensual",
