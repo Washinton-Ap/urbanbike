@@ -24,17 +24,21 @@ from app.templating import file_url, templates
 
 router = APIRouter(prefix="/ciclista", tags=["ciclista"])
 
-# Lock de proceso (no distribuido -- el cliente PocketBase de app/db/pocketbase.py usa
-# requests sincrono, sin await, y este servicio corre como un solo proceso uvicorn, no
-# containerizado todavia -- ver docker-compose.yml) que serializa la seccion critica de
-# _crear_viaje(): releer el estado real de la bicicleta, crear el viaje, y marcarla en_uso.
-# Sin esto, dos solicitudes casi simultaneas para la MISMA bicicleta podian pasar ambas la
-# lectura antes de que cualquiera escribiera, dejando 2 viajes "activo" sobre la misma bici
-# fisica (bug real, viola FR-005 de specs/001-operaciones-alquiler-bicicletas/spec.md; ver
-# docs/HOJA_DE_RUTA.md, Deuda conocida #2 de la seccion 78, y el plan de este fix). Un solo
-# lock global (no uno por bicicleta_id) es intencional: la escala real de reservas
-# simultaneas de este sistema es minima, y un lock por bici agrega gestion de ciclo de vida
-# (cuando liberar/limpiar cada lock) sin beneficio real a este volumen.
+# Lock de proceso (no distribuido) que envuelve la seccion critica de _crear_viaje():
+# releer el estado real de la bicicleta, crear el viaje, y marcarla en_uso. La garantia real
+# hoy (FR-005 de specs/001-operaciones-alquiler-bicicletas/spec.md: sin esto una bici quedaba
+# doble-reservada, ni siquiera hacia falta concurrencia real, ver docs/HOJA_DE_RUTA.md seccion
+# 79) la da el RE-CHEQUEO del estado -- verificado con timestamps reales (seccion 80, revision
+# del fix) que el cliente PocketBase de app/db/pocketbase.py (requests, sincrono, sin await
+# dentro de estos handlers async) ya serializa TODA la app durante cada reserva en el despliegue
+# actual (un solo proceso uvicorn, sin --workers, ver docker-compose.yml) -- dos requests nunca
+# se intercalan hoy, con o sin este lock. El lock se deja de todos modos, a proposito: es
+# defensivo para el dia que estas llamadas se offloaden a un threadpool (patron que app/routers/
+# auth.py ya usa en otras rutas, para dejar de bloquear la app entera durante cada reserva) --
+# ese dia, sin el lock, la ventana de carrera real volveria a abrirse. Un solo lock global (no
+# uno por bicicleta_id) es intencional: la escala real de reservas simultaneas de este sistema
+# es minima, y un lock por bici agrega gestion de ciclo de vida sin beneficio real a este
+# volumen.
 _lock_disponibilidad_bicicleta = threading.Lock()
 
 
@@ -709,8 +713,16 @@ async def reservar(
         # Exclusividad (punto 4): resueltos UNA vez acá, no por bicicleta --
         # ver el docstring de _crear_viaje() para por que ya no se confia en
         # ningun codigo/estado enviado por el cliente para esta decision.
+        # tipo_membresia_actual solo importa si hay alguna bici exclusiva
+        # hoy -- si exclusivas_nuevas esta vacio, _crear_viaje() nunca lo
+        # usa (ningun codigo_real puede estar en un dict vacio), asi que
+        # nos ahorramos la consulta a tipo_membresia_real() en el caso
+        # comun (revision de codigo, hallazgo real: se llamaba siempre,
+        # el codigo anterior a este fix la evitaba con el mismo criterio).
         exclusivas_nuevas = _bicicletas_exclusivas_nuevas()
-        tipo_membresia_actual = membresias_repo.tipo_membresia_real(user.get("email", ""))
+        tipo_membresia_actual = (
+            membresias_repo.tipo_membresia_real(user.get("email", "")) if exclusivas_nuevas else "member"
+        )
 
         nuevo_viaje = _crear_viaje(
             pb, user, user_id, bicicleta_id,
@@ -866,9 +878,13 @@ async def reservar_grupo(
     # bicicleta -- ver el docstring de _crear_viaje() para el hallazgo real
     # que motivo este cambio (bicicleta_codigos, recibido arriba, ya NO se
     # usa para ninguna decision de seguridad ni se guarda tal cual --
-    # queda solo para el chequeo de longitudes de arriba).
+    # queda solo para el chequeo de longitudes de arriba). Igual que en
+    # reservar(): tipo_membresia_actual solo se consulta si de verdad hay
+    # alguna bici exclusiva hoy (revision de codigo, ver esa funcion).
     exclusivas_nuevas = _bicicletas_exclusivas_nuevas()
-    tipo_membresia_actual = membresias_repo.tipo_membresia_real(user.get("email", ""))
+    tipo_membresia_actual = (
+        membresias_repo.tipo_membresia_real(user.get("email", "")) if exclusivas_nuevas else "member"
+    )
 
     grupo_reserva_id = uuid.uuid4().hex
     pb = None

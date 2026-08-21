@@ -205,7 +205,6 @@
     <form method="post" action="/ciclista/reservar" id="form-reservar">
       <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
       <input type="hidden" name="bicicleta_id" value="{{ bici.id }}">
-      <input type="hidden" name="bicicleta_codigo" value="{{ bici.codigo }}">
       <input type="hidden" name="estacion_inicio_id" value="{{ estacion.id or '' }}">
       <input type="hidden" name="estacion_inicio_nombre" value="{{ bici.estacion or '' }}">
       <input type="hidden" name="latitud" value="{{ estacion.latitud or 0 }}">

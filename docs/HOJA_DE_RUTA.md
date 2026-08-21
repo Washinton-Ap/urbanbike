@@ -6735,8 +6735,60 @@ fix) y durante la prueba de regresión (después del fix) se revirtieron manualm
 borrados, bicicletas restauradas a `disponible`, notificaciones de campana borradas, sin pagos
 generados, 2 entradas de auditoría compensatorias dejadas sin borrar las originales.
 
-### Pendiente antes de dar esto por cerrado
+### Revisión independiente (Opus, `git diff 01e14ed..8490f33`, high effort)
 
-Washington pidió explícitamente un **revisor** con el mismo rigor -- todavía no se hizo. No
-reportar este hallazgo como resuelto hasta que una revisión independiente (no esta misma
-sesión que escribió el fix) confirme el diff.
+Confirmó como sólidos ambos fixes (79 y 80): `codigo_real` sale siempre de una lectura fresca
+de PocketBase, nunca del cliente; los 2 call sites pasan los argumentos correctos con la firma
+nueva; el rollback todo-o-nada de `reservar_grupo()` sigue disparando con los `ValueError`
+nuevos; el JS de `alquilar.html` construye `bicicleta_ids`/`bicicleta_codigos` desde el mismo
+objeto por bici en una sola iteración (no hay desincronización de índice del lado del
+cliente); nada más depende del `bicicleta_codigo` que se sacó de `reservar()`. 4 hallazgos:
+
+1. **(Real, corregido) El `threading.Lock` no protegía nada hoy.** Verificado empíricamente
+   (no solo con el razonamiento del revisor): se agregó un `time.sleep(2)` temporal dentro de
+   la sección crítica SIN el lock, se dispararon 2 requests HTTP reales concurrentes para 2
+   bicicletas DISTINTAS (sin conflicto de disponibilidad, para aislar el efecto del lock en
+   sí), y los timestamps reales mostraron que la 2ª request no entró a su propia sección
+   crítica hasta que la 1ª terminó por completo (incluido el envío real de correo por SMTP,
+   varios segundos) -- cero interleaving, con o sin lock. Causa real: `reservar()`/
+   `reservar_grupo()` son `async def` pero llaman al cliente PocketBase (`requests`, síncrono)
+   sin ningún `await` de por medio; en un solo proceso `uvicorn` sin `--workers`, eso serializa
+   TODA la app en cada reserva (no solo la sección crítica), asi que la garantía real hoy la da
+   el **chequeo de estado re-leído** (`bici_actual.get("estado")`), no el lock. El lock no se
+   quitó -- sigue siendo defensivo y correcto para el día que alguien mueva estas llamadas a un
+   threadpool (`run_in_threadpool`, patrón que `auth.py` ya usa en otras rutas) para dejar de
+   bloquear la app entera durante cada reserva -- pero el commit original de la sección 79
+   sobrevendía lo que hace HOY. Corregido acá, en esta sección, con la evidencia real.
+2. **(Real, anotado, NO corregido) `estacion_inicio_id`/`estacion_inicio_nombre`/`latitud`/
+   `longitud` siguen sin verificarse contra el registro real de la bicicleta.** Misma familia
+   de problema que el bypass de exclusividad (confiar en un dato del cliente en vez de
+   resolverlo del lado del servidor), pero de severidad menor: no permite bypasear ninguna
+   regla de negocio ni tocar el estado de otra bicicleta, "solo" corrompe el dato de estación/
+   ubicación guardado en el viaje (auditoría, `empleado/vigilancia/seguimiento.html`, mapas). No
+   corregido a propósito -- mismo criterio que el punto del tope `MAX_VIAJES_ACTIVOS` de la
+   sección 79: se suma a la cola de deuda conocida para después del domingo, no es tan grave
+   como los 2 bugs que sí se corrigieron hoy.
+3. **(Real, corregido) `tipo_membresia_real()` se consultaba siempre, incluso sin ninguna bici
+   exclusiva en juego.** El código previo al fix de la sección 80 evitaba esa consulta con un
+   `if any(codigo in exclusivas_nuevas ...)`. Corregido: ahora `tipo_membresia_actual` solo se
+   resuelve si `exclusivas_nuevas` no está vacío (si está vacío, `_crear_viaje()` nunca lo va a
+   usar, ningún código real puede estar en un dict vacío) -- mismo comportamiento, sin la
+   consulta de más en el caso común (ninguna bici dentro de los 14 días de exclusividad).
+4. **(Real, corregido) Quedaban 2 `<input type="hidden" name="bicicleta_codigo">` muertos** en
+   `alquilar.html` (form de reserva individual) y `detalle_bicicleta.html` -- ya no los lee
+   ningún parámetro de `reservar()`. Quitados junto con la línea de JS que llenaba el de
+   `alquilar.html` (`detalle_bicicleta.html` los rellena con Jinja, no con JS). El de
+   `reservar_grupo()` (`bicicleta_codigos`, plural, en el carrito) se dejó intacto a propósito
+   -- ese sí lo sigue leyendo el backend, solo para el chequeo de longitud de arrays.
+
+**Verificación real de los 3 fixes de esta revisión**: regresión completa de `reservar()` sin
+`bicicleta_codigo` en el form (bici UB-008, viaje real creado, `bicicleta_codigo` guardado y
+mensaje de auditoría ambos con el código real "UB-008", confirmado leyendo los registros
+reales). Efecto colateral revertido igual que en el resto de esta sección.
+
+**Estado: cerrado.** Los 2 bugs críticos que pidió Washington (FR-005 y el bypass de
+exclusividad) están corregidos y verificados en 2 capas cada uno, con regresión del camino
+legítimo, más una revisión independiente de alto esfuerzo que encontró y ya corrigió sus propios
+4 hallazgos (3 arreglados, 1 anotado como deuda conocida de menor severidad, confirmado con
+Washington que se queda en la cola). Sin commitear a `main` -- corresponde a Washington revisar
+el worktree y decidir el momento/proceso de fusión.
