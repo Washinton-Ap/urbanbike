@@ -79,7 +79,6 @@
 <form id="form-reservar" method="post" action="/ciclista/reservar" style="display:none;">
       <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
   <input type="hidden" name="bicicleta_id" id="rv-bicicleta-id">
-  <input type="hidden" name="bicicleta_codigo" id="rv-bicicleta-codigo">
   <input type="hidden" name="estacion_inicio_id" id="rv-estacion-id">
   <input type="hidden" name="estacion_inicio_nombre" id="rv-estacion-nombre">
   <input type="hidden" name="latitud" id="rv-lat">
@@ -267,7 +266,6 @@ function bicicletaCard(bici, estacion) {
 
 function reservar(bici, estacion) {
   document.getElementById('rv-bicicleta-id').value      = bici.id;
-  document.getElementById('rv-bicicleta-codigo').value  = bici.codigo;
   document.getElementById('rv-estacion-id').value       = estacion.id;
   document.getElementById('rv-estacion-nombre').value   = estacion.nombre;
   document.getElementById('rv-lat').value               = estacion.latitud;
