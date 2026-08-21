@@ -6652,5 +6652,91 @@ caveat documentado en esa misma sección de `main`.
   el alcance de este fix porque no es lo que Washington pidió ("reservas concurrentes +
   exclusividad" es sobre la bici, no sobre el tope por ciclista), y el lock agregado hoy NO lo
   protege (el lock envuelve solo `_crear_viaje()`, no el chequeo del tope, que ocurre antes, en
-  cada llamador). Queda anotado acá para no perderlo, corresponde a Washington decidir si
-  amerita su propio fix.
+  cada llamador). **Confirmado con Washington (21-ago-2026): se queda en la cola de deuda
+  conocida, junto a los otros hallazgos postergados para después del domingo -- no se toca
+  todavía.** No es tan grave como los otros dos: no permite bypasear ninguna regla de negocio
+  ni duplicar el estado de una bicicleta, solo (en teoría) exceder el tope de 4 en 1 de más.
+
+## 80. Segundo bug crítico del mismo worktree: bypass real de exclusividad vía `bicicleta_codigos` vs `bicicleta_ids` en `reservar_grupo()` (21-ago-2026)
+
+Washington preguntó directamente, antes de revisar el worktree, si este segundo bug ya estaba
+corregido -- no lo estaba (el fix de la sección 79 solo tocó disponibilidad, no exclusividad).
+Mismo rigor pedido: causa real primero, sin asumir.
+
+### Causa real -- confirmada con un exploit real, no teórico
+
+`reservar_grupo()` recibe `bicicleta_ids: list[str]` y `bicicleta_codigos: list[str]` como **2
+arrays paralelos, ambos enviados por el cliente, sin ninguna relación forzada entre ellos**.
+`_validar_reserva_comun()` (el chequeo de exclusividad del punto 4) validaba contra
+`bicicleta_codigos`; `_crear_viaje()` (la escritura real) siempre usó `bicicleta_ids`. Nada
+obligaba a que la posición `i` de un array describiera la MISMA bicicleta que la posición `i`
+del otro.
+
+**Exploit real, reproducido con un POST directo a `/ciclista/reservar-grupo`** (cuenta de
+prueba `ciclista@urbanbike.com`, membresía real `casual`, confirmada con
+`membresias_repo.tipo_membresia_real()`):
+- `bicicleta_ids = [id real de UB-001 (exclusiva, dentro de la ventana de 14 días), id real de
+  UB-008 (normal)]`
+- `bicicleta_codigos = ["UB-008", "UB-008"]` (codigo mentiroso repetido, ninguno de los 2 es
+  `UB-001` -- pasa el chequeo de exclusividad limpio)
+
+Resultado confirmado leyendo PocketBase directo: la reserva tuvo éxito, **UB-001 (la bici
+exclusiva real) quedó `en_uso`** pese a que la cuenta es `casual`, y **ambos** viajes creados
+quedaron con `bicicleta_codigo = "UB-008"` guardado -- el dato de auditoría/historial también
+queda corrupto para el viaje que en realidad es sobre UB-001. FR-005 (exclusividad de
+asignación) violado por segunda vía distinta a la de la sección 79.
+
+### Fix aplicado
+
+El chequeo de exclusividad se movió de `_validar_reserva_comun()` a `_crear_viaje()`, al mismo
+punto donde ya se relee el registro real de la bicicleta por `bicicleta_id` (fix de la sección
+79) -- `codigo_real = bici_actual.get("codigo")` sale de ESE registro, nunca del array
+`bicicleta_codigos` del cliente. `reservar()` ya no recibe `bicicleta_codigo` como parámetro en
+absoluto (dejó de tener ningún uso real); `reservar_grupo()` lo sigue aceptando solo para el
+chequeo de longitud de arrays ya existente (`len(bicicleta_codigos) == ... == n`), nunca para
+ninguna decisión de seguridad ni dato guardado. `registrar_auditoria()` y las notificaciones de
+ambas rutas ahora usan `nuevo_viaje.get("bicicleta_codigo")` (el real, devuelto por
+`_crear_viaje()`), cerrando de paso la corrupción del dato de auditoría que el mismo bypass
+producía. `exclusivas_nuevas` (consulta a ClickHouse) y `tipo_membresia_actual` se resuelven
+**una sola vez por request** (no por bicicleta del lote) y se pasan como parámetros a
+`_crear_viaje()`, para no multiplicar consultas dentro del `for` de `reservar_grupo()`.
+
+Decisión de diseño: se eliminó el chequeo de exclusividad de `_validar_reserva_comun()` en vez
+de duplicarlo (uno rápido con datos del cliente + uno real dentro de `_crear_viaje()`) --
+`_validar_reserva_comun()` ya lleva en su propio docstring la cicatriz de "las dos funciones
+traían ~50 líneas de esta validación duplicadas, con riesgo real de que una regla cambiada en
+una no se replicara en la otra" (Task C5, sección 74-77). Duplicar la lógica de exclusividad en
+2 sitios hubiera sido repetir exactamente ese error. El costo real: para `reservar_grupo()`, si
+la bicicleta exclusiva bloqueada es la 3ª de 3 en el lote, las 2 primeras se crean y se
+revierten (en vez de nunca crearse) -- mismo mecanismo `_revertir_reserva_grupal()` ya usado
+para el fallo de disponibilidad de la sección 79, sin cambios adicionales.
+
+### Verificación real, dos capas + regresión
+
+1. **Nivel función** -- `_crear_viaje()` llamada directamente para UB-001 (exclusiva) con
+   `tipo_membresia_actual="casual"`: falló correctamente con
+   `ValueError: UB-001 es una bicicleta nueva con acceso anticipado exclusivo para
+   suscriptores hasta el 22/08/2026.`
+2. **Nivel HTTP -- el exploit exacto reproducido arriba, contra el código YA corregido**: mismo
+   POST (`bicicleta_ids=[UB-001, UB-008]`, `bicicleta_codigos=["UB-008","UB-008"]`) devolvió
+   `302` a `/ciclista/alquilar` (rechazo), no a `/ciclista/viaje-activo/...`. Confirmado en
+   PocketBase: UB-001 y UB-008 siguieron `disponible`, **0** viajes nuevos creados (todo-o-nada
+   real, sin necesidad de rollback porque UB-001 era la primera del lote).
+3. **Regresión -- reserva grupal legítima** (UB-009 + UB-010, `bicicleta_ids` y
+   `bicicleta_codigos` correctamente emparejados, ninguna exclusiva): tuvo éxito, `302` a
+   `/ciclista/viaje-activo/...`, y los 2 viajes reales quedaron con el `bicicleta_codigo`
+   correcto (`UB-009`/`UB-010` respectivamente, confirmado leyendo los registros reales) --
+   el fix no rompe el camino honesto.
+
+### Efecto colateral de la verificación -- revertido
+
+Igual que en la sección 79: los viajes reales creados durante el PoC del exploit (antes del
+fix) y durante la prueba de regresión (después del fix) se revirtieron manualmente -- viajes
+borrados, bicicletas restauradas a `disponible`, notificaciones de campana borradas, sin pagos
+generados, 2 entradas de auditoría compensatorias dejadas sin borrar las originales.
+
+### Pendiente antes de dar esto por cerrado
+
+Washington pidió explícitamente un **revisor** con el mismo rigor -- todavía no se hizo. No
+reportar este hallazgo como resuelto hasta que una revisión independiente (no esta misma
+sesión que escribió el fix) confirme el diff.
