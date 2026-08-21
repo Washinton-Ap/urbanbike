@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Guía de uso{% endblock %}
+{% block page_title %}Guía de uso{% endblock %}
+{% block back_url %}{% endblock %}
+
+{% block content %}
+
+{% if not contenido %}
+<div class="card">
+  <p style="color:var(--text-muted);margin:0;">
+    Todavía no hay una guía específica para tu rol. Escribe a soporte si crees que esto es un error.
+  </p>
+</div>
+{% else %}
+
+<div class="card" style="border-top:3px solid var(--primary);margin-bottom:18px;">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+    <div style="width:40px;height:40px;border-radius:10px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    </div>
+    <span style="font-family:'Sora',sans-serif;font-weight:700;font-size:1.1rem;color:var(--text);">{{ contenido.titulo }}</span>
+  </div>
+  <p style="color:var(--text-muted);line-height:1.7;font-size:0.92rem;margin:0;">{{ contenido.resumen }}</p>
+</div>
+
+<div class="card" style="margin-bottom:18px;">
+  <div class="card-header"><span class="card-title">Qué puedo hacer</span></div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;padding:0 20px 20px;">
+    {% for item in contenido.puedo %}
+    <a href="{{ item.enlace }}" style="text-decoration:none;color:inherit;display:block;padding:14px;border:1px solid var(--border);border-radius:var(--radius);transition:border-color var(--transition);">
+      <div style="font-family:'Sora',sans-serif;font-weight:700;font-size:0.9rem;color:var(--text);margin-bottom:4px;">{{ item.titulo }}</div>
+      <div style="font-size:0.82rem;color:var(--text-muted);line-height:1.5;">{{ item.descripcion }}</div>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:18px;">
+  <div class="card-header"><span class="card-title">Cómo hacerlo bien</span></div>
+  <ul style="margin:0;padding:0 20px 16px 38px;color:var(--text-muted);font-size:0.88rem;line-height:1.8;">
+    {% for tip in contenido.como %}
+    <li>{{ tip }}</li>
+    {% endfor %}
+  </ul>
+</div>
+
+<div class="card">
+  <div class="card-header"><span class="card-title">Qué no debo hacer</span></div>
+  <div style="padding:0 20px 20px;display:flex;flex-direction:column;gap:8px;">
+    {% for aviso in contenido.no_debo %}
+    <div class="badge badge-red" style="display:block;white-space:normal;text-align:left;line-height:1.5;padding:10px 12px;">{{ aviso }}</div>
+    {% endfor %}
+  </div>
+</div>
+
+{% endif %}
+
+{% endblock %}
