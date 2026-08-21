@@ -1,6 +1,7 @@
 """Rutas para el rol Ciclista — reservas, viaje activo, historial."""
 
 import json
+import threading
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
@@ -22,6 +23,19 @@ from app.reportes.pdf import generar_pdf_reporte
 from app.templating import file_url, templates
 
 router = APIRouter(prefix="/ciclista", tags=["ciclista"])
+
+# Lock de proceso (no distribuido -- el cliente PocketBase de app/db/pocketbase.py usa
+# requests sincrono, sin await, y este servicio corre como un solo proceso uvicorn, no
+# containerizado todavia -- ver docker-compose.yml) que serializa la seccion critica de
+# _crear_viaje(): releer el estado real de la bicicleta, crear el viaje, y marcarla en_uso.
+# Sin esto, dos solicitudes casi simultaneas para la MISMA bicicleta podian pasar ambas la
+# lectura antes de que cualquiera escribiera, dejando 2 viajes "activo" sobre la misma bici
+# fisica (bug real, viola FR-005 de specs/001-operaciones-alquiler-bicicletas/spec.md; ver
+# docs/HOJA_DE_RUTA.md, Deuda conocida #2 de la seccion 78, y el plan de este fix). Un solo
+# lock global (no uno por bicicleta_id) es intencional: la escala real de reservas
+# simultaneas de este sistema es minima, y un lock por bici agrega gestion de ciclo de vida
+# (cuando liberar/limpiar cada lock) sin beneficio real a este volumen.
+_lock_disponibilidad_bicicleta = threading.Lock()
 
 
 def _ctx(request: Request, **extra) -> dict:
@@ -532,28 +546,43 @@ def _crear_viaje(
     Logica compartida entre reservar() (una bicicleta) y reservar_grupo()
     (varias a la vez, Tarea C2 del plan de factura unica). El codigo de
     descuento, si viene, solo se marca usado por el LLAMADOR (una sola vez
-    por reserva, nunca una vez por bicicleta del grupo)."""
-    nuevo_viaje = pb.create_record("viajes", {
-        "ciclista_id":            user_id,
-        "ciclista_nombre":        user.get("name") or user.get("email", ""),
-        "bicicleta_id":           bicicleta_id,
-        "bicicleta_codigo":       bicicleta_codigo,
-        "estacion_inicio_id":     estacion_inicio_id,
-        "estacion_inicio_nombre": estacion_inicio_nombre,
-        "latitud_inicio":         lat,
-        "longitud_inicio":        lng,
-        "latitud_actual":         lat,
-        "longitud_actual":        lng,
-        "estado":                 "activo",
-        "fecha_inicio":           _ahora(),
-        "descuento_codigo":       codigo_valido["codigo"] if codigo_valido else "",
-        "descuento_porcentaje":   codigo_valido["porcentaje"] if codigo_valido else 0,
-        "modalidad_actual":       modalidad,
-        "inicio_segmento_actual": _ahora(),
-        "grupo_reserva_id":       grupo_reserva_id,
-    })
-    pb.update_record("bicicletas", bicicleta_id, {"estado": "en_uso"})
-    return nuevo_viaje
+    por reserva, nunca una vez por bicicleta del grupo).
+
+    FR-005 (specs/001-operaciones-alquiler-bicicletas/spec.md): antes de
+    este fix, esta funcion escribia bicicletas.estado="en_uso" sin
+    comprobar el estado real -- un POST directo a /ciclista/reservar con
+    el id de una bici ya en_uso tenia exito igual, sin necesitar
+    concurrencia real. Ahora relee el estado real justo antes de escribir,
+    dentro del lock de modulo (ver _lock_disponibilidad_bicicleta), asi
+    dos solicitudes casi simultaneas no pueden pasar ambas la
+    verificacion antes de que cualquiera marque la bici en_uso."""
+    with _lock_disponibilidad_bicicleta:
+        bici_actual = pb.get_record("bicicletas", bicicleta_id)
+        if bici_actual.get("estado") != "disponible":
+            raise ValueError(
+                f"{bicicleta_codigo} ya no está disponible -- alguien más la reservó primero."
+            )
+        nuevo_viaje = pb.create_record("viajes", {
+            "ciclista_id":            user_id,
+            "ciclista_nombre":        user.get("name") or user.get("email", ""),
+            "bicicleta_id":           bicicleta_id,
+            "bicicleta_codigo":       bicicleta_codigo,
+            "estacion_inicio_id":     estacion_inicio_id,
+            "estacion_inicio_nombre": estacion_inicio_nombre,
+            "latitud_inicio":         lat,
+            "longitud_inicio":        lng,
+            "latitud_actual":         lat,
+            "longitud_actual":        lng,
+            "estado":                 "activo",
+            "fecha_inicio":           _ahora(),
+            "descuento_codigo":       codigo_valido["codigo"] if codigo_valido else "",
+            "descuento_porcentaje":   codigo_valido["porcentaje"] if codigo_valido else 0,
+            "modalidad_actual":       modalidad,
+            "inicio_segmento_actual": _ahora(),
+            "grupo_reserva_id":       grupo_reserva_id,
+        })
+        pb.update_record("bicicletas", bicicleta_id, {"estado": "en_uso"})
+        return nuevo_viaje
 
 
 def _validar_reserva_comun(user: dict, user_id: str, bicicleta_codigos: list[str]) -> str | None:
