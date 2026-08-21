@@ -6537,6 +6537,9 @@ de B7, ver sección 73):
    menor asociada, contingente a este punto: `_revertir_reserva_grupal()` restaura las
    bicicletas a `disponible` de forma incondicional (correcto mientras no exista la
    condición de carrera; solo corregible junto con el punto de fondo).
+   **Resuelto el 21-ago-2026, ver sección 79** -- resultó ser más grave de lo descrito acá:
+   no era solo una ventana de carrera fina, era la AUSENCIA total de chequeo (reproducido de
+   forma determinística, sin ninguna concurrencia real).
 3. **Ruta muerta `comprobante_alquiler_pdf`.** `app/routers/ciclista.py:1644`
    (`comprobante_pago_pdf`) y `:2043` (`comprobante_alquiler_pdf`) registran la misma ruta
    `/ciclista/comprobante/{...}/pdf`. FastAPI resuelve siempre al primer handler registrado,
@@ -6551,3 +6554,103 @@ bloqueo real de la revisión final confirmado cerrado de forma estructural (no s
 alrededor del caso), listo para una recomendación de fusión -- pendiente de que Washington
 decida el momento/proceso (esta sesión no fusiona ni pushea por su cuenta). Los 3 puntos de
 arriba quedan fuera de alcance, deliberadamente, no olvidados.
+
+## 79. Fix real de reservas concurrentes / bypass de exclusividad -- FR-005 violado, no solo una condición de carrera fina (21-ago-2026)
+
+Washington pidió retomar el worktree `fix-reservas-concurrentes-exclusividad`, ya creado pero
+sin trabajo empezado (`git worktree list` lo mostraba en el mismo commit que `main`). El
+nombre del worktree combina dos términos que en los hechos son el mismo problema:
+"exclusividad" es la garantía de que una bicicleta física tiene un único ciclista activo a la
+vez (**FR-005** de `specs/001-operaciones-alquiler-bicicletas/spec.md`: "El sistema DEBE
+asignar una bicicleta en exclusiva a un único ciclista en el momento de reservarla... impidiendo
+que cualquier otro ciclista la reserve simultáneamente"), y "reservas concurrentes" es la forma
+en que esa garantía se rompe.
+
+### Causa real -- peor de lo que ya estaba documentado
+
+El punto 2 de la Deuda Conocida (sección 78, arriba) ya señalaba esto como "condición de
+carrera preexistente". Al leer `_crear_viaje()` (`app/routers/ciclista.py`) completa, la causa
+real resultó más grave: no había NINGÚN chequeo del estado real de la bicicleta antes de
+escribir `estado="en_uso"` -- ni siquiera un check-then-act con ventana de carrera, una
+escritura lisa y llana e incondicional. Se confirmó **sin ninguna concurrencia real**, llamando
+a `_crear_viaje()` dos veces seguidas para la misma bicicleta ya `en_uso`: la versión anterior
+al fix creó un segundo viaje "activo" sobre la misma bici sin ningún error (bug determinístico,
+reproducible al 100%, evidencia real: viaje `w7eonu881ufbef0` creado sobre UB-008 mientras ya
+tenía el viaje real `nfoduo1jwqgmi2u` activo). FR-005 nunca se cumplió en la práctica -- la nota
+"confirmado contra `app/routers/ciclista.py`" en la especificación describía la intención del
+código, no su comportamiento real verificado.
+
+### Fix aplicado
+
+`_crear_viaje()` ahora relee el estado real de la bicicleta (`pb.get_record("bicicletas",
+bicicleta_id)`) justo antes de crear el viaje, y lanza `ValueError` si ya no es `"disponible"`
+-- antes de escribir nada, así que no queda ningún registro huérfano que revertir en el caso de
+`reservar()` (una sola bici). Toda la sección crítica (releer → crear viaje → marcar en_uso)
+queda envuelta en `_lock_disponibilidad_bicicleta`, un `threading.Lock()` a nivel de módulo, para
+cerrar también la ventana de carrera genuina entre dos solicitudes casi simultáneas. Es un lock
+de **proceso, no distribuido** -- correcto para el despliegue real actual (un solo proceso
+`uvicorn`, sin contenedor propio en `docker-compose.yml`, cliente PocketBase síncrono vía
+`requests` sin `await` -- confirmado leyendo `app/db/pocketbase.py`), documentado como
+limitación conocida por si el despliegue cambia a múltiples procesos/workers en el futuro. Un
+solo lock global (no uno por `bicicleta_id`) es una simplificación deliberada: la escala real de
+reservas simultáneas de este sistema es mínima, y un lock por bici agrega gestión de ciclo de
+vida sin beneficio real a este volumen. `reservar()` y `reservar_grupo()` no necesitaron ningún
+cambio -- ambos ya envuelven la llamada en `try/except`, y el mecanismo de reversión todo-o-nada
+de `reservar_grupo()` (`_revertir_reserva_grupal()`) ya maneja este nuevo tipo de fallo igual que
+cualquier otro fallo a mitad de lote, sin cambios.
+
+### Verificación real, dos capas de evidencia
+
+1. **Nivel función, antes/después, sin red ni HTTP** -- llamada directa a `_crear_viaje()` para
+   una bici ya `en_uso` (UB-008): con el código *previo* al fix (`git checkout HEAD~1 --
+   app/routers/ciclista.py`), tuvo éxito y creó un segundo viaje real (`w7eonu881ufbef0`,
+   confirmado leyendo el registro real en PocketBase). Con el código *del fix* (`git checkout
+   HEAD -- app/routers/ciclista.py`, restaurado), la misma llamada falló correctamente con
+   `ValueError: UB-008 ya no está disponible -- alguien más la reservó primero.`, sin crear
+   ningún registro.
+2. **Nivel HTTP, concurrencia real** -- servidor real corriendo (`uvicorn`, puerto 8001, mismo
+   worktree), 2 sesiones HTTP reales logueadas como `ciclista@urbanbike.com`, disparando 2 `POST
+   /ciclista/reservar` simultáneos (vía `ThreadPoolExecutor`) para la misma bicicleta real
+   (UB-008): exactamente 1 de 2 tuvo éxito (redirigió a `/ciclista/viaje-activo/{id}` real), la
+   otra fue rechazada y redirigida a `/ciclista/alquilar` con el mensaje de error real. Confirmado
+   además, consultando PocketBase directo, que solo existía 1 viaje "activo" real para esa bici
+   tras la corrida.
+
+Un primer intento de repetir la prueba de concurrencia HTTP contra el código *previo* al fix dio
+un resultado ambiguo (las 2 solicitudes devolvieron el mismo `id` de viaje) -- investigado a
+fondo: la cuenta de prueba `ciclista@urbanbike.com` ya estaba en el tope de `MAX_VIAJES_ACTIVOS`
+(4) por deuda de sesiones **muy anteriores** (2 viajes reales en `pendiente_validacion` desde el
+16 y el 18 de agosto, no de esta sesión), así que ambas solicitudes fueron rechazadas por el tope
+antes de llegar siquiera a `_crear_viaje()`, enmascarando el bug real detrás de un camino de
+código distinto. Por eso la evidencia decisiva del "antes" es la de nivel función (punto 1
+arriba), que no depende del estado acumulado de la cuenta de prueba. Esos 2 viajes de deuda
+antigua (`UB-004` desde el 18-ago, `UB-010` desde el 16-ago) **no se tocaron** -- no son de esta
+sesión, quedan documentados acá para que quien los vea después sepa que ya se investigaron y no
+son un hallazgo nuevo.
+
+### Efecto colateral de la verificación -- revertido
+
+Las reservas reales creadas durante ambas capas de verificación (`nfoduo1jwqgmi2u` y
+`w7eonu881ufbef0` sobre UB-008, `52l5g5oodjpst8b` sobre UB-009) se revirtieron manualmente
+-- mismo patrón que la sección 79 de la rama `main` (viajes borrados, bicicletas devueltas a
+`disponible`, notificaciones de campana borradas, sin pagos generados, una entrada de auditoría
+compensatoria dejada sin borrar la original). No hay forma de revertir el correo real de "Viaje
+iniciado" que salió por SMTP para las 2 reservas que pasaron por el flujo HTTP completo -- mismo
+caveat documentado en esa misma sección de `main`.
+
+### Qué queda deliberadamente fuera de alcance de este fix puntual
+
+- **El desfase ClickHouse/PocketBase (punto 14)** sigue intacto -- este fix no lo toca. Una
+  bicicleta puede seguir apareciendo "disponible" en el catálogo (ClickHouse) mientras ya está
+  `en_uso` en PocketBase; lo que este fix garantiza es que, aun así, **nunca se puede crear un
+  segundo viaje activo real** sobre esa bici -- la petición ahora falla con un error claro en
+  vez de duplicar el estado.
+- **El mismo patrón de "leer cantidad, decidir, escribir" en el tope `MAX_VIAJES_ACTIVOS`**
+  (`viajes_activos_actuales = _viajes_activos(user_id)` seguido de la creación, sin lock)
+  tiene la misma forma de bug en teoría (2 solicitudes casi simultáneas del MISMO ciclista
+  podrían ambas leer un conteo por debajo del tope y terminar superándolo) -- no incluido en
+  el alcance de este fix porque no es lo que Washington pidió ("reservas concurrentes +
+  exclusividad" es sobre la bici, no sobre el tope por ciclista), y el lock agregado hoy NO lo
+  protege (el lock envuelve solo `_crear_viaje()`, no el chequeo del tope, que ocurre antes, en
+  cada llamador). Queda anotado acá para no perderlo, corresponde a Washington decidir si
+  amerita su propio fix.
