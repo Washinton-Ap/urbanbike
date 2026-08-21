@@ -16,17 +16,44 @@
   solo lee los meses ya cerrados y resumidos.
 </div>
 
+<!-- Filtro de rango de mes/año -->
+<div class="card" style="margin-bottom:16px;">
+  <form method="get" action="/gerente/estrategico" style="display:flex;gap:10px;padding:16px 20px;flex-wrap:wrap;align-items:center;">
+    <select class="form-input" name="anio_desde" style="width:auto;">
+      <option value="">Año desde</option>
+      {% for a in anios_disponibles %}<option value="{{ a }}" {% if anio_desde == a %}selected{% endif %}>{{ a }}</option>{% endfor %}
+    </select>
+    <select class="form-input" name="mes_desde" style="width:auto;">
+      <option value="">Mes desde</option>
+      {% for m in meses_num_disponibles %}<option value="{{ m }}" {% if mes_desde == m %}selected{% endif %}>{{ nombres_mes[m] }}</option>{% endfor %}
+    </select>
+    <span style="color:var(--text-muted);">hasta</span>
+    <select class="form-input" name="anio_hasta" style="width:auto;">
+      <option value="">Año hasta</option>
+      {% for a in anios_disponibles %}<option value="{{ a }}" {% if anio_hasta == a %}selected{% endif %}>{{ a }}</option>{% endfor %}
+    </select>
+    <select class="form-input" name="mes_hasta" style="width:auto;">
+      <option value="">Mes hasta</option>
+      {% for m in meses_num_disponibles %}<option value="{{ m }}" {% if mes_hasta == m %}selected{% endif %}>{{ nombres_mes[m] }}</option>{% endfor %}
+    </select>
+    <button type="submit" class="btn btn-primary">Filtrar</button>
+    {% if anio_desde or mes_desde or anio_hasta or mes_hasta %}
+    <a href="/gerente/estrategico" class="btn btn-ghost">Limpiar</a>
+    {% endif %}
+  </form>
+</div>
+
 <!-- Resumen + botones export -->
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
   <div style="font-size:0.85rem;color:var(--text-muted);">
     <strong style="color:var(--text);">{{ meses | length }}</strong> mes{{ "es" if meses | length != 1 else "" }} cerrado{{ "s" if meses | length != 1 else "" }} con resumen real
   </div>
   <div class="no-print" style="display:flex;gap:8px;">
-    <a href="/gerente/estrategico/excel" class="btn btn-ghost" style="font-size:0.82rem;">
+    <a href="/gerente/estrategico/excel{{ '?' + filtro_qs if filtro_qs else '' }}" class="btn btn-ghost" style="font-size:0.82rem;">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><polyline points="9 15 12 18 15 15"/></svg>
       Exportar Excel
     </a>
-    <a href="/gerente/estrategico/pdf" class="btn btn-ghost" style="font-size:0.82rem;">
+    <a href="/gerente/estrategico/pdf{{ '?' + filtro_qs if filtro_qs else '' }}" class="btn btn-ghost" style="font-size:0.82rem;">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
       Exportar PDF
     </a>
