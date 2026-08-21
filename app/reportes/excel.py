@@ -86,7 +86,10 @@ def generar_excel_reporte(
             fmt = FORMATOS_NUMERO.get(columna.formato)
             if fmt:
                 c.number_format = fmt
-            c.alignment = Alignment(horizontal=columna.alineacion_efectiva(), vertical="center")
+            c.alignment = Alignment(
+                horizontal=columna.alineacion_efectiva(), vertical="center",
+                wrap_text=(columna.formato == "texto"),
+            )
             if ri % 2 == 0:
                 c.fill = alt_fill
 
@@ -101,7 +104,10 @@ def generar_excel_reporte(
             fmt = FORMATOS_NUMERO.get(columna.formato)
             if fmt:
                 c.number_format = fmt
-            c.alignment = Alignment(horizontal=columna.alineacion_efectiva())
+            c.alignment = Alignment(
+                horizontal=columna.alineacion_efectiva(),
+                wrap_text=(columna.formato == "texto"),
+            )
 
     for i, columna in enumerate(columnas, start=1):
         ws.column_dimensions[get_column_letter(i)].width = columna.ancho
