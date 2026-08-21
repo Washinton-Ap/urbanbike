@@ -88,10 +88,10 @@
 {% if viaje.estado != 'pendiente_validacion' %}
 <div class="card" style="margin-bottom:20px;padding:20px;">
   <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:10px;">Modalidad actual: <strong>{{ viaje.modalidad_actual or "hora" }}</strong></div>
-  <form method="post" action="/ciclista/cambiar-modalidad" style="display:flex;gap:8px;">
+  <form method="post" action="/ciclista/cambiar-modalidad" id="form-cambiar-modalidad" style="display:flex;gap:8px;">
     <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
     <input type="hidden" name="viaje_id" value="{{ viaje.id }}">
-    <select class="form-input" name="modalidad_nueva">
+    <select class="form-input" name="modalidad_nueva" id="select-modalidad-nueva">
       <option value="hora" {{ "selected" if viaje.modalidad_actual == "hora" or not viaje.modalidad_actual }}>Por hora</option>
       <option value="dia" {{ "selected" if viaje.modalidad_actual == "dia" }}>Por día</option>
       <option value="semana" {{ "selected" if viaje.modalidad_actual == "semana" }}>Por semana</option>
@@ -136,6 +136,19 @@
     <div class="flex gap-2" style="justify-content:flex-end;">
       <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-confirmar-devolucion').close()">Cancelar</button>
       <button type="button" class="btn btn-primary" id="btn-confirmar-devolucion">Confirmar devolución</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="modal-confirmar-modalidad">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title">Confirmar cambio de modalidad</span>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-confirmar-modalidad').close()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <p style="color:var(--text);margin-bottom:8px;">El precio va a cambiar: dejarás de pagar <strong id="modal-modalidad-precio-actual"></strong> y desde ahora se te cobrará <strong id="modal-modalidad-precio-nuevo"></strong>.</p>
+    <p style="color:var(--text-muted);margin-bottom:20px;">El tramo que ya recorriste en la modalidad actual se cobra aparte, con su propia tarifa -- vas a pagar un <strong>monto distinto</strong> al que verías si mantuvieras la modalidad original.</p>
+    <div class="flex gap-2" style="justify-content:flex-end;">
+      <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-confirmar-modalidad').close()">Cancelar</button>
+      <button type="button" class="btn btn-primary" id="btn-confirmar-modalidad">Confirmar cambio</button>
     </div>
   </div>
 </dialog>
@@ -200,6 +213,42 @@ if (formDevolver && modalDevolucion) {
     modalDevolucion.close();
     formDevolver.dataset.confirmado = '1';
     formDevolver.requestSubmit();
+  });
+}
+
+// Mismo criterio (punto 1.7): antes de cambiar de modalidad a mitad de
+// viaje, confirmar en un modal con el precio real de ambas modalidades
+// -- PRECIOS_MODALIDAD viene del backend (viaje_activo(), Task 2 Step 1),
+// mismo precio con promocion que ya usa el KPI "Costo del viaje" de esta
+// misma pantalla. Si el ciclista no cambia realmente de modalidad
+// (selecciona la misma que ya tiene), se deja pasar sin aviso -- no hay
+// nada que confirmar.
+const ETIQUETA_MODALIDAD = { hora: 'por hora', dia: 'por día', semana: 'por semana' };
+const PRECIOS_MODALIDAD = {{ precios_modalidad | tojson }};
+const formModalidad = document.getElementById('form-cambiar-modalidad');
+const modalModalidad = document.getElementById('modal-confirmar-modalidad');
+if (formModalidad && modalModalidad) {
+  const selectModalidadNueva = document.getElementById('select-modalidad-nueva');
+  const elPrecioActual = document.getElementById('modal-modalidad-precio-actual');
+  const elPrecioNuevo  = document.getElementById('modal-modalidad-precio-nuevo');
+  formModalidad.addEventListener('submit', function (e) {
+    if (formModalidad.dataset.confirmado === '1') return;
+    const modalidadActual = VIAJE.modalidad_actual || 'hora';
+    const modalidadNueva  = selectModalidadNueva.value;
+    if (modalidadNueva === modalidadActual) return; // sin cambio real, nada que confirmar
+    e.preventDefault();
+    const precioActual = PRECIOS_MODALIDAD[modalidadActual];
+    const precioNuevo  = PRECIOS_MODALIDAD[modalidadNueva];
+    elPrecioActual.textContent = (precioActual != null)
+      ? `$${precioActual.toFixed(2)} ${ETIQUETA_MODALIDAD[modalidadActual]}` : ETIQUETA_MODALIDAD[modalidadActual];
+    elPrecioNuevo.textContent = (precioNuevo != null)
+      ? `$${precioNuevo.toFixed(2)} ${ETIQUETA_MODALIDAD[modalidadNueva]}` : ETIQUETA_MODALIDAD[modalidadNueva];
+    modalModalidad.showModal();
+  });
+  document.getElementById('btn-confirmar-modalidad').addEventListener('click', function () {
+    modalModalidad.close();
+    formModalidad.dataset.confirmado = '1';
+    formModalidad.requestSubmit();
   });
 }
 
