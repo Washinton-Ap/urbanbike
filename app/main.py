@@ -281,6 +281,10 @@ def notificaciones_listar(request: Request):
     items = notificaciones_repo.listar_no_leidas(usuario_id, rol_slug, limite=15)
     return JSONResponse({
         "total": notificaciones_repo.contar_no_leidas(usuario_id, rol_slug),
+        # El frontend (campana-notificaciones.js) usa esto para decidir cuáles
+        # no se pueden descartar con un clic -- se manda desde acá, en vez de
+        # duplicar la lista a mano en JS, para que nunca queden desincronizadas.
+        "tipos_protegidos": sorted(notificaciones_repo.TIPOS_PROTEGIDOS),
         "items": [
             {
                 "id": n.get("id", ""),
@@ -304,6 +308,14 @@ def notificaciones_marcar_leida(request: Request, nid: str):
     # ciclista.py para pagos/comprobantes ajenos.
     if n and (n.get("usuario_id") == user.get("id", "") or
               (n.get("rol_destino") and n.get("rol_destino") == user.get("rol_slug", ""))):
+        # Una notificacion de accion pendiente (pago por cobrar/verificar,
+        # devolucion por validar) no se descarta con un clic -- solo
+        # desaparece cuando notificaciones_repo.resolver_pendiente() la
+        # cierra desde el punto real donde esa accion se resolvio. Rechazo
+        # explicito aqui, no solo en el frontend: un POST directo a este
+        # endpoint no puede saltarse la regla.
+        if n.get("tipo") in notificaciones_repo.TIPOS_PROTEGIDOS:
+            return JSONResponse({"ok": False, "motivo": "pendiente"})
         notificaciones_repo.marcar_leida(nid)
     return JSONResponse({"ok": True})
 

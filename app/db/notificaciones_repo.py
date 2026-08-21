@@ -25,18 +25,35 @@ def _ahora() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def crear(*, tipo: str, titulo: str, mensaje: str, usuario_id: str = "", rol_destino: str = "", enlace: str = "") -> dict:
+# Tipos cuya notificación representa una acción todavía pendiente de
+# resolverse del todo (pago por cobrar/verificar, devolución por validar
+# físicamente) -- estas NUNCA se descartan con un clic (ver
+# notificaciones_marcar_leida()/notificaciones_marcar_todas() en main.py,
+# que las rechazan explícitamente). El único camino real para que
+# desaparezcan es resolver_pendiente(), llamado desde el punto exacto del
+# código donde la acción subyacente se completa de verdad (pago aprobado
+# o rechazado, devolución validada por Vigilancia) -- nunca por la sola
+# interacción del usuario con la campana.
+TIPOS_PROTEGIDOS = frozenset({"pago_pendiente", "cobro_pendiente", "devolucion_pendiente_validar"})
+
+
+def crear(*, tipo: str, titulo: str, mensaje: str, usuario_id: str = "", rol_destino: str = "",
+          enlace: str = "", referencia_id: str = "") -> dict:
     """Exactamente una de usuario_id/rol_destino debe venir llena --
-    quien llama decide si es un aviso puntual o una difusión de rol."""
+    quien llama decide si es un aviso puntual o una difusión de rol.
+    referencia_id identifica el registro real (pago, viaje, ...) cuya
+    resolución cierra esta notificación cuando tipo está en
+    TIPOS_PROTEGIDOS -- ver resolver_pendiente()."""
     return _pb().create_record("notificaciones", {
-        "usuario_id":  usuario_id,
-        "rol_destino": rol_destino,
-        "tipo":        tipo,
-        "titulo":      titulo,
-        "mensaje":     mensaje,
-        "enlace":      enlace,
-        "leida":       False,
-        "fecha":       _ahora(),
+        "usuario_id":    usuario_id,
+        "rol_destino":   rol_destino,
+        "tipo":          tipo,
+        "titulo":        titulo,
+        "mensaje":       mensaje,
+        "enlace":        enlace,
+        "referencia_id": referencia_id,
+        "leida":         False,
+        "fecha":         _ahora(),
     })
 
 
@@ -89,14 +106,57 @@ def marcar_leida(id_notificacion: str) -> None:
 def marcar_todas_leidas(usuario_id: str, rol_slug: str) -> int:
     """Devuelve cuántas se marcaron -- PocketBase no tiene update masivo,
     así que se hace una a una (volumen esperado bajo, mismo criterio que
-    permisos_repo.set_excepcion_masiva())."""
+    permisos_repo.set_excepcion_masiva()). Las de TIPOS_PROTEGIDOS se
+    saltan a propósito: 'marcar todas' tampoco puede descartar una acción
+    que sigue pendiente, ver resolver_pendiente()."""
     no_leidas = listar_no_leidas(usuario_id, rol_slug, limite=200)
+    tocadas = 0
     for n in no_leidas:
+        if n.get("tipo") in TIPOS_PROTEGIDOS:
+            continue
         marcar_leida(n["id"])
-    return len(no_leidas)
+        tocadas += 1
+    return tocadas
 
 
-def notificar_usuario(pb, usuario_id: str, *, tipo: str, titulo: str, mensaje: str, enlace: str = "") -> None:
+def resolver_pendiente(*, tipo: str, referencia_id: str, usuario_id: str = "", rol_destino: str = "") -> int:
+    """Único camino real para cerrar una notificación de TIPOS_PROTEGIDOS:
+    se llama desde el punto del código donde la acción subyacente
+    (referencia_id -- un pago o un viaje real) se resolvió de verdad, no
+    desde una interacción de clic. Exactamente uno de usuario_id/rol_destino
+    debe venir lleno, igual que en crear(). Best-effort: nunca debe poder
+    tumbar el flujo real (pago, devolución) que la dispara.
+
+    También cierra las notificaciones PREVIAS a este fix, que no tienen
+    referencia_id (campo agregado en etl/20) -- sin este fallback se
+    quedarían bloqueadas para siempre, sin ninguna acción real que las
+    pudiera resolver. Es una concesión deliberada solo para datos viejos:
+    de aquí en adelante toda notificación protegida nace con referencia_id
+    real, así que el fallback deja de tener candidatas con el tiempo."""
+    if not referencia_id or not (usuario_id or rol_destino):
+        return 0
+    destinatario = f'usuario_id = {filter_literal(usuario_id)}' if usuario_id \
+        else f'rol_destino = {filter_literal(rol_destino)}'
+    try:
+        res = _pb().list_records(
+            "notificaciones",
+            filter=f'{destinatario} && tipo = {filter_literal(tipo)} '
+                   f'&& (referencia_id = {filter_literal(referencia_id)} || referencia_id = "") && leida = false',
+            per_page=20,
+        )
+        items = res.get("items", [])
+    except Exception:
+        return 0
+    for n in items:
+        try:
+            marcar_leida(n["id"])
+        except Exception:
+            pass
+    return len(items)
+
+
+def notificar_usuario(pb, usuario_id: str, *, tipo: str, titulo: str, mensaje: str,
+                       enlace: str = "", referencia_id: str = "") -> None:
     """Punto único real para avisar a un usuario puntual (ver
     docs/Requerimientos_Mejoras_UrbanBike.md, punto 11.1): crea la
     notificación de la campana Y manda el correo real, resolviendo
@@ -107,7 +167,8 @@ def notificar_usuario(pb, usuario_id: str, *, tipo: str, titulo: str, mensaje: s
     if not usuario_id:
         return
     try:
-        crear(usuario_id=usuario_id, tipo=tipo, titulo=titulo, mensaje=mensaje, enlace=enlace)
+        crear(usuario_id=usuario_id, tipo=tipo, titulo=titulo, mensaje=mensaje,
+              enlace=enlace, referencia_id=referencia_id)
     except Exception:
         pass
     try:
@@ -121,12 +182,28 @@ def notificar_usuario(pb, usuario_id: str, *, tipo: str, titulo: str, mensaje: s
         pass
 
 
-def notificar_rol(rol_destino: str, *, tipo: str, titulo: str, mensaje: str, enlace: str = "") -> None:
+def notificar_rol(rol_destino: str, *, tipo: str, titulo: str, mensaje: str,
+                   enlace: str = "", referencia_id: str = "") -> None:
     """Difusión a todo un rol (ej. 'empleado-mantenimiento' cuando se
     asigna una orden nueva) -- solo campana, sin correo masivo a todo el
     equipo. El destinatario puntual de la acción (ej. el técnico
     asignado) recibe su propio aviso vía notificar_usuario()."""
     try:
-        crear(rol_destino=rol_destino, tipo=tipo, titulo=titulo, mensaje=mensaje, enlace=enlace)
+        crear(rol_destino=rol_destino, tipo=tipo, titulo=titulo, mensaje=mensaje,
+              enlace=enlace, referencia_id=referencia_id)
     except Exception:
         pass
+
+
+def resolver_pago(pago_id: str, ciclista_id: str) -> None:
+    """Punto único real para cerrar TODO lo que quedó pendiente por un pago
+    concreto cuando este se aprueba (tarjeta inmediata, efectivo o
+    transferencia verificada) -- ver empleado.py:_notificar_pago_aprobado()
+    y ciclista.py:confirmar_pago() (tarjeta), los únicos caminos reales que
+    marcan un pago 'pagado'. Cierra tanto el aviso del ciclista
+    ('pago_pendiente') como el de Operación ('cobro_pendiente'), best-effort."""
+    if not pago_id:
+        return
+    if ciclista_id:
+        resolver_pendiente(tipo="pago_pendiente", referencia_id=pago_id, usuario_id=ciclista_id)
+    resolver_pendiente(tipo="cobro_pendiente", referencia_id=pago_id, rol_destino="empleado-operacion")

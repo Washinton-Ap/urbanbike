@@ -31,6 +31,16 @@
   };
   var ICONO_DEFECTO = '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
 
+  // Tipos que representan una accion todavia pendiente de resolverse (pago
+  // por cobrar/verificar, devolucion por validar) -- un clic NO las
+  // descarta, solo desaparecen cuando la accion real se resuelve. El
+  // backend tambien rechaza el POST de marcar-leida para estos tipos
+  // (defensa en profundidad). Se llena desde `tipos_protegidos` de GET
+  // /notificaciones (fuente real: notificaciones_repo.TIPOS_PROTEGIDOS) en
+  // vez de duplicar la lista a mano acá, para que nunca queden
+  // desincronizadas entre backend y frontend.
+  var TIPOS_PROTEGIDOS = {};
+
   function postFormulario(url) {
     return fetch(url, {
       method: 'POST',
@@ -67,8 +77,9 @@
     }
     lista.innerHTML = '';
     items.forEach(function (n) {
+      var pendiente = !!TIPOS_PROTEGIDOS[n.tipo];
       var el = document.createElement(n.enlace ? 'a' : 'div');
-      el.className = 'campana-item ' + (n.tipo || '');
+      el.className = 'campana-item ' + (n.tipo || '') + (pendiente ? ' campana-item-pendiente' : '');
       if (n.enlace) el.href = n.enlace;
       el.innerHTML =
         '<span class="campana-item-icono">' + (ICONOS_POR_TIPO[n.tipo] || ICONO_DEFECTO) + '</span>' +
@@ -77,20 +88,31 @@
           '<div class="campana-item-mensaje"></div>' +
           '<div class="campana-item-fecha"></div>' +
         '</div>';
-      el.querySelector('.campana-item-titulo').textContent = n.titulo;
+      el.querySelector('.campana-item-titulo').textContent = n.titulo + (pendiente ? ' · pendiente' : '');
       el.querySelector('.campana-item-mensaje').textContent = n.mensaje;
       el.querySelector('.campana-item-fecha').textContent = formatearFecha(n.fecha);
-      el.addEventListener('click', function () {
-        postFormulario('/notificaciones/' + n.id + '/marcar-leida').catch(function () {});
-      });
+      // Las de accion pendiente no se descartan con un clic -- solo
+      // navegan (si tienen enlace); desaparecen cuando la accion real se
+      // resuelve, no antes (ver TIPOS_PROTEGIDOS arriba).
+      if (!pendiente) {
+        el.addEventListener('click', function () {
+          postFormulario('/notificaciones/' + n.id + '/marcar-leida').catch(function () {});
+        });
+      }
       lista.appendChild(el);
     });
+  }
+
+  function actualizarTiposProtegidos(lista) {
+    TIPOS_PROTEGIDOS = {};
+    (lista || []).forEach(function (tipo) { TIPOS_PROTEGIDOS[tipo] = true; });
   }
 
   function cargarLista() {
     fetch('/notificaciones', { credentials: 'same-origin' })
       .then(function (r) { return r.json(); })
       .then(function (data) {
+        actualizarTiposProtegidos(data.tipos_protegidos);
         renderLista(data.items);
         actualizarContador(data.total);
       })
@@ -118,15 +140,21 @@
     e.stopPropagation();
     postFormulario('/notificaciones/marcar-todas')
       .then(function () {
-        actualizarContador(0);
-        renderLista([]);
+        // El backend salta las de TIPOS_PROTEGIDOS al marcar todas (siguen
+        // pendientes de verdad) -- recargar la lista real en vez de asumir
+        // que quedo vacia, para que esas sigan visibles.
+        cargarLista();
       })
       .catch(function () {});
   });
 
-  // Conteo inicial al cargar la pagina (sin abrir el dropdown).
+  // Conteo inicial al cargar la pagina (sin abrir el dropdown) -- también
+  // deja TIPOS_PROTEGIDOS listo antes de que el usuario abra el dropdown.
   fetch('/notificaciones', { credentials: 'same-origin' })
     .then(function (r) { return r.json(); })
-    .then(function (data) { actualizarContador(data.total); })
+    .then(function (data) {
+      actualizarTiposProtegidos(data.tipos_protegidos);
+      actualizarContador(data.total);
+    })
     .catch(function () {});
 })();

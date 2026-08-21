@@ -1094,6 +1094,7 @@ async def finalizar(
             mensaje=f"{user.get('name') or user.get('email', '')} reportó la devolución en "
                     f"{estacion_fin_nombre} -- pendiente de confirmar la entrega física.",
             enlace="/empleado/vigilancia/devoluciones",
+            referencia_id=viaje_id,
         )
 
         # Código de descuento por buena conducta + cliente frecuente
@@ -1302,6 +1303,7 @@ async def confirmar_pago(
                 titulo="Cobro en efectivo pendiente",
                 mensaje=f"Un ciclista se acercará a pagar en efectivo con el código {comprobante}.",
                 enlace="/empleado/operacion/pagos",
+                referencia_id=pago_id,
             )
             request.session["flash"] = {"type": "info", "msg":
                 f"Dirígete al empleado de operación más cercano con el código de pago: {comprobante} para completar el pago."}
@@ -1341,6 +1343,10 @@ async def confirmar_pago(
                 mensaje=f"Tu pago de ${float(registro.get('monto_total') or 0):.2f} fue aprobado.",
                 enlace="/ciclista/pagos",
             )
+            # Aprobación inmediata con tarjeta -- mismo cierre real que
+            # empleado.py:_notificar_pago_aprobado() aplica en los caminos
+            # de Operación, ver notificaciones_repo.resolver_pago().
+            notificaciones_repo.resolver_pago(pago_id, registro.get("ciclista_id", user_id))
             return RedirectResponse(f"/ciclista/comprobante/{pago_id}", status_code=302)
 
         # ── Transferencia ─────────────────────────────────────────────────────
@@ -1377,6 +1383,7 @@ async def confirmar_pago(
                 titulo="Transferencia pendiente de verificar",
                 mensaje=f"Un ciclista subió un comprobante de transferencia (código {comprobante}) que espera verificación.",
                 enlace="/empleado/operacion/pagos",
+                referencia_id=pago_id,
             )
             request.session["flash"] = {"type": "info", "msg":
                 "Tu pago está en verificación. El empleado de operación lo confirmará en breve."}

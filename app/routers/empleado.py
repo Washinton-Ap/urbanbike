@@ -675,13 +675,19 @@ def _notificar_pago_aprobado(pb, registro: dict) -> None:
     cada camino real que marca un pago como 'pagado' (efectivo, tarjeta,
     transferencia verificada). `registro` es el pago tal como se leyó
     ANTES del update; monto_total/ciclista_id no cambian en la
-    confirmación, así que no hace falta releerlo."""
+    confirmación, así que no hace falta releerlo.
+
+    También es el punto único real que CIERRA lo que quedó pendiente por
+    este pago (aviso de "pago pendiente" del ciclista y "cobro pendiente"
+    de Operación, ver notificaciones_repo.TIPOS_PROTEGIDOS) -- ya no basta
+    con un clic en la campana, solo esto (la aprobación real) las resuelve."""
     notificaciones_repo.notificar_usuario(
         pb, registro.get("ciclista_id", ""), tipo="pago_aprobado",
         titulo="Pago aprobado",
         mensaje=f"Tu pago de ${float(registro.get('monto_total') or 0):.2f} fue aprobado.",
         enlace="/ciclista/pagos",
     )
+    notificaciones_repo.resolver_pago(registro.get("id", ""), registro.get("ciclista_id", ""))
 
 
 @router.get("/operacion/pagos/cobrar/{pago_id}", response_class=HTMLResponse)
@@ -824,6 +830,7 @@ async def op_pagos_cobrar_confirmar(
                 titulo="Transferencia presencial pendiente de verificar",
                 mensaje=f"Se subió un comprobante de transferencia presencial (código {comprobante}) que espera verificación.",
                 enlace="/empleado/operacion/pagos",
+                referencia_id=pago_id,
             )
             return _flash(request, "/empleado/operacion/pagos", "info",
                           "Comprobante recibido. Queda pendiente de verificación.")
@@ -924,6 +931,13 @@ async def op_pagos_rechazar_transferencia(
             mensaje=f"Tu comprobante de transferencia fue rechazado. Motivo: {motivo.strip()}. "
                     "Puedes intentar de nuevo desde Historial de Pagos.",
             enlace="/ciclista/pagos",
+        )
+        # Cierra el aviso de "cobro pendiente" de Operación -- la
+        # verificación ya terminó (con rechazo), aunque el ciclista siga
+        # debiendo el pago: su propio "pago pendiente" NO se cierra aquí,
+        # sigue pendiente hasta que pague de verdad.
+        notificaciones_repo.resolver_pendiente(
+            tipo="cobro_pendiente", referencia_id=pago_id, rol_destino="empleado-operacion",
         )
         return _flash(request, "/empleado/operacion/pagos", "success", "Transferencia rechazada. Se notificó al ciclista.")
     except Exception as e:
@@ -1691,7 +1705,7 @@ async def vig_devolver(
             descuento_monto = round(subtotal * descuento_porcentaje / 100, 2) if descuento_porcentaje else 0.0
 
             monto_total = round(subtotal + recargo_demora - descuento_monto, 2)
-            pb.create_record("pagos", {
+            pago_creado = pb.create_record("pagos", {
                 "viaje_id":          viaje_id,
                 "ciclista_id":       viaje.get("ciclista_id", ""),
                 "ciclista_nombre":   viaje.get("ciclista_nombre") or "—",
@@ -1724,6 +1738,7 @@ async def vig_devolver(
                 mensaje=f"Tu viaje finalizó con un pago pendiente de ${monto_total:.2f}. "
                         "Puedes pagarlo desde Historial de Pagos.",
                 enlace="/ciclista/pagos",
+                referencia_id=pago_creado.get("id", ""),
             )
 
             if recargo_demora > 0:
@@ -1734,6 +1749,13 @@ async def vig_devolver(
                             "(más de 5h desde que reportaste el fin del viaje).",
                     enlace="/ciclista/pagos",
                 )
+
+            # Cierra el aviso "devolución por validar" de Vigilancia (ver
+            # ciclista.py:finalizar()) -- ya se validó de verdad, no basta
+            # con que alguien lo haya descartado con un clic.
+            notificaciones_repo.resolver_pendiente(
+                tipo="devolucion_pendiente_validar", referencia_id=viaje_id, rol_destino="empleado-vigilancia",
+            )
 
             notificaciones_repo.notificar_usuario(
                 pb, viaje.get("ciclista_id", ""), tipo="devolucion_validada",
