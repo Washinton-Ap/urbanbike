@@ -6861,3 +6861,113 @@ disparó por SMTP (Brevo) a `ciclista@urbanbike.com` -- no es recuperable, se de
 acá por transparencia.
 
 Cambios sin commitear a propósito -- Washington los revisa primero.
+
+## 82. Punto 1.7 -- ventanas de advertencia contextual al reportar la devolución y al cambiar de modalidad a mitad de viaje (20-21-ago-2026)
+
+Worktree aislado `plan-mejoras-v2-p1-g1` (rama `worktree-plan-mejoras-v2-p1-g1`, base
+`5808d89`), plan `docs/superpowers/plans/2026-08-20-avisos-fin-viaje-cambio-modalidad.md`.
+Fuente real: `.superpowers/sdd/2026-08-20-avisos-fin-viaje-cambio-modalidad/progress.md`,
+dentro del worktree (no comiteado, gitignored). Implementa el punto 1.7 de
+`docs/Plan_Mejoras_UrbanBike_V2.md`: dos modales `<dialog>` reales (no texto pasivo) en
+`ciclista/viaje_activo.html` que interceptan el `submit` de dos formularios ya existentes --
+sin tocar la lógica de negocio real de ninguno de los dos endpoints.
+
+### Task 1 -- aviso al reportar la devolución (commit `4662c1c`)
+
+Un `<dialog id="modal-confirmar-devolucion">` intercepta el `submit` de
+`form-devolver` (`POST /ciclista/finalizar`, sin cambios): muestra la estación de destino
+elegida y una advertencia explícita de que el costo se congela con la hora del reporte, con
+**5 horas sin cargo adicional** para que Vigilancia confirme la entrega física antes de que
+se aplique un recargo por demora aparte (la ventana de gracia real ya construida en la
+sección 70). Solo al confirmar se reenvía el mismo formulario (`requestSubmit()` con un
+`dataset.confirmado` como candado de una sola vía para no volver a interceptar el segundo
+submit).
+
+El implementador (Haiku) reportó DONE con el commit hecho, pero el Step 4 (E2E real) no se
+había ejecutado -- el worktree no tenía `.env` (gitignored, per-checkout) y por lo tanto no
+había credenciales reales para PocketBase/ClickHouse. El controlador cerró el hueco
+directamente en vez de re-despachar: copió el `.env` real desde la raíz del repo, levantó el
+servidor real en el puerto 8013 (`scripts/dev_reload.py`, reservado para este worktree),
+inició sesión real como `ciclista@urbanbike.com`, reservó una bicicleta real (UB-009 → viaje
+`fqb6wlbdrselv5u`), confirmó el marcado/texto/JS del modal en el HTML realmente renderizado,
+hizo `POST /ciclista/finalizar` real, y confirmó el estado real en PocketBase
+(`estado="pendiente_validacion"`). Limpieza verificada con lecturas de seguimiento: viaje
+borrado, notificación `kkdzv06nxoiivw0` borrada, código de descuento `1a5lj9h9lk54u4n`
+(UB-060A78) borrado, bicicleta UB-009 restaurada a `disponible` (404 en el viaje, `disponible`
+en la bici, ambos confirmados con un GET posterior).
+
+Revisión: **Approved, 0 Critical/Important**, 2 minores heredados textualmente del propio
+código prescrito por el plan (no desviación del implementador), diferidos: el texto del modal
+duplica una leyenda inline preexistente (cosmético); `formDevolver.dataset.confirmado` es un
+candado de una sola vía sin ningún camino de falla realista en este flujo. La única duda que
+dejó el revisor (la adenda de E2E no se puede verificar solo desde el diff) quedó resuelta
+porque el controlador ejecutó y observó personalmente cada llamada HTTP/PocketBase de esa
+adenda en la misma sesión, no que confió en un reporte ajeno.
+
+### Task 2 -- aviso al cambiar de modalidad a mitad de viaje (commit `399b31d`)
+
+`viaje_activo()` (`app/routers/ciclista.py`) agrega `precios_modalidad: dict[str, float |
+None]` al contexto -- el precio real con promoción ya aplicada de las 3 modalidades (hora/
+día/semana) para la bicicleta y membresía del viaje, reusando
+`tarifas_repo.precio_modalidad_con_promocion()` sin cambios (mismo criterio que `precio_hora`,
+ya existente). Un segundo `<dialog id="modal-confirmar-modalidad">` intercepta el `submit` de
+`form-cambiar-modalidad` (`POST /ciclista/cambiar-modalidad`, sin cambios) mostrando el precio
+real que se deja de pagar y el nuevo, tomados de `PRECIOS_MODALIDAD` (el dict de Python
+serializado al template con el filtro `tojson`, no interpolación cruda). Si el ciclista
+selecciona la misma modalidad que ya tiene, no hay nada que confirmar y el modal no aparece.
+
+El implementador (Sonnet) hizo el E2E real correctamente en el primer intento: mató un
+`uvicorn` plano (sin `--reload`) que había quedado huérfano en el puerto 8013 de una pasada
+anterior, levantó `dev_reload.py` limpio, inició sesión real, reservó una bicicleta real
+distinta (UB-008, para no chocar con el test ya limpiado de la Task 1 sobre UB-009), confirmó
+el marcado del modal y `PRECIOS_MODALIDAD={"hora":3.6,"dia":28.8,"semana":144.0}` reales en el
+HTML renderizado, hizo `POST /ciclista/cambiar-modalidad` real de `hora` a `dia` (302, lógica
+de negocio intacta), y confirmó tanto `modalidad_actual="dia"` en PocketBase como exactamente
+1 fila nueva en `urbanbike_operativa.alquileres` (`origen="segmento_modalidad"`) en
+ClickHouse. Limpieza verificada con lecturas de seguimiento: viaje y notificación en 404,
+bicicleta restaurada a `disponible`, fila de ClickHouse borrada vía `ALTER ... DELETE` con el
+conteo sondeado hasta 0.
+
+Revisión: **Approved, 0 Critical/Important**, 2 minores heredados textualmente del propio
+código prescrito por el plan, diferidos: re-anotación redundante de tipo
+(`dict[str, float | None]`) al reasignar la misma variable dentro del `try`; las variables de
+bucle `_m`/`_r` no tienen type hint, consistente con otras locales sin tipar ya existentes en
+la misma función.
+
+### Revisión final de la rama completa (base `5808d89`, 3 commits, `4662c1c..7fdbd15`)
+
+El plan no traía un task explícito de "revisión final de rama" (a diferencia de otros
+worktrees hermanos de este mismo Plan de Mejoras V2). Dado el estándar de rigor ya establecido
+antes de dar por cerrado cualquier worktree (ver sección 78), se despachó una revisión
+independiente extra enfocada específicamente en la interacción entre los cambios de la Task 1
+y la Task 2 sobre el mismo archivo (`viaje_activo.html`: dos `<dialog>` y dos bloques de JS de
+interceptación de `submit` agregados secuencialmente en la misma región del
+`{% block scripts %}`), no solo en cada tarea por separado (ya revisadas limpias arriba).
+
+**Veredicto: "Ready to merge as-is."** 0 Critical/Important. Confirmó explícitamente que no
+hay colisión entre los dos bloques de JS (nombres de `const` distintos en ambos lados,
+`id`s de diálogo/botón distintos, cada bloque guardado por su propio
+`if (form && dialog)`), que `VIAJE.modalidad_actual` (usado por el JS de la Task 2) está
+definido más arriba en el mismo template (`const VIAJE = {{ viaje | tojson }}`, línea 161) y
+ya se consultaba antes en el cronómetro de costo preexistente -- no es una dependencia nueva
+ni frágil --, que `.modal-card`/`.modal-header` reutilizan el mismo patrón ya usado en unos 10
+templates más del proyecto, que `POST /ciclista/finalizar` y `POST /ciclista/cambiar-modalidad`
+quedaron intactos (el diff de `ciclista.py` cae entero dentro de la vista GET
+`viaje_activo()`), que `precios_modalidad`/`PRECIOS_MODALIDAD` viaja siempre por el filtro
+`tojson` (mismo patrón seguro que `VIAJE`, sin superficie XSS nueva), y que el archivo final
+queda bien formado (un solo `{% endblock %}` por bloque, sin diálogo huérfano). 3 minores
+nuevos, cosméticos/de rendimiento, diferidos con el mismo criterio que el resto del proyecto:
+(1) `precios_modalidad` se declara dos veces -- valor por defecto antes del `try` y
+reasignado dentro --, intencional, mismo patrón que `precio_hora_recargo`/
+`subtotal_segmentos_cerrados` en las mismas líneas; (2) el bucle de las 3 modalidades vuelve a
+pedir el precio de la modalidad actual aunque ya se había pedido antes (`resultado_precio`),
+un viaje a la base de datos redundante sin impacto funcional; (3) los dos `<dialog>` nuevos se
+renderizan siempre en el DOM, incluso cuando `viaje.estado == "pendiente_validacion"` (donde
+los formularios que abren no existen) -- inofensivo porque el JS ya valida
+`if (form && dialog)` antes de usarlos.
+
+**Estado del plan: RESUELTO.** Los 2 tasks completos, revisados limpios individualmente (0
+Critical/Important cada uno, minores heredados del propio código del plan diferidos) y la
+revisión final de la rama completa también limpia (0 Critical/Important, 3 minores cosméticos
+diferidos) -- listo para una recomendación de fusión, pendiente de que Washington decida el
+momento/proceso (esta sesión no fusiona ni pushea por su cuenta).

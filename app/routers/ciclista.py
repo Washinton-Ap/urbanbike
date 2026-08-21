@@ -1107,6 +1107,7 @@ async def viaje_activo(request: Request, viaje_id: str):
     # con lo que se cobra de verdad.
     precio_hora_recargo = 0.0
     subtotal_segmentos_cerrados = 0.0
+    precios_modalidad: dict[str, float | None] = {"hora": None, "dia": None, "semana": None}
     try:
         pb = _pb()
         res = pb.list_records("estaciones", filter='activa = true', sort="nombre", per_page=50)
@@ -1128,6 +1129,17 @@ async def viaje_activo(request: Request, viaje_id: str):
         precio_hora = resultado_precio[0] if resultado_precio else 0.0
         precio_hora_recargo = _tarifa_hora(codigo_bici_viaje, tipo_membresia)
         subtotal_segmentos_cerrados = alquileres_repo.total_segmentos_cerrados(viaje_id)
+
+        # Precio real de las 3 modalidades para esta bicicleta/membresia
+        # (punto 1.7 -- ventana de advertencia al cambiar de modalidad):
+        # con promocion ya aplicada, mismo criterio que precio_hora arriba,
+        # para que el aviso muestre el monto real que se cobraria, no uno
+        # generico. None si no hay tarifa vigente para esa combinacion --
+        # el template no inventa un precio.
+        precios_modalidad: dict[str, float | None] = {}
+        for _m in ("hora", "dia", "semana"):
+            _r = tarifas_repo.precio_modalidad_con_promocion(codigo_bici_viaje, tipo_membresia, _m)
+            precios_modalidad[_m] = _r[0] if _r else None
     except Exception:
         pass
 
@@ -1140,6 +1152,7 @@ async def viaje_activo(request: Request, viaje_id: str):
         precio_hora=precio_hora,  # precio de la modalidad actual del viaje (nombre de variable ya existente en el template)
         precio_hora_recargo=precio_hora_recargo,
         subtotal_segmentos_cerrados=subtotal_segmentos_cerrados,
+        precios_modalidad=precios_modalidad,
     ))
 
 
