@@ -49,14 +49,23 @@
       {% endfor %}
     </div>
 
-    <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;">
+    <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;flex-wrap:wrap;">
+      <button type="submit" formaction="/admin/respaldo/csv/completo" class="btn btn-ghost" title="Exporta las 25 tablas completas, con todo su historial, sin necesidad de seleccionar nada arriba.">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Respaldo completo (CSV)
+      </button>
+      <button type="submit" formaction="/admin/respaldo/sql/completo" class="btn btn-primary" title="Exporta las 25 tablas completas, con todo su historial, sin necesidad de seleccionar nada arriba.">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Respaldo completo (SQL)
+      </button>
+      <span style="width:100%;border-top:1px solid var(--border);margin:4px 0;"></span>
       <button type="submit" formaction="/admin/respaldo/csv" class="btn btn-ghost">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-        Descargar CSV
+        Descargar CSV (selección)
       </button>
       <button type="submit" formaction="/admin/respaldo/sql" class="btn btn-primary">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-        Descargar SQL
+        Descargar SQL (selección)
       </button>
     </div>
   </form>
