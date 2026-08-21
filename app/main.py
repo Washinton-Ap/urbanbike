@@ -22,6 +22,7 @@ from app.routers import gerente as gerente_router
 from app.routers import ciclista as ciclista_router
 from app.routers import empleado as empleado_router
 from app.routers import institucional as institucional_router
+from app.guia_contenido import GUIA
 from app.templating import templates
 
 BASE_DIR = Path(__file__).parent
@@ -313,3 +314,18 @@ def notificaciones_marcar_todas(request: Request):
     user = request.state.user
     tocadas = notificaciones_repo.marcar_todas_leidas(user.get("id", ""), user.get("rol_slug", ""))
     return JSONResponse({"ok": True, "tocadas": tocadas})
+
+
+# ── Guía de uso por rol (punto 1.9) -- mismo patrón que /dashboard y
+# /perfil de arriba: ruta compartida sin prefijo de rol, el contenido
+# varía según user["rol_slug"] (ver app/guia_contenido.py) ────────────────
+
+@app.get("/guia", response_class=HTMLResponse)
+def guia(request: Request):
+    user = request.state.user
+    rol = user.get("rol_slug", "")
+    contenido = GUIA.get(rol)
+    return templates.TemplateResponse(request, "guia.html", {
+        "user": user, "title": "Guía de uso",
+        "contenido": contenido,
+    })
