@@ -36,6 +36,30 @@
   </form>
 </div>
 
+<div class="flex gap-2" style="margin-bottom:20px;">
+  <form method="post" action="/admin/permisos-usuario/{{ usuario.id }}/aplicar-todo">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <button type="submit" class="btn btn-ghost" title="Otorga a este usuario, por excepción, todos los permisos del catálogo que todavía no tenga (por rol o por excepción previa).">Aplicar todo a este usuario</button>
+  </form>
+  <button type="button" class="btn btn-ghost" style="color:#EF4444;border-color:rgba(239,68,68,0.35);" title="Quita TODAS las excepciones reales de este usuario -- vuelve a heredar el 100% de lo que le da su rol, sin ninguna excepción individual." onclick="document.getElementById('modal-restablecer-usuario').showModal()">Restablecer a configuración predeterminada</button>
+</div>
+
+<dialog id="modal-restablecer-usuario">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title" style="color:#EF4444;">Restablecer excepciones de {{ usuario.name or usuario.email }}</span></div>
+    <p style="color:var(--text-muted);margin-bottom:20px;">
+      Esto va a quitar todas las excepciones individuales de este usuario -- vuelve a depender 100% de lo que le da su rol (<strong>{{ usuario.rol_nombre }}</strong>). Esta acción no se puede deshacer.
+    </p>
+    <form method="post" action="/admin/permisos-usuario/{{ usuario.id }}/restablecer">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <div class="flex gap-2" style="justify-content:flex-end;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-restablecer-usuario').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary" style="background:#EF4444;border-color:#EF4444;">Restablecer</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
 {% set resumen_items = [
   ("leer", "Lectura"),
   ("crear", "Escritura"),

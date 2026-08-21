@@ -280,3 +280,138 @@ def set_excepcion_masiva(id_usuario: str, rol_slug: str, accion: str, otorgar: b
                 set_excepcion_usuario(id_usuario, p["id"], "revocar", otorgado_por)
                 tocados += 1
     return tocados
+
+
+def restablecer_excepciones_usuario(id_usuario: str) -> int:
+    """Quita TODAS las excepciones reales de este usuario (DELETE real en
+    usuario_permisos) -- lo devuelve a heredar 100% de su rol, que es el
+    estado por defecto real de cualquier usuario sin excepciones (ver
+    docs/HOJA_DE_RUTA.md sección 42). Devuelve cuantas filas se
+    borraron (0 si ya estaba sin excepciones)."""
+    n = ch.scalar(
+        "SELECT count() FROM urbanbike_operativa.usuario_permisos WHERE id_usuario = %(usuario)s",
+        {"usuario": id_usuario},
+    )
+    if n:
+        ch.get_client().command(
+            "ALTER TABLE urbanbike_operativa.usuario_permisos DELETE WHERE id_usuario = %(usuario)s",
+            parameters={"usuario": id_usuario},
+            settings={"mutations_sync": 1},
+        )
+    return int(n)
+
+
+def aplicar_todas_excepciones_usuario(id_usuario: str, rol_slug: str, otorgado_por: str) -> int:
+    """Otorga una excepcion real 'otorgado' en CADA permiso del catalogo
+    donde el usuario todavia no lo tiene efectivo hoy (ni por rol ni por
+    excepcion previa) -- lo deja con el catalogo completo por excepcion
+    explicita, sin tocar su rol. Reutiliza listar_permisos_usuario() +
+    set_excepcion_usuario(), mismo criterio que set_excepcion_masiva().
+    Devuelve cuantos permisos se tocaron de verdad (0 si ya tenia el
+    catalogo completo efectivo)."""
+    grupos = listar_permisos_usuario(id_usuario, rol_slug)
+    tocados = 0
+    for lista in grupos.values():
+        for p in lista:
+            if not p["efectivo"]:
+                set_excepcion_usuario(id_usuario, p["id"], "otorgar", otorgado_por)
+                tocados += 1
+    return tocados
+
+
+# ── Configuración predeterminada real (ver docs/HOJA_DE_RUTA.md secciones
+# 30/41) -- confirmada contra el estado real de rol_permisos antes de esta
+# tarea (85 filas, 0 diferencias con lo documentado). No es un default
+# inventado: es exactamente lo que ya existía en producción cuando se
+# sembró el catálogo. ──
+
+CONFIGURACION_PREDETERMINADA: dict[str, list[str]] = {
+    "admin": [
+        "alquileres:actualizar", "alquileres:crear", "alquileres:eliminar",
+        "alquileres:exportar", "alquileres:leer",
+        "auditoria:exportar", "auditoria:leer",
+        "bicicletas:actualizar", "bicicletas:crear", "bicicletas:eliminar", "bicicletas:leer",
+        "estaciones:actualizar", "estaciones:crear", "estaciones:eliminar", "estaciones:leer",
+        "infracciones:actualizar", "infracciones:crear", "infracciones:leer",
+        "ordenes_mantenimiento:actualizar", "ordenes_mantenimiento:crear",
+        "ordenes_mantenimiento:eliminar", "ordenes_mantenimiento:leer",
+        "permisos:actualizar",
+        "promociones:actualizar", "promociones:crear", "promociones:eliminar", "promociones:leer",
+        "reportes:exportar", "reportes:leer",
+        "respaldo:exportar",
+        "tarifas:actualizar", "tarifas:crear", "tarifas:eliminar", "tarifas:leer",
+        "usuarios:actualizar", "usuarios:crear", "usuarios:eliminar",
+        "usuarios:exportar", "usuarios:leer",
+    ],
+    "gerente": [
+        "bicicletas:actualizar", "bicicletas:crear", "bicicletas:eliminar", "bicicletas:leer",
+        "estaciones:actualizar", "estaciones:crear", "estaciones:eliminar", "estaciones:leer",
+        "promociones:actualizar", "promociones:crear", "promociones:eliminar", "promociones:leer",
+        "reportes:exportar", "reportes:leer",
+        "tarifas:actualizar", "tarifas:crear", "tarifas:eliminar", "tarifas:leer",
+        "usuarios:actualizar", "usuarios:crear", "usuarios:exportar", "usuarios:leer",
+    ],
+    "empleado-operacion": [
+        "alquileres:actualizar", "alquileres:crear", "alquileres:eliminar", "alquileres:leer",
+        "bicicletas:actualizar", "bicicletas:crear", "bicicletas:eliminar", "bicicletas:leer",
+        "reportes:exportar", "reportes:leer",
+    ],
+    "empleado-mantenimiento": [
+        "bicicletas:leer",
+        "ordenes_mantenimiento:actualizar", "ordenes_mantenimiento:crear",
+        "ordenes_mantenimiento:eliminar", "ordenes_mantenimiento:leer",
+        "reportes:leer",
+    ],
+    "empleado-vigilancia": [
+        "bicicletas:actualizar", "bicicletas:leer",
+        "infracciones:actualizar", "infracciones:crear", "infracciones:leer",
+        "ordenes_mantenimiento:actualizar", "ordenes_mantenimiento:crear",
+        "ordenes_mantenimiento:leer",
+    ],
+    "ciclista": [],
+}
+
+
+def aplicar_todos_rol(id_rol: str, otorgado_por: str) -> int:
+    """Otorga a un rol TODOS los permisos del catalogo real que todavia
+    no tenga -- idempotente, solo inserta los que faltan (nunca duplica
+    una fila ya existente). Devuelve cuantos se otorgaron de nuevo (0 si
+    el rol ya tenia el catalogo completo)."""
+    permisos = ch.query("SELECT id FROM urbanbike_operativa.permisos FINAL")
+    otorgados_hoy = {
+        str(g["id_permiso"]) for g in ch.query(
+            "SELECT id_permiso FROM urbanbike_operativa.rol_permisos WHERE id_rol = %(rol)s",
+            {"rol": id_rol},
+        )
+    }
+    faltantes = [str(p["id"]) for p in permisos if str(p["id"]) not in otorgados_hoy]
+    for id_permiso in faltantes:
+        otorgar(id_rol, id_permiso, otorgado_por)
+    return len(faltantes)
+
+
+def restablecer_rol_predeterminado(id_rol: str, rol_slug: str, otorgado_por: str) -> int:
+    """Deja rol_permisos de este rol EXACTAMENTE igual a
+    CONFIGURACION_PREDETERMINADA[rol_slug] -- revoca lo que sobre, otorga
+    lo que falte, sin tocar el resto. Devuelve cuantas filas cambiaron
+    (otorgadas + revocadas; 0 si ya estaba en su configuracion
+    predeterminada)."""
+    deseados_codigos = set(CONFIGURACION_PREDETERMINADA.get(rol_slug, []))
+    catalogo = ch.query("SELECT id, codigo FROM urbanbike_operativa.permisos FINAL")
+    id_por_codigo = {p["codigo"]: str(p["id"]) for p in catalogo}
+    deseados_ids = {id_por_codigo[c] for c in deseados_codigos if c in id_por_codigo}
+
+    actuales = {
+        str(g["id_permiso"]) for g in ch.query(
+            "SELECT id_permiso FROM urbanbike_operativa.rol_permisos WHERE id_rol = %(rol)s",
+            {"rol": id_rol},
+        )
+    }
+
+    a_otorgar = deseados_ids - actuales
+    a_revocar = actuales - deseados_ids
+    for id_permiso in a_otorgar:
+        otorgar(id_rol, id_permiso, otorgado_por)
+    for id_permiso in a_revocar:
+        revocar(id_rol, id_permiso)
+    return len(a_otorgar) + len(a_revocar)

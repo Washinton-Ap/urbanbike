@@ -22,7 +22,17 @@
         <tr>
           <th style="min-width:220px;">Permiso</th>
           {% for rol in roles %}
-          <th style="text-align:center;white-space:nowrap;">{{ rol.nombre }}</th>
+          <th style="text-align:center;white-space:nowrap;">
+            <div>{{ rol.nombre }}</div>
+            <div style="display:flex;gap:4px;justify-content:center;margin-top:6px;">
+              <form method="post" action="/admin/permisos/aplicar-todo" style="display:inline-block;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+                <input type="hidden" name="id_rol" value="{{ rol.id }}">
+                <button type="submit" class="btn btn-ghost" style="font-size:0.65rem;padding:2px 6px;" title="Otorga a {{ rol.nombre }} todos los permisos del catálogo que todavía no tenga.">Aplicar todo</button>
+              </form>
+              <button type="button" class="btn btn-ghost" style="font-size:0.65rem;padding:2px 6px;color:#EF4444;border-color:rgba(239,68,68,0.35);" title="Revoca los permisos que {{ rol.nombre }} tenga de más y otorga los que le falten, hasta dejarlo exactamente en su configuración predeterminada." onclick="document.getElementById('modal-restablecer-{{ rol.id }}').showModal()">Restablecer</button>
+            </div>
+          </th>
           {% endfor %}
         </tr>
       </thead>
@@ -31,6 +41,11 @@
         <tr style="background:var(--bg-soft);">
           <td colspan="{{ roles | length + 1 }}" style="font-weight:700;color:var(--text);font-family:'Sora',sans-serif;font-size:0.85rem;">
             {{ recurso_label.get(recurso, recurso) }}
+            {% if recurso_ayuda.get(recurso) %}
+            <span title="{{ recurso_ayuda[recurso] }}" style="display:inline-flex;vertical-align:middle;margin-left:6px;color:var(--text-muted);cursor:help;font-weight:400;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            </span>
+            {% endif %}
           </td>
         </tr>
         {% for permiso in permisos %}
@@ -64,5 +79,24 @@
     </table>
   </div>
 </div>
+
+{% for rol in roles %}
+<dialog id="modal-restablecer-{{ rol.id }}">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title" style="color:#EF4444;">Restablecer permisos de {{ rol.nombre }}</span></div>
+    <p style="color:var(--text-muted);margin-bottom:20px;">
+      Esto va a revocar cualquier permiso que {{ rol.nombre }} tenga fuera de su configuración predeterminada, y a otorgar los que le falten. Esta acción no se puede deshacer.
+    </p>
+    <form method="post" action="/admin/permisos/restablecer">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <input type="hidden" name="id_rol" value="{{ rol.id }}">
+      <div class="flex gap-2" style="justify-content:flex-end;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-restablecer-{{ rol.id }}').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary" style="background:#EF4444;border-color:#EF4444;">Restablecer</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+{% endfor %}
 
 {% endblock %}

@@ -1058,6 +1058,20 @@ _RECURSO_LABEL = {
     "infracciones": "Infracciones", "permisos": "Permisos",
 }
 
+_RECURSO_AYUDA = {
+    "bicicletas": "Alta, edición y baja de bicicletas de la flota.",
+    "alquileres": "Reservas y alquileres activos de los ciclistas.",
+    "ordenes_mantenimiento": "Órdenes de reparación o revisión de bicicletas.",
+    "tarifas": "Precios por hora, día o semana según categoría y membresía.",
+    "promociones": "Descuentos y códigos promocionales activos.",
+    "estaciones": "Puntos físicos de retiro y devolución de bicicletas.",
+    "usuarios": "Cuentas del sistema (ciclistas, empleados, gerentes, admins).",
+    "reportes": "Exportación e informes de negocio (solo lectura, no modifican datos).",
+    "auditoria": "Bitácora de solo lectura de acciones del sistema.",
+    "infracciones": "Sanciones e incidencias registradas contra un ciclista.",
+    "permisos": "Esta misma matriz — quién puede administrar roles y permisos.",
+}
+
 
 @router.get("/permisos", response_class=HTMLResponse, dependencies=[Depends(requiere_permiso("permisos:actualizar"))])
 def permisos_matriz(request: Request):
@@ -1066,7 +1080,7 @@ def permisos_matriz(request: Request):
     return templates.TemplateResponse(request, "admin/permisos.html", _ctx(request,
         title="Roles y Permisos", flash=flash,
         roles=datos["roles"], grupos=datos["grupos"], grant_set=datos["grant_set"],
-        recurso_label=_RECURSO_LABEL,
+        recurso_label=_RECURSO_LABEL, recurso_ayuda=_RECURSO_AYUDA,
     ))
 
 
@@ -1085,6 +1099,34 @@ def permisos_toggle(request: Request, id_rol: str = Form(...), id_permiso: str =
         return _flash(request, "/admin/permisos", "success", f"Permiso {permiso['codigo']} {accion} para {rol['nombre']}.")
     except Exception as e:
         return _flash(request, "/admin/permisos", "error", str(e))
+
+
+@router.post("/permisos/aplicar-todo", dependencies=[Depends(requiere_permiso("permisos:actualizar"))])
+def permisos_aplicar_todo(request: Request, id_rol: str = Form(...)):
+    user = getattr(request.state, "user", {})
+    rol = permisos_repo.obtener_rol(id_rol)
+    if not rol:
+        return _flash(request, "/admin/permisos", "error", "Rol no encontrado.")
+    otorgado_por = permisos_repo.resolver_usuario_por_email(user.get("email", ""))
+    n = permisos_repo.aplicar_todos_rol(id_rol, otorgado_por)
+    _log(request, "Editar permiso", f"Aplicar todo: {n} permiso(s) otorgado(s) a {rol['nombre']}")
+    if n:
+        return _flash(request, "/admin/permisos", "success", f"Se otorgaron {n} permiso(s) nuevo(s) a {rol['nombre']}.")
+    return _flash(request, "/admin/permisos", "success", f"{rol['nombre']} ya tenía el catálogo completo.")
+
+
+@router.post("/permisos/restablecer", dependencies=[Depends(requiere_permiso("permisos:actualizar"))])
+def permisos_restablecer(request: Request, id_rol: str = Form(...)):
+    user = getattr(request.state, "user", {})
+    rol = permisos_repo.obtener_rol(id_rol)
+    if not rol:
+        return _flash(request, "/admin/permisos", "error", "Rol no encontrado.")
+    otorgado_por = permisos_repo.resolver_usuario_por_email(user.get("email", ""))
+    n = permisos_repo.restablecer_rol_predeterminado(id_rol, rol["slug"], otorgado_por)
+    _log(request, "Editar permiso", f"Restablecer configuración predeterminada: {n} cambio(s) en {rol['nombre']}")
+    if n:
+        return _flash(request, "/admin/permisos", "success", f"{rol['nombre']} restablecido a su configuración predeterminada ({n} cambio(s)).")
+    return _flash(request, "/admin/permisos", "success", f"{rol['nombre']} ya estaba en su configuración predeterminada.")
 
 
 # ── Excepciones por usuario individual (ver docs/HOJA_DE_RUTA.md sección 42) ──
@@ -1200,6 +1242,32 @@ def permisos_usuario_toggle_masivo(
         return _flash(request, f"/admin/permisos-usuario/{uid}", "success", msg)
     except Exception as e:
         return _flash(request, f"/admin/permisos-usuario/{uid}", "error", str(e))
+
+
+@router.post("/permisos-usuario/{uid}/aplicar-todo", dependencies=[Depends(requiere_permiso("permisos:actualizar"))])
+def permisos_usuario_aplicar_todo(request: Request, uid: str):
+    user = getattr(request.state, "user", {})
+    try:
+        pb = _pb()
+        usuario = pb.get_record("users", uid, expand="rol")
+    except Exception:
+        return _flash(request, "/admin/permisos-usuario", "error", "Usuario no encontrado.")
+    rol_slug = ((usuario.get("expand") or {}).get("rol") or {}).get("slug", "")
+    otorgado_por = permisos_repo.resolver_usuario_por_email(user.get("email", ""))
+    n = permisos_repo.aplicar_todas_excepciones_usuario(uid, rol_slug, otorgado_por)
+    _log(request, "Editar permiso", f"Aplicar todo (excepciones): {n} permiso(s) otorgado(s) (usuario id: {uid})")
+    if n:
+        return _flash(request, f"/admin/permisos-usuario/{uid}", "success", f"Se otorgaron {n} permiso(s) por excepción.")
+    return _flash(request, f"/admin/permisos-usuario/{uid}", "success", "Este usuario ya tenía el catálogo completo efectivo.")
+
+
+@router.post("/permisos-usuario/{uid}/restablecer", dependencies=[Depends(requiere_permiso("permisos:actualizar"))])
+def permisos_usuario_restablecer(request: Request, uid: str):
+    n = permisos_repo.restablecer_excepciones_usuario(uid)
+    _log(request, "Editar permiso", f"Restablecer configuración predeterminada: {n} excepción(es) quitada(s) (usuario id: {uid})")
+    if n:
+        return _flash(request, f"/admin/permisos-usuario/{uid}", "success", f"Se quitaron {n} excepción(es) — el usuario vuelve a heredar 100% de su rol.")
+    return _flash(request, f"/admin/permisos-usuario/{uid}", "success", "Este usuario ya estaba sin excepciones (configuración predeterminada).")
 
 
 # ── RESPALDO ─────────────────────────────────────────────────────────────────
