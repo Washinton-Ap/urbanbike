@@ -1336,6 +1336,29 @@ def respaldo_sql(
     )
 
 
+@router.get("/respaldo/csv/completo", dependencies=[Depends(requiere_permiso("respaldo:exportar"))])
+def respaldo_csv_completo(request: Request):
+    tablas = list(respaldo_repo.TABLAS.keys())
+    contenido, nombre_archivo = respaldo_repo.exportar_csv(tablas, None, None)
+    _log(request, "Editar respaldo", f"Respaldo completo CSV generado: {len(tablas)} tabla(s)")
+    media = "application/zip" if nombre_archivo.endswith(".zip") else "text/csv"
+    return StreamingResponse(
+        iter([contenido]), media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{nombre_archivo}"'},
+    )
+
+
+@router.get("/respaldo/sql/completo", dependencies=[Depends(requiere_permiso("respaldo:exportar"))])
+def respaldo_sql_completo(request: Request):
+    tablas = list(respaldo_repo.TABLAS.keys())
+    contenido, nombre_archivo = respaldo_repo.exportar_sql(tablas, None, None)
+    _log(request, "Editar respaldo", f"Respaldo completo SQL generado: {len(tablas)} tabla(s)")
+    return StreamingResponse(
+        iter([contenido]), media_type="application/sql",
+        headers={"Content-Disposition": f'attachment; filename="{nombre_archivo}"'},
+    )
+
+
 # ── SOPORTE (chat interno, punto 12 Opción B -- ver docs/HOJA_DE_RUTA.md
 #    sección 68). Espejo exacto de /empleado/vigilancia/soporte, mismo repo
 #    -- Admin ve y responde todas las conversaciones igual que Vigilancia. ──
