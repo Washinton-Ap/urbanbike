@@ -29,6 +29,7 @@
           <th>Bicicleta</th>
           <th>Fecha</th>
           <th>Estado</th>
+          <th>Resolución</th>
         </tr>
       </thead>
       <tbody>
@@ -41,6 +42,14 @@
           <td>
             {% if i.resuelta %}<span class="badge badge-green">Resuelta</span>
             {% else %}<span class="badge badge-yellow">Pendiente</span>{% endif %}
+          </td>
+          <td style="max-width:280px;">
+            {% if i.resuelta %}
+            <div class="text-sm">{{ i.resolucion or "—" }}</div>
+            <div class="text-muted" style="font-size:0.76rem;margin-top:2px;">{{ i.resuelta_por or "—" }} — {{ i.fecha_resolucion | replace("T", " ") | replace("Z", "") if i.fecha_resolucion else "—" }}</div>
+            {% else %}
+            <span class="text-muted text-sm">—</span>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}
