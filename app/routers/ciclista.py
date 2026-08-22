@@ -1589,17 +1589,7 @@ def _construir_factura_pago(registro: dict, viaje: dict, user: dict) -> DatosFac
         # try/except para que una falla de ClickHouse no rompa la pantalla de
         # comprobante; si falla la query, caemos al fallback seguro de
         # "Tarifa base" usando el monto confiable de pagos.subtotal).
-        segmentos = []
-        try:
-            segmentos = ch.query(
-                "SELECT modalidad, subtotal FROM urbanbike_operativa.alquileres "
-                "WHERE id_origen_pocketbase = %(viaje_id)s AND origen = 'segmento_modalidad' "
-                "ORDER BY fecha_inicio",
-                {"viaje_id": viaje.get("id", "")},
-            )
-        except Exception:
-            # Si ClickHouse falla, segmentos queda [], caemos al else
-            pass
+        segmentos = alquileres_repo.segmentos_modalidad(viaje.get("id", ""))
 
         # Important #1: reconciliación contra pagos.subtotal. El último
         # segmento de cada viaje se inserta en ClickHouse best-effort en
