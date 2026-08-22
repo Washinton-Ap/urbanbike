@@ -7348,3 +7348,40 @@ aunque el mensaje se haya mostrado correctamente en el navegador real.
 
 **Estado del plan: RESUELTO.** Punto 2.1 completo en las 3 capas (catálogo, ficha de detalle,
 servidor), probado antes/después con membresía real, sin bypass posible confirmado.
+
+## 87. Hallazgo pendiente, prioridad alta -- `/mantenimiento/reportes` muestra un dato real
+incorrecto: 6 órdenes cuando la fuente real tiene 13 (encontrado durante la auditoría del
+punto 2.6, 21-ago-2026)
+
+Durante la auditoría de reportes "pobres" del punto 2.6 (documento completo en
+`docs/superpowers/plans/2026-08-21-punto-2.6-auditoria-diseno.md`, sin comitear a propósito,
+mismo criterio que el resto de esa carpeta) se reconfirmó y agravó un hallazgo que ya estaba
+anotado desde la sección 83: `/mantenimiento/reportes` (`mnt_reportes`, `app/routers/empleado.py`,
+línea ~2758) sigue leyendo la colección `ordenes_mant` de PocketBase, huérfana desde el
+30-jul-2026 y explícitamente dejada fuera de alcance en la sección 83 ("Washington pidió
+explícitamente solo `vig_mantenimiento_cerrar/certificar` para esta ronda").
+
+### Por qué esto ya no es solo un hallazgo anotado, sino un pendiente de prioridad alta
+
+Verificado en vivo contra el servidor real (puerto 8007, sesión real `empleado.mant@urbanbike.com`)
+y confirmado independientemente por un segundo revisor con lectura directa a PocketBase/ClickHouse:
+la tarjeta "Total de órdenes" de esa pantalla muestra **6** (conteo real de `ordenes_mant`),
+mientras que `ordenes_repo.listar()` -- la fuente real que usa el resto de Mantenimiento, incluida
+`/mantenimiento/ordenes` -- tiene **13** órdenes reales hoy. El reporte le falta más de la mitad de
+los datos reales del negocio, sin ningún aviso al usuario de que la cifra está desactualizada. A
+diferencia de la sección 83 (donde el hueco era sobre una acción operativa, certificar una
+reparación), acá el hueco es sobre un número que Mantenimiento puede estar usando para decidir algo
+real (carga de trabajo, planificación) creyendo que es el total real.
+
+### Fix propuesto (del propio documento de la auditoría 2.6, no implementado en esta sesión)
+
+Migrar la fuente de datos de `mnt_reportes` de `ordenes_mant` (PocketBase) a `ordenes_repo`
+(ClickHouse) -- mismo patrón que ya usan `/mantenimiento/ordenes` y `/mantenimiento/dashboard`.
+Esfuerzo estimado: **chico** solo para el fix de la fuente (no opcional, dato activamente
+engañoso); si además se agrega filtro de fecha/prioridad y export Excel/PDF (hoy es la única
+pantalla de reportes de todo el sistema sin ninguna opción de exportar), el esfuerzo total sube a
+**mediano**.
+
+**Estado del plan: PENDIENTE, prioridad alta.** No se corrige en esta sesión (fuera del alcance de
+2.3/2.6/2.7/2.8 despachados hoy) -- queda documentado para que Washington decida cuándo priorizarlo,
+mismo criterio de la sección 83.
