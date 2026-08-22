@@ -5,23 +5,7 @@
 
 {% block content %}
 
-{% if pendientes_validacion > 0 %}
-<a href="/empleado/vigilancia/devoluciones" style="text-decoration:none;">
-  <div class="card card-clickeable" style="margin-bottom:20px;border:1px solid #F59E0B;background:rgba(245,158,11,0.06);">
-    <div style="display:flex;align-items:center;gap:14px;">
-      <div style="width:40px;height:40px;border-radius:10px;background:rgba(245,158,11,0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-      </div>
-      <div>
-        <div style="font-family:'Sora',sans-serif;font-weight:700;font-size:0.95rem;color:var(--text);">
-          {{ pendientes_validacion }} devolución{{ "es" if pendientes_validacion != 1 else "" }} pendiente{{ "s" if pendientes_validacion != 1 else "" }} de validar
-        </div>
-        <div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px;">El ciclista ya reportó la entrega — el monto sigue aumentando hasta que confirmes la recepción física. Toca para revisar.</div>
-      </div>
-    </div>
-  </div>
-</a>
-{% endif %}
+{% include "componentes/panel_pendientes.html" %}
 
 <!-- KPIs de estaciones (PocketBase) -->
 <div class="kpi-grid" style="margin-bottom:24px;">

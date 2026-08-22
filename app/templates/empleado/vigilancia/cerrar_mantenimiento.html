@@ -6,7 +6,7 @@
 
 <div class="card">
   <div class="card-header">
-    <span class="card-title">Órdenes en proceso <span class="text-muted text-sm">({{ ordenes | length }})</span></span>
+    <span class="card-title">Órdenes pendientes de certificar <span class="text-muted text-sm">({{ ordenes | length }})</span></span>
     <div style="display:flex;gap:8px;">
       <a href="/empleado/vigilancia/mantenimiento/cerrar/excel" class="btn btn-ghost" style="font-size:0.8rem;padding:6px 12px;">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -25,9 +25,9 @@
       <thead>
         <tr>
           <th>Bicicleta</th>
-          <th>Descripción</th>
+          <th>Diagnóstico</th>
           <th>Técnico</th>
-          <th>Apertura</th>
+          <th>Cierre</th>
           <th style="width:140px;"></th>
         </tr>
       </thead>
@@ -35,9 +35,9 @@
         {% for o in ordenes %}
         <tr>
           <td style="font-weight:600;color:var(--text);font-family:monospace;">{{ o.bicicleta_codigo }}</td>
-          <td class="text-sm" style="max-width:320px;">{{ o.descripcion }}</td>
+          <td class="text-sm" style="max-width:320px;">{{ o.diagnostico }}</td>
           <td class="text-muted text-sm">{{ o.tecnico_nombre or "—" }}</td>
-          <td class="text-muted text-sm">{{ o.fecha_apertura | replace("T", " ") | replace("Z", "") }}</td>
+          <td class="text-muted text-sm">{{ o.fecha_cierre.strftime('%Y-%m-%d %H:%M') if o.fecha_cierre else "—" }}</td>
           <td>
             <button class="btn btn-primary" style="padding:4px 10px;font-size:0.8rem;"
               data-id="{{ o.id }}"
@@ -55,10 +55,10 @@
       <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
     </div>
     <div style="font-family:'Sora',sans-serif;font-weight:700;font-size:1.1rem;color:var(--text);margin-bottom:8px;">
-      Sin órdenes en proceso
+      Sin órdenes pendientes de certificar
     </div>
     <div style="font-size:0.88rem;color:var(--text-muted);max-width:360px;margin:0 auto;line-height:1.6;">
-      Cuando mantenimiento tome una orden de trabajo, aparecerá aquí para certificar su cierre.
+      Cuando Mantenimiento cierre una orden de trabajo, aparecerá aquí para que confirmes la reparación y liberes la bicicleta.
     </div>
   </div>
   {% endif %}

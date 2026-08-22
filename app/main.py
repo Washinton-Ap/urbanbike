@@ -1,6 +1,7 @@
 """Punto de entrada de la aplicación FastAPI de UrbanBike."""
 
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, Form, Request, UploadFile
@@ -129,6 +130,8 @@ def dashboard(request: Request):
     bike_colors: list = []
     est_activas = 0
     est_inactivas = 0
+    bloqueados = 0
+    nuevos_7d = 0
     pb_ok = True
     try:
         pb = get_admin_client()
@@ -139,6 +142,12 @@ def dashboard(request: Request):
             rol_map[slug] = rol_map.get(slug, 0) + 1
         rol_labels = list(rol_map.keys())
         rol_values = [rol_map[k] for k in rol_labels]
+
+        # Bloqueos y registros nuevos (punto 1.8): se derivan de la misma
+        # lista de usuarios ya traida arriba -- sin otra consulta a PocketBase.
+        cutoff_fecha = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
+        bloqueados = sum(1 for u in users if not u.get("activo", True))
+        nuevos_7d = sum(1 for u in users if (u.get("created") or "")[:10] >= cutoff_fecha)
 
         bikes = pb.list_records("bicicletas", per_page=500).get("items", [])
         bike_map: dict = {"disponible": 0, "en_uso": 0, "mantenimiento": 0, "retirada": 0}
@@ -155,6 +164,11 @@ def dashboard(request: Request):
     except Exception:
         pb_ok = False
 
+    pendientes = [{
+        "titulo": "Usuarios bloqueados", "conteo": bloqueados,
+        "enlace": "/admin/usuarios", "color": "red", "icono": "candado",
+    }]
+
     return templates.TemplateResponse(request, "dashboard.html", {
         "user": user, "flash": flash, "title": "Dashboard",
         "kpis": kpis, "ch_ok": ch_ok, "pb_ok": pb_ok,
@@ -165,6 +179,8 @@ def dashboard(request: Request):
         "bike_colors":   json.dumps(bike_colors),
         "est_activas":   est_activas,
         "est_inactivas": est_inactivas,
+        "pendientes":    pendientes,
+        "nuevos_7d":     nuevos_7d,
     })
 
 

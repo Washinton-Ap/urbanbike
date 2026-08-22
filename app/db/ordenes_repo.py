@@ -118,6 +118,22 @@ def obtener(id_orden: str) -> dict | None:
     return filas[0] if filas else None
 
 
+def listar_cerradas_pendientes_certificar() -> list[dict]:
+    """Ordenes que Mantenimiento ya cerro (estado_reparacion='cerrada')
+    pero cuya bicicleta sigue en 'mantenimiento' -- la cola real que
+    Vigilancia certifica antes de liberar la bicicleta a 'disponible'
+    (ver docs/HOJA_DE_RUTA.md: esta pantalla leia hasta ahora la
+    coleccion huerfana `ordenes_mant` de PocketBase, desconectada de
+    esta tabla desde la migracion del 30-jul-2026). En cuanto Vigilancia
+    certifica y bicicletas_repo mueve la bicicleta a 'disponible', la
+    orden deja de aparecer aqui sola -- no hace falta una columna nueva
+    de 'certificada'."""
+    return ch.query(_SELECT_BASE + """
+        WHERE o.estado_reparacion = 'cerrada' AND b.estado = 'mantenimiento'
+        ORDER BY o.fecha_cierre DESC
+    """)
+
+
 def contar_repuestos(id_orden: str) -> int:
     return ch.scalar(
         "SELECT count() FROM urbanbike_operativa.orden_repuesto WHERE id_orden = %(id)s",

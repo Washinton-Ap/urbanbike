@@ -1,0 +1,50 @@
+{#
+  Fila de tarjetas de "accion pendiente" por rol -- ver docs/Plan_Mejoras_UrbanBike_V2.md
+  punto 1.8. Reutiliza el mismo lenguaje visual que ya usan los 4 dashboards existentes
+  (.card, .card-clickeable, paleta de .badge-* -- incluye sus variantes de tema oscuro ya
+  definidas en main.css, sin CSS nuevo).
+
+  Recibe `pendientes`: lista de dicts con
+    titulo   (str)  -- ej. "Cobros pendientes de verificar"
+    conteo   (int)  -- el numero real, ya resuelto por el router
+    enlace   (str)  -- pantalla real donde se resuelve esa accion
+    color    (str)  -- uno de: green, red, yellow, blue, gray (mismo set que .badge-*)
+    icono    (str)  -- uno de: reloj, dinero, llave, candado, ojo -- cualquier otro valor
+                       cae al circulo generico de alerta
+
+  Solo se renderiza si al menos una tarjeta tiene conteo > 0 -- un dashboard "al dia" no
+  debe mostrar una fila de puros ceros.
+#}
+{% set _color_hex = {"green": "#10B981", "red": "#EF4444", "yellow": "#F59E0B", "blue": "#1E86BD", "gray": "#6B7280"} %}
+{% set _visibles = pendientes | selectattr("conteo", "gt", 0) | list %}
+{% if _visibles %}
+<div style="font-size:0.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">Pendientes</div>
+<div class="dashboard-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-bottom:24px;">
+  {% for p in _visibles %}
+  <a href="{{ p.enlace }}" style="text-decoration:none;">
+    <div class="card card-clickeable" style="height:100%;border-left:4px solid {{ _color_hex.get(p.color, _color_hex['gray']) }};display:flex;align-items:center;gap:16px;">
+      <div class="badge-{{ p.color }}" style="width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        {% if p.icono == "reloj" %}
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        {% elif p.icono == "dinero" %}
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        {% elif p.icono == "llave" %}
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        {% elif p.icono == "candado" %}
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        {% elif p.icono == "ojo" %}
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        {% else %}
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        {% endif %}
+      </div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-family:'Sora',sans-serif;font-weight:800;font-size:1.15rem;color:{{ _color_hex.get(p.color, _color_hex['gray']) }};">{{ p.conteo | num }}</div>
+        <div style="font-size:0.82rem;color:var(--text);font-weight:600;">{{ p.titulo }}</div>
+      </div>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2.5" style="flex-shrink:0;"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}

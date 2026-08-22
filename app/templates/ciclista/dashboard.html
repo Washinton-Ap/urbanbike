@@ -29,6 +29,7 @@
 </div>
 
 {% if tarjetas_pendientes %}
+<div style="font-size:0.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">Pendientes</div>
 <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:20px;">
   {% for t in tarjetas_pendientes %}
   <a href="{{ t.enlace }}" style="text-decoration:none;display:block;">

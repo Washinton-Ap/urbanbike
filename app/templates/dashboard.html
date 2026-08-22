@@ -19,6 +19,15 @@
 </div>
 {% endif %}
 
+{% include "componentes/panel_pendientes.html" %}
+
+{% if nuevos_7d > 0 %}
+<div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:20px;display:flex;align-items:center;gap:8px;">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="17" y1="11" x2="23" y2="11"/></svg>
+  <span><strong style="color:var(--text);">{{ nuevos_7d }}</strong> registro{{ "s" if nuevos_7d != 1 else "" }} nuevo{{ "s" if nuevos_7d != 1 else "" }} en los últimos 7 días — informativo, no requiere acción.</span>
+</div>
+{% endif %}
+
 <!-- KPI row -->
 <div class="kpi-grid">
   <div class="kpi-card">

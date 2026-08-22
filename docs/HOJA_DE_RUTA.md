@@ -6972,6 +6972,192 @@ revisión final de la rama completa también limpia (0 Critical/Important, 3 min
 diferidos) -- listo para una recomendación de fusión, pendiente de que Washington decida el
 momento/proceso (esta sesión no fusiona ni pushea por su cuenta).
 
+## 83. Punto 1.8 (Parte 1) -- `ordenes_mant` de PocketBase, huérfana desde el 30-jul-2026,
+desconectaba la certificación de Vigilancia del sistema real de órdenes (21-ago-2026)
+
+Antes de construir el punto 1.8 (dashboard de "acciones pendientes" por rol), la auditoría
+previa encontró un hallazgo ya anotado pero nunca corregido (sección Grupo 4, línea ~1899:
+"`reportes` además usa la colección vieja `ordenes_mant` de PocketBase, desconectada de
+`urbanbike_operativa.ordenes_mantenimiento` -- anotado aquí solo como hallazgo, no se tocó").
+La auditoría de hoy encontró que el hallazgo era más grave de lo que esa nota sugería: no solo
+`/mantenimiento/reportes` lee esa colección huérfana -- **`/vigilancia/mantenimiento/cerrar` y
+`/vigilancia/mantenimiento/{oid}/certificar` también**, y esas sí son las pantallas reales que
+Vigilancia usa para certificar que una reparación se hizo y liberar la bicicleta de vuelta a
+`disponible`.
+
+### Causa real
+
+`ordenes_repo.py` (fuente real de las órdenes desde la migración del 30-jul-2026, ver su
+docstring) nunca escribe en PocketBase -- ni `ordenes_repo.crear()` (usado por
+`mnt_ordenes_crear`) ni `ordenes_repo.actualizar()` (usado por `mnt_ordenes_editar`) tocan la
+colección vieja. Cerrar una orden real desde el WorkPanel de Mantenimiento (la pantalla que de
+verdad se usa hoy) no movía la bicicleta a `disponible` -- solo el camino viejo de Vigilancia
+lo hacía, y ese camino ya no veía las órdenes nuevas (0 filas reales desde la migración).
+Confirmado leyendo el código, no solo infiriéndolo: ningún call site de `ordenes_repo`
+referencia PocketBase.
+
+### Fix
+
+- `app/db/ordenes_repo.py`: nueva función `listar_cerradas_pendientes_certificar()` -- ordenes
+  con `estado_reparacion = 'cerrada'` cuya bicicleta sigue con `estado = 'mantenimiento'` (JOIN
+  real contra `urbanbike_operativa.bicicletas`, ya presente en `_SELECT_BASE`). No hace falta
+  una columna nueva de "certificada": en cuanto Vigilancia certifica y la bicicleta pasa a
+  `disponible`, la orden deja de cumplir el filtro y desaparece sola de la lista.
+- `app/routers/empleado.py`: `vig_mantenimiento_cerrar()` y `_vig_cerrar_mantenimiento_ordenes()`
+  ahora usan esa función en vez de `_pb().list_records("ordenes_mant", ...)`.
+  `vig_mantenimiento_certificar()` reescrito para leer la orden real con `ordenes_repo.obtener()`
+  y mover la bicicleta con `bicicletas_repo.actualizar(..., estado="disponible", ...)` (mismo
+  patrón que `_mover_estado_bicicleta()` en `vig_inspeccion`) -- esto también dispara el espejo
+  real hacia PocketBase y el registro en `bicicleta_eventos` que ya tiene `bicicletas_repo`, sin
+  reinventar nada. `observaciones_cierre` ya no tiene una columna propia en
+  `ordenes_mantenimiento` de ClickHouse (a diferencia de la vieja `ordenes_mant`) -- decisión
+  deliberada de no ampliar el esquema para esto: queda en la bitácora real (`registrar_auditoria`,
+  módulo `ordenes_mantenimiento`), que es donde ya se registra todo lo demás de esta acción
+  (quién certificó, cuándo, con qué observaciones).
+- `_vig_cerrar_mantenimiento_columnas_filas()` (export Excel/PDF) y la plantilla
+  `cerrar_mantenimiento.html` ajustados a los campos reales: `diagnostico` (no `descripcion`,
+  que no existe en el esquema de ClickHouse) y `fecha_cierre` en vez de `fecha_apertura` (más
+  relevante ahora que la lista son órdenes ya cerradas por Mantenimiento, no en curso) -- usando
+  `.strftime()` sobre el `datetime` real, mismo patrón que `mantenimiento/ordenes.html`.
+
+**Fuera de alcance a propósito**: `/mantenimiento/reportes` (`mnt_reportes`, línea ~2700) sigue
+leyendo la misma colección huérfana -- Washington pidió explícitamente solo
+`vig_mantenimiento_cerrar/certificar` para esta ronda. Queda igual de anotado que antes, ahora
+con la causa raíz ya documentada en detalle en vez de solo mencionada.
+
+### Prueba real de punta a punta
+
+Servidor real (`:8002`, `--reload` activo), sin mockear nada. Bicicleta real `UB-004`
+(`0e34ecc3-2468-43fd-9f06-c2d6aaa7f698`, disponible antes de la prueba):
+
+1. Login real `empleado@urbanbike.com` (Operación) -- `UB-004` movida a `mantenimiento` vía
+   `/empleado/operacion/inventario/{bid}/editar`.
+2. Login real `empleado.mant@urbanbike.com` (Mantenimiento) -- orden real `OM-0324` creada vía
+   `/empleado/mantenimiento/ordenes/crear` (origen `preventivo`, técnico real "Empleado
+   Mantenimiento"), luego cerrada (`estado_reparacion=cerrada`) vía
+   `/empleado/mantenimiento/ordenes/{oid}/editar`.
+3. Login real `empleado.vig@urbanbike.com` (Vigilancia) -- `GET /empleado/vigilancia/mantenimiento/cerrar`
+   confirmó que `OM-0324`/`UB-004` aparecía en la lista (prueba de que el JOIN nuevo lee la
+   fuente real). `POST /empleado/vigilancia/mantenimiento/{oid}/certificar` con observaciones
+   reales -- confirmado flash "Mantenimiento certificado. Bicicleta disponible nuevamente."
+4. Repetido el `GET` de la lista: `OM-0324` ya no aparece (la bicicleta salió de `mantenimiento`,
+   deja de cumplir el filtro -- confirma que no hace falta columna de "certificada").
+5. Verificado directo contra ClickHouse (`bicicletas_repo.obtener()`): `UB-004.estado ==
+   "disponible"`. Orden `OM-0324.estado_reparacion == "cerrada"`, `fecha_cierre` real (no
+   epoch).
+6. Verificado en PocketBase real: entrada de auditoría real
+   (`empleado.vig@urbanbike.com | editar | ordenes_mantenimiento | "Mantenimiento certificado:
+   orden OM-0324 de UB-004 — Prueba E2E: verificacion fisica OK, bicicleta operativa."`) y
+   notificación real a `rol_destino="empleado-operacion"` ("Bicicleta disponible").
+7. Export Excel y PDF de `/vigilancia/mantenimiento/cerrar` verificados con sesión real
+   autenticada: `200`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
+   (5577 bytes) y `application/pdf` (24624 bytes) respectivamente.
+
+**Estado final real**: `UB-004` terminó exactamente donde empezó (`disponible`) -- la flota no
+quedó afectada. Quedan como evidencia real y permanente (no se revierten): la orden `OM-0324`
+(`cerrada`, no se puede borrar por diseño -- `ordenes_repo.eliminar()` solo permite borrar
+órdenes que sigan `abierta`, mismo criterio que bicicletas con alquileres reales), las 2
+transiciones reales en `bicicleta_eventos` (`disponible→mantenimiento→disponible`), la entrada
+de auditoría y la notificación a Operación. Mismo criterio ya usado en este proyecto para datos
+de prueba que alcanzan un estado real irreversible por diseño (ver sección 79: "la bitácora se
+trata como registro append-only, no se edita").
+
+**Verificación de reload real**: el proceso `uvicorn --reload` (PID 23028, puerto 8002) llevaba
+arriba desde antes de este cambio -- no se reinició manualmente (autorización previa exigida,
+ver sección 72). La prueba E2E paso 3 (`OM-0324` apareciendo en la lista nueva) es en sí misma
+la confirmación de que `watchfiles` sí respawneó el worker esta vez: el código viejo habría
+fallado ahí (consulta a una colección PocketBase con un id de ClickHouse que no existe en ella).
+
+**Estado del plan: RESUELTO.** Listo para construir el punto 1.8 (Parte 2) sobre la fuente real.
+
+## 84. Punto 1.8 (Parte 2) -- panel de "acciones pendientes" en los 5 dashboards, sobre las
+fuentes reales auditadas y corregidas en la Parte 1 (21-ago-2026)
+
+Construido sobre la auditoría previa (no repetida aquí) y el fix de `ordenes_mant` de la
+sección 83. Alcance confirmado por Washington: Ciclista (ya resuelto, solo homogeneizar),
+Operación (solo cobros pendientes de verificar), Vigilancia (3 tarjetas), Mantenimiento (2
+tarjetas, ahora con fuente real), Admin (bloqueos accionable + registros nuevos informativo,
+separados).
+
+### Componente compartido
+
+`app/templates/componentes/panel_pendientes.html` -- recibe `pendientes`: lista de
+`{titulo, conteo, enlace, color, icono}`. Reutiliza `.card`/`.card-clickeable` y la paleta ya
+definida de `.badge-green/red/yellow/blue/gray` (incluidas sus variantes de tema oscuro en
+`main.css`, sin CSS nuevo) -- el ícono hereda el color vía `stroke="currentColor"` dentro del
+mismo div `badge-*`, así que el componente no inventa una paleta propia. Cada router sigue
+resolviendo sus propios conteos (Operación consulta pagos, Mantenimiento consulta
+`ordenes_repo`, etc.) -- el componente es solo la vista, no una capa de datos genérica.
+Un dashboard "al día" no debe mostrar una fila de puros ceros: `{% set _visibles = pendientes |
+selectattr("conteo", "gt", 0) | list %}` filtra las tarjetas en cero antes de decidir si la fila
+completa se renderiza.
+
+### Por rol
+
+- **Ciclista**: sin cambios de lógica -- `_tarjetas_pendientes()` ya cubría esto (ver auditoría
+  previa). Se agregó solo la etiqueta "Pendientes" (mismo estilo que el resto de secciones) arriba
+  del bloque existente, para que se lea igual que los otros 4 dashboards sin tocar su estructura.
+- **Operación**: 1 tarjeta -- "Cobros pendientes de verificar" = suma de `pagos` filtrados por
+  `estado="verificacion_pendiente"` (transferencias) y `estado="pendiente_efectivo"` (efectivo),
+  mismos dos filtros que ya usa `op_pagos()` -- solo un `totalItems` de cada uno, sin traer los
+  registros completos. Enlaza a `/empleado/operacion/pagos`.
+- **Vigilancia**: 3 tarjetas -- "Seguimientos activos" (`viajes` `estado="activo"`, nuevo conteo
+  en vivo, antes el dashboard solo mostraba estadísticas históricas de Citibike del 31-oct-2023),
+  "Devoluciones por validar" (mismo dato que antes vivía como banner fijo -- migrado a la tarjeta
+  del panel, ya no hay dos lugares mostrando el mismo número), y "Reparaciones por certificar"
+  (`ordenes_repo.listar_cerradas_pendientes_certificar()` de la Parte 1). Los bullets "daños por
+  verificar" y "disponibilidad por confirmar" del documento se unificaron en esta única tarjeta,
+  tal como marcó la auditoría (misma cola real, no dos números idénticos repetidos).
+- **Mantenimiento**: 2 tarjetas -- "Mantenimientos activos" (bicicletas `estado="mantenimiento"`,
+  igual que antes, fuente confiable) y "Órdenes por actualizar" (`ordenes_repo.listar(estado=
+  "abierta")`, reemplaza el KPI `ordenes_pendientes` que leía la colección huérfana -- mismo bug
+  de la sección 83, ahora corregido también aquí). El `.kpi-grid` viejo de 2 tarjetas se reemplazó
+  por el panel (mismos 2 números, ahora reales, accionables y con enlace directo:
+  "Órdenes por actualizar" enlaza a `/empleado/mantenimiento/ordenes?estado=abierta`,
+  pre-filtrado).
+- **Admin**: "Usuarios bloqueados" (`users` con `activo=false`) como tarjeta accionable del panel,
+  enlazando a `/admin/usuarios`. "Registros nuevos" (últimos 7 días, por `created`) se muestra
+  **aparte**, como línea informativa sin badge ni enlace de acción -- explícitamente no es una
+  "acción pendiente" (el registro público ya se auto-verifica por correo, nadie tiene que
+  aprobarlo). Ambos conteos se derivan de la misma lista de `users` que `/dashboard` ya traía
+  para las gráficas -- ninguna consulta nueva a PocketBase.
+
+### Prueba real en los 5 roles
+
+Servidor real (`:8002`), 5 sesiones HTTP reales (`POST /auth/login` con las 5 cuentas de prueba
+documentadas), leyendo cada dashboard tal como lo vería un usuario real. Antes de cada prueba se
+calculó el número esperado consultando la base de datos real directamente (PocketBase/ClickHouse,
+mismo filtro que usa el router), para comparar contra lo renderizado en el HTML real -- no se
+asumió que el número mostrado fuera correcto solo porque la página cargó.
+
+| Rol | Tarjeta | Esperado (consulta directa) | Mostrado en `/dashboard` real |
+|---|---|---|---|
+| Ciclista (`ciclista@urbanbike.com`) | Pendientes (viajes/pagos) | tiene pendientes reales | etiqueta "Pendientes" visible, tarjetas reales ✓ |
+| Ciclista (`wacho@urbanbike.com`) | Pendientes | sin pendientes | bloque completo ausente (0 tarjetas) ✓ |
+| Operación | Cobros pendientes de verificar | 0 (transf=0, efect=0) | fila ausente (0 > 0 es falso) ✓ |
+| Vigilancia | Seguimientos activos | 0 | ausente ✓ |
+| Vigilancia | Devoluciones por validar | 2 | **2** ✓ |
+| Vigilancia | Reparaciones por certificar | 2 (`OM-0322`, `OM-0323`) | **2** ✓ |
+| Mantenimiento | Mantenimientos activos | 4 (`UB-003/005/006/007`) | **4** ✓ |
+| Mantenimiento | Órdenes por actualizar | 1 | **1** ✓ |
+| Admin | Usuarios bloqueados | 3 | **3** ✓ |
+| Admin | Registros nuevos (7 días) | 11 | **11** ✓ |
+
+Los 10/10 conteos coinciden exactamente con la consulta directa a la base de datos en el momento
+de la prueba. El caso Operación/Vigilancia-seguimientos confirma además que el filtro de "ocultar
+en cero" funciona (no hay una fila vacía de tarjetas en 0, tal como se diseñó) sin que eso se
+confunda con un error de carga -- se verificó el HTTP 200 y el resto del dashboard renderizado
+normalmente en ambos casos.
+
+**Nota real, no forzada**: `UB-004` (la bicicleta de la prueba E2E de la Parte 1) ya no aparece
+en "Reparaciones por certificar" porque se certificó en esa misma prueba -- las 2 órdenes que sí
+aparecen (`OM-0322`, `OM-0323`) son datos reales preexistentes del sistema, no generados por esta
+sesión. Ninguna cuenta ni dato de prueba nuevo quedó pendiente de limpieza -- las únicas escrituras
+de esta Parte 2 fueron de solo lectura (conteos), sin crear ni modificar registros.
+
+**Estado del plan: RESUELTO.** Punto 1.8 completo en los 5 roles, sobre fuentes reales
+verificadas, sin datos inventados ni simulados.
+
 ## 86. Punto 2.1 -- categoría eléctrica exclusiva para suscriptores (RESUELTO, Washington
 18-ago-2026), implementada sobre el mismo mecanismo real del punto 4 (21-ago-2026)
 

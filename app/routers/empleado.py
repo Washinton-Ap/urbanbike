@@ -95,12 +95,28 @@ async def op_dashboard(request: Request):
     except Exception:
         pass
 
+    # Punto 1.8: mismos filtros reales que ya usa op_pagos() (empleado.py) --
+    # solo un conteo (per_page=1, totalItems), sin traer los registros completos.
+    cobros_pendientes = 0
+    try:
+        pb = _pb()
+        transferencias = pb.list_records("pagos", filter='estado = "verificacion_pendiente"', per_page=1).get("totalItems", 0)
+        efectivo = pb.list_records("pagos", filter='estado = "pendiente_efectivo"', per_page=1).get("totalItems", 0)
+        cobros_pendientes = transferencias + efectivo
+    except Exception:
+        pass
+
+    pendientes = [{
+        "titulo": "Cobros pendientes de verificar", "conteo": cobros_pendientes,
+        "enlace": "/empleado/operacion/pagos", "color": "yellow", "icono": "dinero",
+    }]
+
     chart_labels = json.dumps(["Disponible", "En Uso", "Mantenimiento", "Retirada"])
     chart_values = json.dumps([stats["disponible"], stats["en_uso"], stats["mantenimiento"], stats["retirada"]])
     chart_colors = json.dumps(["#10B981", "#1E86BD", "#F59E0B", "#6B7280"])
 
     return templates.TemplateResponse(request, "empleado/operacion/dashboard.html", _ctx(request,
-        title="Dashboard — Operación", flash=flash, stats=stats,
+        title="Dashboard — Operación", flash=flash, stats=stats, pendientes=pendientes,
         chart_labels=chart_labels, chart_values=chart_values, chart_colors=chart_colors,
     ))
 
@@ -1001,16 +1017,27 @@ async def mnt_dashboard(request: Request):
     for b in en_mnt:
         tipo_counts[b.get("tipo", "classic_bike")] = tipo_counts.get(b.get("tipo", "classic_bike"), 0) + 1
 
-    ordenes_pendientes = 0
+    # Punto 1.8: "ordenes por actualizar" = ordenes que Mantenimiento
+    # todavia no empezo a trabajar (estado_reparacion='abierta' en
+    # ordenes_repo/ClickHouse, la fuente real -- ver Parte 1 en
+    # docs/HOJA_DE_RUTA.md seccion 83; el filtro viejo leia la coleccion
+    # huerfana ordenes_mant de PocketBase, siempre desactualizada).
+    ordenes_abiertas = 0
     try:
-        res = _pb().list_records("ordenes_mant", filter='estado = "pendiente"', per_page=1)
-        ordenes_pendientes = res.get("totalItems", 0)
+        _, ordenes_abiertas = ordenes_repo.listar(estado="abierta", page=1, per_page=1)
     except Exception:
         pass
 
+    pendientes = [
+        {"titulo": "Mantenimientos activos", "conteo": len(en_mnt),
+         "enlace": "/empleado/mantenimiento/bicicletas", "color": "yellow", "icono": "llave"},
+        {"titulo": "Órdenes por actualizar", "conteo": ordenes_abiertas,
+         "enlace": "/empleado/mantenimiento/ordenes?estado=abierta", "color": "red", "icono": "reloj"},
+    ]
+
     return templates.TemplateResponse(request, "empleado/mantenimiento/dashboard.html", _ctx(request,
         title="Dashboard — Mantenimiento", flash=flash,
-        en_mnt=en_mnt, total_mnt=len(en_mnt), ordenes_pendientes=ordenes_pendientes,
+        en_mnt=en_mnt, total_mnt=len(en_mnt), pendientes=pendientes,
         chart_labels=json.dumps(["Clásica", "Eléctrica"]),
         chart_values=json.dumps([tipo_counts["classic_bike"], tipo_counts["electric_bike"]]),
     ))
@@ -1327,13 +1354,39 @@ async def vig_dashboard(request: Request):
     activas   = sum(1 for e in estaciones if e.get("activa"))
     inactivas = len(estaciones) - activas
 
+    # Punto 1.8: 3 conteos reales, cada uno con la misma fuente que ya usa
+    # su pantalla real (seguimiento.html, devoluciones.html, y la cola de
+    # certificacion migrada en la Parte 1 -- ver docs/HOJA_DE_RUTA.md).
     pendientes_validacion = 0
+    seguimientos_activos = 0
     try:
-        pendientes_validacion = _pb().list_records(
+        pb = _pb()
+        pendientes_validacion = pb.list_records(
             "viajes", filter='estado = "pendiente_validacion"', per_page=1,
+        ).get("totalItems", 0)
+        seguimientos_activos = pb.list_records(
+            "viajes", filter='estado = "activo"', per_page=1,
         ).get("totalItems", 0)
     except Exception:
         pass
+
+    reparaciones_certificar = 0
+    try:
+        reparaciones_certificar = len(ordenes_repo.listar_cerradas_pendientes_certificar())
+    except Exception:
+        pass
+
+    # "Daños por verificar" y "disponibilidad por confirmar" del punto 1.8
+    # apuntan, en el codigo real, a la MISMA cola (ver auditoria previa) --
+    # una sola tarjeta, no dos numeros identicos repetidos.
+    pendientes = [
+        {"titulo": "Seguimientos activos", "conteo": seguimientos_activos,
+         "enlace": "/empleado/vigilancia/seguimiento", "color": "blue", "icono": "ojo"},
+        {"titulo": "Devoluciones por validar", "conteo": pendientes_validacion,
+         "enlace": "/empleado/vigilancia/devoluciones", "color": "yellow", "icono": "reloj"},
+        {"titulo": "Reparaciones por certificar", "conteo": reparaciones_certificar,
+         "enlace": "/empleado/vigilancia/mantenimiento/cerrar", "color": "red", "icono": "llave"},
+    ]
 
     viajes_hoy   = 0
     retrasos_hoy = 0
@@ -1366,7 +1419,7 @@ async def vig_dashboard(request: Request):
     return templates.TemplateResponse(request, "empleado/vigilancia/dashboard.html", _ctx(request,
         title="Dashboard — Vigilancia", flash=flash,
         estaciones=estaciones, activas=activas, inactivas=inactivas,
-        pendientes_validacion=pendientes_validacion,
+        pendientes=pendientes,
         viajes_hoy=viajes_hoy, retrasos_hoy=retrasos_hoy, dur_prom_hoy=dur_prom_hoy,
         top_activas=top_activas, ch_ok=ch_ok,
         chart_labels=json.dumps([str(r.get("nombre") or "N/A")[:25] for r in top_activas]),
@@ -2281,14 +2334,7 @@ def vig_infracciones_pdf():
 @router.get("/vigilancia/mantenimiento/cerrar", response_class=HTMLResponse, dependencies=[Depends(requiere_permiso("ordenes_mantenimiento:leer"))])
 async def vig_mantenimiento_cerrar(request: Request):
     flash = request.session.pop("flash", None)
-    ordenes: list[dict] = []
-    try:
-        ordenes = _pb().list_records(
-            "ordenes_mant", filter='estado = "en_proceso"',
-            sort="-fecha_apertura", per_page=200,
-        ).get("items", [])
-    except Exception:
-        pass
+    ordenes = _vig_cerrar_mantenimiento_ordenes()
     return templates.TemplateResponse(request, "empleado/vigilancia/cerrar_mantenimiento.html", _ctx(request,
         title="Certificar Mantenimiento", flash=flash, ordenes=ordenes,
     ))
@@ -2301,27 +2347,37 @@ async def vig_mantenimiento_certificar(
 ):
     user = getattr(request.state, "user", {})
     try:
-        pb = _pb()
-        orden = pb.get_record("ordenes_mant", oid)
-        pb.update_record("ordenes_mant", oid, {
-            "estado":               "completado",
-            "fecha_cierre":         _ahora(),
-            "observaciones_cierre": observaciones_cierre.strip(),
-            "certificada_por":      user.get("name") or user.get("email", ""),
-        })
-        bici_id = orden.get("bicicleta_id", "")
-        if bici_id:
-            pb.update_record("bicicletas", bici_id, {"estado": "disponible"})
-            notificaciones_repo.notificar_rol(
-                "empleado-operacion", tipo="bici_disponible",
-                titulo="Bicicleta disponible",
-                mensaje=f"{orden.get('bicicleta_codigo', oid)} completó mantenimiento y está disponible nuevamente.",
-                enlace="/empleado/operacion/bicicletas",
+        orden = ordenes_repo.obtener(oid)
+        if not orden:
+            return _flash(request, "/empleado/vigilancia/mantenimiento/cerrar", "error", "Orden no encontrada.")
+
+        bici = bicicletas_repo.obtener(orden["id_bicicleta"])
+        if not bici:
+            raise RuntimeError(
+                f"Bicicleta {orden.get('bicicleta_codigo', orden['id_bicicleta'])} no tiene un id real en "
+                "ClickHouse -- no se puede actualizar su estado real."
             )
+        bicicletas_repo.actualizar(
+            orden["id_bicicleta"], codigo=bici["codigo"], id_modelo=str(bici["id_modelo"]),
+            estado="disponible", id_estacion=str(bici["id_estacion"] or ""),
+            numero_serie=bici["numero_serie"], fecha_adquisicion=bici["fecha_adquisicion"],
+            observacion=bici["observacion"], es_electrica=bool(bici["es_electrica"]),
+        )
+        notificaciones_repo.notificar_rol(
+            "empleado-operacion", tipo="bici_disponible",
+            titulo="Bicicleta disponible",
+            mensaje=f"{orden.get('bicicleta_codigo', oid)} completó mantenimiento y está disponible nuevamente.",
+            enlace="/empleado/operacion/bicicletas",
+        )
+        # observaciones_cierre no tiene columna propia en
+        # urbanbike_operativa.ordenes_mantenimiento (a diferencia de la
+        # ordenes_mant vieja de PocketBase) -- queda en la bitacora real,
+        # unico registro de "quien certifico y con que observaciones"
+        # desde esta migracion (ver docs/HOJA_DE_RUTA.md).
         registrar_auditoria(
             user.get("pb_token", ""), user.get("id", ""), user.get("name") or user.get("email", ""),
-            user.get("email", ""), "editar", "ordenes_mant",
-            f"Mantenimiento certificado: orden de {orden.get('bicicleta_codigo', oid)}"
+            user.get("email", ""), "editar", "ordenes_mantenimiento",
+            f"Mantenimiento certificado: orden {orden.get('codigo', oid)} de {orden.get('bicicleta_codigo', oid)}"
             + (f" — {observaciones_cierre.strip()}" if observaciones_cierre.strip() else ""), request,
             usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
         )
@@ -2332,25 +2388,22 @@ async def vig_mantenimiento_certificar(
 
 
 def _vig_cerrar_mantenimiento_ordenes() -> list[dict]:
-    return _pb().list_records(
-        "ordenes_mant", filter='estado = "en_proceso"',
-        sort="-fecha_apertura", per_page=200,
-    ).get("items", [])
+    return ordenes_repo.listar_cerradas_pendientes_certificar()
 
 
 def _vig_cerrar_mantenimiento_columnas_filas(ordenes: list[dict]) -> tuple[list[ColumnaReporte], list[list]]:
     columnas = [
         ColumnaReporte("Bicicleta", ancho=14),
-        ColumnaReporte("Descripción", ancho=36),
+        ColumnaReporte("Diagnóstico", ancho=36),
         ColumnaReporte("Técnico", ancho=22),
-        ColumnaReporte("Apertura", ancho=18),
+        ColumnaReporte("Cierre", ancho=18),
     ]
     filas = [
         [
             o.get("bicicleta_codigo") or "—",
-            o.get("descripcion") or "—",
+            o.get("diagnostico") or "—",
             o.get("tecnico_nombre") or "—",
-            (o.get("fecha_apertura") or "—").replace("T", " ").replace("Z", ""),
+            o["fecha_cierre"].strftime("%Y-%m-%d %H:%M") if o.get("fecha_cierre") else "—",
         ]
         for o in ordenes
     ]
@@ -2362,13 +2415,13 @@ def vig_mantenimiento_cerrar_excel():
     ordenes = _vig_cerrar_mantenimiento_ordenes()
     columnas, filas = _vig_cerrar_mantenimiento_columnas_filas(ordenes)
     return generar_excel_reporte(
-        titulo="UrbanBike — Órdenes de Mantenimiento en Proceso",
-        subtitulo=f"Total: {len(ordenes)} órdenes en proceso, pendientes de certificar",
+        titulo="UrbanBike — Órdenes de Mantenimiento Pendientes de Certificar",
+        subtitulo=f"Total: {len(ordenes)} órdenes cerradas por Mantenimiento, pendientes de certificar",
         columnas=columnas,
         filas=filas,
         fila_total=[f"Total: {len(ordenes)} órdenes", None, None, None],
-        nombre_hoja="Órdenes en Proceso",
-        nombre_archivo="urbanbike_vigilancia_ordenes_en_proceso.xlsx",
+        nombre_hoja="Pendientes Certificar",
+        nombre_archivo="urbanbike_vigilancia_ordenes_pendientes_certificar.xlsx",
     )
 
 
@@ -2377,12 +2430,12 @@ def vig_mantenimiento_cerrar_pdf():
     ordenes = _vig_cerrar_mantenimiento_ordenes()
     columnas, filas = _vig_cerrar_mantenimiento_columnas_filas(ordenes)
     return generar_pdf_reporte(
-        titulo="Órdenes de Mantenimiento en Proceso",
-        subtitulo=f"Total: {len(ordenes)} órdenes en proceso, pendientes de certificar",
+        titulo="Órdenes de Mantenimiento Pendientes de Certificar",
+        subtitulo=f"Total: {len(ordenes)} órdenes cerradas por Mantenimiento, pendientes de certificar",
         columnas=columnas,
         filas=filas,
         fila_total=[f"Total: {len(ordenes)} órdenes", None, None, None],
-        nombre_archivo="urbanbike_vigilancia_ordenes_en_proceso.pdf",
+        nombre_archivo="urbanbike_vigilancia_ordenes_pendientes_certificar.pdf",
     )
 
 
