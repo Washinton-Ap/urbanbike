@@ -1078,8 +1078,13 @@ def _marcar_vencidas(ordenes: list[dict]) -> None:
 async def mnt_ordenes(
     request: Request,
     q: str = Query(""), estado: str = Query(""), tecnico: str = Query(""),
-    prioridad: str = Query(""), vencida: bool = Query(False), page: int = Query(1),
+    prioridad: str = Query(""), vencida: str = Query(""), page: int = Query(1),
 ):
+    # vencida llega como "1"/"" desde el link/checkbox del template (nunca bool
+    # nativo -- un query param bool de FastAPI rechaza con 422 el "vencida="
+    # vacio que emite el template cuando el filtro no esta marcado, mismo
+    # motivo por el que _int_o_none existe en gerente.py para otro filtro).
+    vencida = vencida == "1"
     flash = request.session.pop("flash", None)
     per_page = 10
     filas, total = ordenes_repo.listar(
@@ -1156,8 +1161,9 @@ def _ordenes_subtitulo(q: str, estado: str, tecnico: str, prioridad: str, total:
 @router.get("/mantenimiento/ordenes/excel")
 def mnt_ordenes_excel(
     q: str = Query(""), estado: str = Query(""), tecnico: str = Query(""), prioridad: str = Query(""),
-    vencida: bool = Query(False),
+    vencida: str = Query(""),
 ):
+    vencida = vencida == "1"
     ordenes, total = ordenes_repo.listar(q=q, estado=estado, tecnico=tecnico, prioridad=prioridad, vencida=vencida, page=1, per_page=100_000)
     columnas, filas = _ordenes_columnas_filas(ordenes)
     fila_total = [f"Total: {total} órdenes"] + [None] * 8 + [sum(f[9] for f in filas), sum(f[10] for f in filas), None]
@@ -1172,8 +1178,9 @@ def mnt_ordenes_excel(
 @router.get("/mantenimiento/ordenes/pdf")
 def mnt_ordenes_pdf(
     q: str = Query(""), estado: str = Query(""), tecnico: str = Query(""), prioridad: str = Query(""),
-    vencida: bool = Query(False),
+    vencida: str = Query(""),
 ):
+    vencida = vencida == "1"
     ordenes, total = ordenes_repo.listar(q=q, estado=estado, tecnico=tecnico, prioridad=prioridad, vencida=vencida, page=1, per_page=100_000)
     columnas, filas = _ordenes_columnas_filas(ordenes)
     fila_total = [f"Total: {total} órdenes"] + [None] * 8 + [sum(f[9] for f in filas), sum(f[10] for f in filas), None]
