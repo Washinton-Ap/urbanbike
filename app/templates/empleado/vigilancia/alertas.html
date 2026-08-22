@@ -42,10 +42,11 @@
           <th>Ciclista</th>
           <th>Contacto</th>
           <th>Bicicleta</th>
+          <th>Viaje</th>
           <th style="text-align:right;">Tiempo total</th>
           <th style="text-align:right;">Tiempo excedido</th>
-          <th>Acciones tomadas</th>
-          <th></th>
+          <th>Estado</th>
+          <th>Acción tomada</th>
         </tr>
       </thead>
       <tbody>
@@ -54,20 +55,23 @@
           <td style="font-weight:600;color:var(--text);">{{ a.ciclista }}</td>
           <td class="text-muted text-sm">{{ a.email }}</td>
           <td style="font-family:monospace;">{{ a.bicicleta }}</td>
+          <td>
+            {% if a.activo %}<span class="badge badge-blue">Activo</span>
+            {% else %}<span class="badge badge-gray">Finalizado</span>{% endif %}
+          </td>
           <td style="text-align:right;">{{ a.tiempo_total | num }} min</td>
           <td style="text-align:right;font-weight:600;color:#EF4444;">+{{ a.tiempo_exceso | num }} min</td>
           <td>
             {% if a.atendida %}<span class="badge badge-green">Atendida</span>
             {% else %}<span class="badge badge-yellow">Pendiente</span>{% endif %}
           </td>
-          <td>
-            {% if not a.atendida %}
-            <form method="post" action="/empleado/vigilancia/alertas/{{ a.viaje_id }}/atender">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-              <button type="submit" class="btn btn-ghost" style="font-size:0.8rem;padding:6px 10px;">Marcar atendida</button>
-            </form>
+          <td style="max-width:260px;">
+            {% if a.atendida %}
+            <div class="text-sm">{{ a.nota }}</div>
+            <div class="text-muted" style="font-size:0.76rem;margin-top:2px;">{{ a.atendida_por }} — {{ a.fecha_atencion }}</div>
             {% else %}
-            <span style="color:var(--text-muted);font-size:0.8rem;">—</span>
+            <button class="btn btn-ghost" style="font-size:0.8rem;padding:6px 10px;"
+              data-id="{{ a.viaje_id }}" onclick="openAtender(this)">Marcar atendida</button>
             {% endif %}
           </td>
         </tr>
@@ -85,4 +89,32 @@
   {% endif %}
 </div>
 
+<dialog id="modal-atender">
+  <div class="modal-card">
+    <div class="modal-header"><span class="card-title">Atender alerta</span>
+      <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-atender').close()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <form method="post" id="form-atender">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <div class="form-group">
+        <label class="form-label">¿Qué acción se tomó?</label>
+        <textarea class="form-input" name="nota" rows="3" placeholder="Ej: se contactó al ciclista, confirmó que sigue en camino..." required></textarea>
+      </div>
+      <div class="flex gap-2" style="justify-content:flex-end;margin-top:24px;">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-atender').close()">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Marcar como atendida</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openAtender(btn) {
+  document.getElementById('form-atender').action = '/empleado/vigilancia/alertas/' + btn.dataset.id + '/atender';
+  document.getElementById('modal-atender').showModal();
+}
+document.querySelectorAll('dialog').forEach(d => d.addEventListener('click', e => { if (e.target === d) d.close(); }));
+</script>
 {% endblock %}
