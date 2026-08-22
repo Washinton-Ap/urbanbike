@@ -7348,3 +7348,79 @@ aunque el mensaje se haya mostrado correctamente en el navegador real.
 
 **Estado del plan: RESUELTO.** Punto 2.1 completo en las 3 capas (catálogo, ficha de detalle,
 servidor), probado antes/después con membresía real, sin bypass posible confirmado.
+
+## [PUNTO 2.7] -- fecha límite de reparación (Mantenimiento) (21-ago-2026)
+
+**Causa/motivación**: el punto 2.7 del plan de mejoras pide que cada orden de mantenimiento real
+tenga una fecha límite establecida, dado que una bicicleta en mantenimiento representa pérdida de
+ingresos para el negocio mientras no esté disponible. Antes de este punto, `ordenes_mantenimiento`
+solo tenía `fecha_apertura`/`fecha_cierre`, sin ningún plazo esperado ni forma de detectar una orden
+que llevara demasiado tiempo abierta.
+
+**Diseño**: columna nueva `fecha_limite` (ClickHouse, `urbanbike_operativa.ordenes_mantenimiento`),
+mismo patrón sentinel `DateTime DEFAULT toDateTime('1970-01-01 00:00:00')` que ya usa `fecha_cierre`
+en esa misma tabla. Se calcula sola dentro de `ordenes_repo.crear()` (único punto real de creación
+de órdenes -- cubre tanto el alta manual desde Mantenimiento como la generación automática desde la
+inspección de devolución reprobada en Vigilancia, sin tocar ese segundo call site) según
+`PLAZO_DIAS_POR_PRIORIDAD = {"alta": 2, "media": 5, "baja": 10}` (valores de negocio razonables, no
+confirmados formalmente por Washington todavía). Editable solo desde el formulario de edición
+(`modo=editar`), interpretada como fin del día del plazo (23:59:59). "Vencida" se calcula en Python
+en el router (`_marcar_vencidas`, mismo patrón que `o["foto_url"]`), nunca en Jinja, y una orden
+`cerrada` nunca es vencida sin importar su `fecha_limite`.
+
+**Migración de datos reales** (`etl/22_agregar_fecha_limite_ordenes.py`, idempotente en ambas
+partes): `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` + backfill (`ALTER TABLE ... UPDATE`) de las 13
+órdenes reales que ya existían, calculando `fecha_limite = fecha_apertura + días según prioridad`
+para que ninguna orden histórica quedara invisible al filtro de vencidas. Verificado directo contra
+ClickHouse: columna existe, 13 órdenes totales, 0 pendientes del sentinel tras el backfill (2
+filas comprobadas a mano: `OM-0324` prioridad=baja, +10 días exactos; `OM-0323` prioridad=media, +5
+días exactos).
+
+**Prueba real de punta a punta** (servidor real puerto 8005, cuenta `empleado.mant@urbanbike.com`):
+
+| Paso | Esperado | Resultado real |
+|---|---|---|
+| Crear orden real prioridad=alta (`OM-0327`) | `fecha_limite` = `fecha_apertura` + 2 días, calculada por el código | Confirmado contra ClickHouse directo: `fecha_apertura` 2026-08-21 21:19:55 → `fecha_limite` 2026-08-23 21:19:55 |
+| Orden recién creada | Sin badge "Vencida" en la lista | Confirmado, ausente |
+| Editar `fecha_limite` a ayer vía `POST /mantenimiento/ordenes/{oid}/editar` (form real) | `fecha_limite` actualizada, fin del día (23:59:59) | Confirmado contra ClickHouse directo: `2026-08-20 23:59:59` |
+| Lista general (`/mantenimiento/ordenes`) | Badge "Vencida" visible | Confirmado |
+| Filtro `?vencida=1` | Orden editada aparece; orden de control (`OM-0328`, prioridad=baja, sin editar) NO aparece | Confirmado (evita falso positivo del filtro) |
+| Dashboard de Mantenimiento | Tarjeta "Órdenes vencidas" con conteo real | `listar_vencidas()` directo = 3, mismo número visible en el HTML del dashboard |
+| Vigilancia (`/vigilancia/mantenimiento/cerrar`, certificación, punto 1.8 Parte 1) | Sigue respondiendo 200 sin romperse | Confirmado, 200 |
+| Export Excel (`?vencida=1`) | 200, `content-type` de xlsx real | Confirmado, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`, 5850 bytes |
+| Export PDF (`?vencida=1`) | 200, `content-type` de pdf real | Confirmado, `application/pdf`, 24983 bytes |
+
+**Limpieza de datos de prueba**: se crearon 4 órdenes reales de prueba (`OM-0325`/`OM-0327`
+prioridad alta -- forzadas a vencidas; `OM-0326`/`OM-0328` prioridad baja -- control, sin editar).
+Las 4 quedaron `estado_reparacion="abierta"` sin repuestos reales consumidos, así que las 4 se
+borraron con el endpoint real `POST /mantenimiento/ordenes/{oid}/eliminar` (mismo endpoint que
+usaría un técnico) y se confirmó `ordenes_repo.obtener(oid) is None` para las 4. El conteo total de
+`ordenes_mantenimiento` volvió a 13, igual que antes de la prueba.
+
+**Revisión de fresh-eyes antes de cerrar** (ver nota de proceso en el reporte de esta sesión: se
+hizo como pase de auditoría propio, no con un sub-agente delegado): (a) `ordenes_repo.actualizar()`
+tiene un único call site en toda la app (`mnt_ordenes_editar`, ya actualizado) -- confirmado con
+grep antes y después de los cambios, ningún otro caller se rompió; (b) los índices corregidos de
+`fila_total` en Excel/PDF (`[None] * 8` + sumas en `f[9]`/`f[10]`) coinciden con el orden real de
+columnas (`Fecha límite` insertada en la posición 7, costos corridos a 9/10) -- confirmado
+exportando de verdad con datos reales (tamaños de archivo > 0, sin traceback); (c) `_marcar_vencidas`
+se aplica en los 2 lugares que renderizan una orden individual o en lista (`mnt_ordenes`,
+`mnt_ordenes_detalle`) -- confirmado por lectura del código, no falta ninguno.
+
+**Hallazgo de alcance MENOR, no corregido, señalado para que Washington decida**: (d) el sentinel
+`1970-01-01` no se oculta explícitamente en el renderizado de `fecha_limite` en los 3 templates
+(`ordenes.html`, `ordenes_form.html`, export Excel/PDF) -- todos usan `{% if o.fecha_limite %}` para
+decidir mostrar "—", que es `True` incluso para el sentinel (un `datetime` no-None es siempre
+verdadero), a diferencia de `fecha_cierre` que sí se guarda explícitamente contra
+`estado_reparacion == 'cerrada'`. En la práctica esto es inofensivo HOY: `crear()` siempre calcula
+una `fecha_limite` real (nunca inserta el sentinel) y las 13 órdenes existentes ya fueron
+backfilleadas -- no hay ninguna fila real en estado sentinel para mostrar. Es el mismo patrón
+literal que ya traía el plan aprobado (Task 3 Step 3, Task 4 Steps 2/4), así que no se modificó
+unilateralmente; queda documentado como mejora defensiva opcional, no como bug activo.
+
+**Decisión de negocio pendiente de confirmar por Washington**: los plazos por defecto
+(`alta`=2 días, `media`=5 días, `baja`=10 días) son un valor razonable propuesto en el plan, no una
+cifra de negocio ya aprobada -- fácil de ajustar (un solo dict, `PLAZO_DIAS_POR_PRIORIDAD` en
+`ordenes_repo.py`) si Washington define otros valores.
+
+**Estado del plan: RESUELTO.**
