@@ -90,6 +90,9 @@
           {{ v.fecha_inicio | replace("T", " ") | replace("Z", "") if v.fecha_inicio else "—" }}
           {% if v.duracion_minutos %} &middot; {{ v.duracion_minutos }} min{% endif %}
         </div>
+        <div style="margin-top:6px;">
+          <a href="/ciclista/historial/{{ v.id }}" style="font-size:0.8rem;color:var(--primary);font-weight:600;">Ver detalle →</a>
+        </div>
       </div>
 
       <div style="text-align:right;min-width:150px;display:flex;flex-direction:column;gap:10px;">
