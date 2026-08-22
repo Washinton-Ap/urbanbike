@@ -31,6 +31,22 @@ ORIGENES_VALIDOS = ("preventivo", "devolucion", "reporte", "inspeccion")
 TIPOS_FALLA_VALIDOS = ("frenos", "transmision", "neumatico", "electrico", "estructural", "otro")
 PRIORIDADES_VALIDAS = ("alta", "media", "baja")
 
+# Punto 2.7 del plan de mejoras: plazo esperado de reparacion segun
+# prioridad -- una bicicleta en mantenimiento representa perdida de
+# ingresos mientras no este disponible. Valores de negocio razonables,
+# no confirmados formalmente por Washington todavia (facil de ajustar,
+# un solo dict).
+PLAZO_DIAS_POR_PRIORIDAD = {"alta": 2, "media": 5, "baja": 10}
+
+
+def _fecha_limite_por_defecto(prioridad: str, desde: datetime) -> datetime:
+    """Plazo por defecto = fecha de apertura + dias segun prioridad
+    (PLAZO_DIAS_POR_PRIORIDAD, default 5 si la prioridad no esta
+    mapeada -- no deberia pasar, PRIORIDADES_VALIDAS ya la valida antes)."""
+    from datetime import timedelta
+    dias = PLAZO_DIAS_POR_PRIORIDAD.get(prioridad, 5)
+    return desde + timedelta(days=dias)
+
 
 def listar_tecnicos() -> list[dict]:
     """[{id, nombre}] para el <select> de tecnico -- solo usuarios rol=mantenimiento."""
@@ -67,7 +83,7 @@ _SELECT_BASE = """
     SELECT o.id AS id, o.codigo AS codigo, o.origen AS origen,
            o.tipo_falla AS tipo_falla, o.prioridad AS prioridad,
            o.estado_reparacion AS estado_reparacion, o.diagnostico AS diagnostico,
-           o.fecha_apertura AS fecha_apertura, o.fecha_cierre AS fecha_cierre,
+           o.fecha_apertura AS fecha_apertura, o.fecha_limite AS fecha_limite, o.fecha_cierre AS fecha_cierre,
            o.costo_repuestos AS costo_repuestos, o.costo_mano_obra AS costo_mano_obra,
            b.id AS id_bicicleta, b.codigo AS bicicleta_codigo,
            t.id AS id_tecnico, concat(t.nombre, ' ', t.apellido) AS tecnico_nombre
@@ -78,7 +94,7 @@ _SELECT_BASE = """
 
 
 def listar(*, q: str = "", estado: str = "", tecnico: str = "", prioridad: str = "",
-           page: int = 1, per_page: int = 10) -> tuple[list[dict], int]:
+           vencida: bool = False, page: int = 1, per_page: int = 10) -> tuple[list[dict], int]:
     where = ["1=1"]
     params: dict = {}
     if q:
@@ -93,6 +109,12 @@ def listar(*, q: str = "", estado: str = "", tecnico: str = "", prioridad: str =
     if prioridad:
         where.append("o.prioridad = %(prioridad)s")
         params["prioridad"] = prioridad
+    if vencida:
+        # Punto 2.7: 'vencida' = no cerrada Y su plazo ya paso. El
+        # guard fecha_limite > sentinel es defensivo (deberia ser
+        # imposible tras el backfill de etl/22, pero evita falsos
+        # positivos si alguna fila quedara sin migrar).
+        where.append("o.estado_reparacion != 'cerrada' AND o.fecha_limite > toDateTime('1970-01-01 00:00:00') AND o.fecha_limite < now()")
     where_sql = " AND ".join(where)
 
     total = ch.scalar(f"""
@@ -134,6 +156,19 @@ def listar_cerradas_pendientes_certificar() -> list[dict]:
     """)
 
 
+def listar_vencidas() -> list[dict]:
+    """Ordenes reales que siguen abiertas (cualquier estado != 'cerrada')
+    y ya pasaron su fecha_limite -- la cola real de perdida de ingresos
+    activa que motiva el punto 2.7 del plan de mejoras. Usada por la
+    tarjeta "Ordenes vencidas" del dashboard de Mantenimiento."""
+    return ch.query(_SELECT_BASE + """
+        WHERE o.estado_reparacion != 'cerrada'
+          AND o.fecha_limite > toDateTime('1970-01-01 00:00:00')
+          AND o.fecha_limite < now()
+        ORDER BY o.fecha_limite ASC
+    """)
+
+
 def contar_repuestos(id_orden: str) -> int:
     return ch.scalar(
         "SELECT count() FROM urbanbike_operativa.orden_repuesto WHERE id_orden = %(id)s",
@@ -150,27 +185,30 @@ def _siguiente_codigo() -> str:
 
 
 def crear(*, id_bicicleta: str, origen: str, tipo_falla: str, prioridad: str,
-          id_tecnico: str, diagnostico: str) -> str:
+          id_tecnico: str, diagnostico: str, fecha_limite: datetime | None = None) -> str:
     nuevo_id = str(uuid.uuid4())
     codigo = _siguiente_codigo()
+    ahora = datetime.now()
+    if fecha_limite is None:
+        fecha_limite = _fecha_limite_por_defecto(prioridad, ahora)
     ch.get_client().command("""
         INSERT INTO urbanbike_operativa.ordenes_mantenimiento
             (id, codigo, id_bicicleta, origen, tipo_falla, prioridad, estado_reparacion,
-             id_tecnico, diagnostico, fecha_apertura)
+             id_tecnico, diagnostico, fecha_apertura, fecha_limite)
         VALUES
             (%(id)s, %(codigo)s, %(id_bicicleta)s, %(origen)s, %(tipo_falla)s, %(prioridad)s,
-             'abierta', %(id_tecnico)s, %(diagnostico)s, %(ahora)s)
+             'abierta', %(id_tecnico)s, %(diagnostico)s, %(ahora)s, %(fecha_limite)s)
     """, parameters={
         "id": nuevo_id, "codigo": codigo, "id_bicicleta": id_bicicleta, "origen": origen,
         "tipo_falla": tipo_falla, "prioridad": prioridad, "id_tecnico": id_tecnico,
-        "diagnostico": diagnostico, "ahora": datetime.now(),
+        "diagnostico": diagnostico, "ahora": ahora, "fecha_limite": fecha_limite,
     })
     return nuevo_id
 
 
 def actualizar(id_orden: str, *, id_bicicleta: str, origen: str, tipo_falla: str,
                prioridad: str, estado_reparacion: str, id_tecnico: str, diagnostico: str,
-               costo_repuestos: float, costo_mano_obra: float) -> None:
+               costo_repuestos: float, costo_mano_obra: float, fecha_limite: datetime) -> None:
     # ALTER ... UPDATE (mutacion in-place): ver nota de ORDER BY al inicio del
     # archivo -- esta tabla tenia estado_reparacion en la clave de orden hasta
     # que se corrigio hoy, mismo bug que bicicletas.estado.
@@ -180,11 +218,13 @@ def actualizar(id_orden: str, *, id_bicicleta: str, origen: str, tipo_falla: str
         "prioridad = %(prioridad)s", "estado_reparacion = %(estado_reparacion)s",
         "id_tecnico = %(id_tecnico)s", "diagnostico = %(diagnostico)s",
         "costo_repuestos = %(costo_repuestos)s", "costo_mano_obra = %(costo_mano_obra)s",
+        "fecha_limite = %(fecha_limite)s",
     ]
     params: dict = {
         "id": id_orden, "id_bicicleta": id_bicicleta, "origen": origen, "tipo_falla": tipo_falla,
         "prioridad": prioridad, "estado_reparacion": estado_reparacion, "id_tecnico": id_tecnico,
         "diagnostico": diagnostico, "costo_repuestos": costo_repuestos, "costo_mano_obra": costo_mano_obra,
+        "fecha_limite": fecha_limite,
     }
     # fecha_cierre solo se registra la primera vez que la orden pasa a
     # 'cerrada' -- no se pisa si ya estaba cerrada y se vuelve a guardar.

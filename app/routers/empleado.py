@@ -1023,8 +1023,10 @@ async def mnt_dashboard(request: Request):
     # docs/HOJA_DE_RUTA.md seccion 83; el filtro viejo leia la coleccion
     # huerfana ordenes_mant de PocketBase, siempre desactualizada).
     ordenes_abiertas = 0
+    ordenes_vencidas = 0
     try:
         _, ordenes_abiertas = ordenes_repo.listar(estado="abierta", page=1, per_page=1)
+        ordenes_vencidas = len(ordenes_repo.listar_vencidas())
     except Exception:
         pass
 
@@ -1033,6 +1035,8 @@ async def mnt_dashboard(request: Request):
          "enlace": "/empleado/mantenimiento/bicicletas", "color": "yellow", "icono": "llave"},
         {"titulo": "Órdenes por actualizar", "conteo": ordenes_abiertas,
          "enlace": "/empleado/mantenimiento/ordenes?estado=abierta", "color": "red", "icono": "reloj"},
+        {"titulo": "Órdenes vencidas", "conteo": ordenes_vencidas,
+         "enlace": "/empleado/mantenimiento/ordenes?vencida=1", "color": "red", "icono": "reloj"},
     ]
 
     return templates.TemplateResponse(request, "empleado/mantenimiento/dashboard.html", _ctx(request,
@@ -1057,25 +1061,45 @@ TIPO_FALLA_LABEL = {
 PRIORIDAD_LABEL = {"alta": "Alta", "media": "Media", "baja": "Baja"}
 
 
+def _marcar_vencidas(ordenes: list[dict]) -> None:
+    """Adjunta o['vencida'] = True/False en cada orden -- calculado en
+    Python, no en Jinja (mismo criterio que o['foto_url'] mas abajo).
+    Una orden 'cerrada' nunca es vencida, sin importar su fecha_limite."""
+    ahora = datetime.now()
+    for o in ordenes:
+        o["vencida"] = bool(
+            o["estado_reparacion"] != "cerrada"
+            and o.get("fecha_limite")
+            and o["fecha_limite"] < ahora
+        )
+
+
 @router.get("/mantenimiento/ordenes", response_class=HTMLResponse, dependencies=[Depends(requiere_permiso("ordenes_mantenimiento:leer"))])
 async def mnt_ordenes(
     request: Request,
     q: str = Query(""), estado: str = Query(""), tecnico: str = Query(""),
-    prioridad: str = Query(""), page: int = Query(1),
+    prioridad: str = Query(""), vencida: str = Query(""), page: int = Query(1),
 ):
+    # vencida llega como "1"/"" desde el link/checkbox del template (nunca bool
+    # nativo -- un query param bool de FastAPI rechaza con 422 el "vencida="
+    # vacio que emite el template cuando el filtro no esta marcado, mismo
+    # motivo por el que _int_o_none existe en gerente.py para otro filtro).
+    vencida = vencida == "1"
     flash = request.session.pop("flash", None)
     per_page = 10
     filas, total = ordenes_repo.listar(
-        q=q, estado=estado, tecnico=tecnico, prioridad=prioridad, page=page, per_page=per_page,
+        q=q, estado=estado, tecnico=tecnico, prioridad=prioridad, vencida=vencida,
+        page=page, per_page=per_page,
     )
     fotos_bici = bicicletas_repo.fotos_por_codigo([o["bicicleta_codigo"] for o in filas])
     for o in filas:
         o["foto_url"] = fotos_bici.get(o["bicicleta_codigo"], "")
+    _marcar_vencidas(filas)
     return templates.TemplateResponse(request, "empleado/mantenimiento/ordenes.html", _ctx(request,
         title="Órdenes de Mantenimiento", flash=flash, ordenes=filas, total=total,
         page=max(1, page), per_page=per_page,
         total_paginas=max(1, -(-total // per_page)),
-        q=q, estado=estado, tecnico=tecnico, prioridad=prioridad,
+        q=q, estado=estado, tecnico=tecnico, prioridad=prioridad, vencida=vencida,
         tecnicos=ordenes_repo.listar_tecnicos(),
         estados=ordenes_repo.ESTADOS_VALIDOS, estado_label=ESTADO_ORDEN_LABEL,
         prioridades=ordenes_repo.PRIORIDADES_VALIDAS, prioridad_label=PRIORIDAD_LABEL,
@@ -1092,11 +1116,13 @@ def _ordenes_columnas_filas(ordenes: list[dict]) -> tuple[list[ColumnaReporte], 
         ColumnaReporte("Prioridad", ancho=12),
         ColumnaReporte("Técnico", ancho=22),
         ColumnaReporte("Apertura", ancho=18),
+        ColumnaReporte("Fecha límite", ancho=14),
         ColumnaReporte("Cierre", ancho=18),
         ColumnaReporte("Costo repuestos", ancho=14, formato="moneda"),
         ColumnaReporte("Costo mano de obra", ancho=16, formato="moneda"),
         ColumnaReporte("Estado", ancho=16),
     ]
+    ahora = datetime.now()
     filas = [
         [
             o["codigo"], o["bicicleta_codigo"],
@@ -1105,6 +1131,7 @@ def _ordenes_columnas_filas(ordenes: list[dict]) -> tuple[list[ColumnaReporte], 
             PRIORIDAD_LABEL.get(o["prioridad"], o["prioridad"]),
             o["tecnico_nombre"],
             o["fecha_apertura"].strftime("%Y-%m-%d %H:%M") if o.get("fecha_apertura") else "—",
+            (o["fecha_limite"].strftime("%Y-%m-%d") + (" (vencida)" if o["estado_reparacion"] != "cerrada" and o.get("fecha_limite") and o["fecha_limite"] < ahora else "")) if o.get("fecha_limite") else "—",
             o["fecha_cierre"].strftime("%Y-%m-%d %H:%M") if o["estado_reparacion"] == "cerrada" else "—",
             float(o.get("costo_repuestos") or 0),
             float(o.get("costo_mano_obra") or 0),
@@ -1115,7 +1142,7 @@ def _ordenes_columnas_filas(ordenes: list[dict]) -> tuple[list[ColumnaReporte], 
     return columnas, filas
 
 
-def _ordenes_subtitulo(q: str, estado: str, tecnico: str, prioridad: str, total: int) -> str:
+def _ordenes_subtitulo(q: str, estado: str, tecnico: str, prioridad: str, total: int, vencida: bool = False) -> str:
     partes = [f"Total: {total} órdenes"]
     if q:
         partes.append(f'Búsqueda: "{q}"')
@@ -1126,19 +1153,23 @@ def _ordenes_subtitulo(q: str, estado: str, tecnico: str, prioridad: str, total:
         partes.append(f"Técnico: {nombre}")
     if prioridad:
         partes.append(f"Prioridad: {PRIORIDAD_LABEL.get(prioridad, prioridad)}")
+    if vencida:
+        partes.append("Solo vencidas")
     return "  |  ".join(partes)
 
 
 @router.get("/mantenimiento/ordenes/excel")
 def mnt_ordenes_excel(
     q: str = Query(""), estado: str = Query(""), tecnico: str = Query(""), prioridad: str = Query(""),
+    vencida: str = Query(""),
 ):
-    ordenes, total = ordenes_repo.listar(q=q, estado=estado, tecnico=tecnico, prioridad=prioridad, page=1, per_page=100_000)
+    vencida = vencida == "1"
+    ordenes, total = ordenes_repo.listar(q=q, estado=estado, tecnico=tecnico, prioridad=prioridad, vencida=vencida, page=1, per_page=100_000)
     columnas, filas = _ordenes_columnas_filas(ordenes)
-    fila_total = [f"Total: {total} órdenes"] + [None] * 7 + [sum(f[8] for f in filas), sum(f[9] for f in filas), None]
+    fila_total = [f"Total: {total} órdenes"] + [None] * 8 + [sum(f[9] for f in filas), sum(f[10] for f in filas), None]
     return generar_excel_reporte(
         titulo="UrbanBike — Órdenes de Mantenimiento",
-        subtitulo=_ordenes_subtitulo(q, estado, tecnico, prioridad, total),
+        subtitulo=_ordenes_subtitulo(q, estado, tecnico, prioridad, total, vencida),
         columnas=columnas, filas=filas, fila_total=fila_total, nombre_hoja="Órdenes",
         nombre_archivo=f"urbanbike_ordenes_mantenimiento_{datetime.now().strftime('%Y%m%d')}.xlsx",
     )
@@ -1147,13 +1178,15 @@ def mnt_ordenes_excel(
 @router.get("/mantenimiento/ordenes/pdf")
 def mnt_ordenes_pdf(
     q: str = Query(""), estado: str = Query(""), tecnico: str = Query(""), prioridad: str = Query(""),
+    vencida: str = Query(""),
 ):
-    ordenes, total = ordenes_repo.listar(q=q, estado=estado, tecnico=tecnico, prioridad=prioridad, page=1, per_page=100_000)
+    vencida = vencida == "1"
+    ordenes, total = ordenes_repo.listar(q=q, estado=estado, tecnico=tecnico, prioridad=prioridad, vencida=vencida, page=1, per_page=100_000)
     columnas, filas = _ordenes_columnas_filas(ordenes)
-    fila_total = [f"Total: {total} órdenes"] + [None] * 7 + [sum(f[8] for f in filas), sum(f[9] for f in filas), None]
+    fila_total = [f"Total: {total} órdenes"] + [None] * 8 + [sum(f[9] for f in filas), sum(f[10] for f in filas), None]
     return generar_pdf_reporte(
         titulo="Órdenes de Mantenimiento",
-        subtitulo=_ordenes_subtitulo(q, estado, tecnico, prioridad, total),
+        subtitulo=_ordenes_subtitulo(q, estado, tecnico, prioridad, total, vencida),
         columnas=columnas, filas=filas, fila_total=fila_total,
         nombre_archivo=f"urbanbike_ordenes_mantenimiento_{datetime.now().strftime('%Y%m%d')}.pdf",
     )
@@ -1203,6 +1236,7 @@ async def mnt_ordenes_detalle(request: Request, oid: str, modo: str = Query("ver
     orden = ordenes_repo.obtener(oid)
     if not orden:
         return _flash(request, "/empleado/mantenimiento/ordenes", "error", "Orden no encontrada.")
+    _marcar_vencidas([orden])
     n_repuestos = ordenes_repo.contar_repuestos(oid)
     return templates.TemplateResponse(request, "empleado/mantenimiento/ordenes_form.html", _ctx(request,
         title=f"Orden {orden['codigo']}", flash=flash, modo="editar" if modo == "editar" else "ver",
@@ -1222,14 +1256,20 @@ async def mnt_ordenes_editar(
     id_bicicleta: str = Form(...), origen: str = Form(...), tipo_falla: str = Form(...),
     prioridad: str = Form(...), estado_reparacion: str = Form(...), id_tecnico: str = Form(...),
     diagnostico: str = Form(""), costo_repuestos: str = Form("0"), costo_mano_obra: str = Form("0"),
+    fecha_limite: str = Form(...),
 ):
     user = getattr(request.state, "user", {})
     try:
+        # fecha_limite se interpreta como fin del dia del plazo (23:59:59) --
+        # una orden con fecha_limite = hoy sigue sin estar "vencida" hasta
+        # pasada la medianoche.
+        fecha_limite_dt = datetime.strptime(fecha_limite, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
         ordenes_repo.actualizar(
             oid, id_bicicleta=id_bicicleta, origen=origen, tipo_falla=tipo_falla,
             prioridad=prioridad, estado_reparacion=estado_reparacion, id_tecnico=id_tecnico,
             diagnostico=diagnostico,
             costo_repuestos=float(costo_repuestos or 0), costo_mano_obra=float(costo_mano_obra or 0),
+            fecha_limite=fecha_limite_dt,
         )
         registrar_auditoria(
             user.get("pb_token", ""), user.get("id", ""), user.get("name") or user.get("email", ""),

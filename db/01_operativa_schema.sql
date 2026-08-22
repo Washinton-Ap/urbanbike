@@ -610,6 +610,7 @@ CREATE TABLE IF NOT EXISTS urbanbike_operativa.ordenes_mantenimiento
     id_tecnico       UUID,
     diagnostico      String DEFAULT '',
     fecha_apertura   DateTime DEFAULT now(),
+    fecha_limite     DateTime DEFAULT toDateTime('1970-01-01 00:00:00'), -- punto 2.7: plazo segun prioridad, calculado en ordenes_repo.crear()
     fecha_cierre     DateTime DEFAULT toDateTime('1970-01-01 00:00:00'),
     costo_repuestos  Decimal(10,2) DEFAULT 0,
     costo_mano_obra  Decimal(10,2) DEFAULT 0,
