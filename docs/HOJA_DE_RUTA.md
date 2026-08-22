@@ -7386,6 +7386,42 @@ pantalla de reportes de todo el sistema sin ninguna opción de exportar), el esf
 2.3/2.6/2.7/2.8 despachados hoy) -- queda documentado para que Washington decida cuándo priorizarlo,
 mismo criterio de la sección 83.
 
+### Fix chico aplicado -- RESUELTO el 22-ago-2026
+
+Solo la parte "chica" del fix propuesto arriba: `mnt_reportes` ahora llama a
+`ordenes_repo.listar(page=1, per_page=100_000)` en vez de leer `ordenes_mant` de PocketBase --
+mismo patrón que `/mantenimiento/ordenes` y `/mantenimiento/dashboard`. El desglose de "Órdenes por
+Estado" pasa de los 4 estados ficticios de la colección vieja (pendiente/en_proceso/
+completado/cancelado) a los 5 estados reales de `ordenes_repo.ESTADOS_VALIDOS`
+(abierta/diagnóstico/en_reparación/espera_repuesto/cerrada, mismas etiquetas que ya usa
+`ESTADO_ORDEN_LABEL` en `/mantenimiento/ordenes`); el de "Órdenes por Tipo" (Preventivo/Correctivo)
+se recalcula sobre `origen` real (`preventivo` vs el resto -- devolución/reporte/inspección --
+agrupado como correctivo).
+
+**Filtros de fecha/prioridad, export Excel/PDF y serie temporal siguen fuera de alcance a
+propósito** -- quedan en la cola de deuda conocida para después del domingo, junto con el resto,
+tal como se decidió al documentar este hallazgo.
+
+**Evidencia real, dos capas independientes:**
+1. Consulta directa a ClickHouse (`SELECT count() FROM urbanbike_operativa.ordenes_mantenimiento`):
+   **13**. Desglose por `estado_reparacion`: abierta=1, cerrada=12 (0 en los otros 3 estados).
+   Desglose por `origen`: preventivo=2, devolucion=2, inspeccion=8, reporte=1 (2 preventivo / 11
+   correctivo agrupado).
+2. HTTP real contra un servidor levantado sobre el propio worktree del fix (puerto 8015), sesión
+   real de `empleado.mant@urbanbike.com`: la tarjeta "Total de órdenes" de
+   `/empleado/mantenimiento/reportes` renderiza **13**, y los arrays `estadoValues`/`tipoValues`
+   embebidos en el HTML coinciden exactamente con el punto 1 (`[1,0,0,0,12]` / `[2,11]`).
+   `/mantenimiento/ordenes` (la pantalla ya correcta) también muestra 13, confirmando consistencia
+   entre pantallas.
+
+**Revisor independiente** (segundo agente, sin el contexto de la sesión que hizo el fix, mismo
+criterio de rigor que el resto del proyecto): aprobó el fix como listo para fusionar. Encontró un
+hallazgo Important real -- `correctivo` se calculaba como `total - preventivo` mezclando dos
+conjuntos de filas con JOINs distintos (`total` sin `usuarios`, `preventivo` sobre filas que sí
+hacen INNER JOIN con `usuarios`), inconsistencia latente que no se manifestaba con los datos de
+hoy pero no era correcta por construcción -- corregido antes de fusionar a
+`correctivo = len(ordenes) - preventivo`, derivado del mismo conjunto que `preventivo`.
+
 ## 88. Punto 2.7 -- fecha límite de reparación (Mantenimiento) (21-ago-2026)
 
 **Causa/motivación**: el punto 2.7 del plan de mejoras pide que cada orden de mantenimiento real

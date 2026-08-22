@@ -2864,7 +2864,7 @@ async def mnt_reportes(request: Request):
         estado_counts[o["estado_reparacion"]] = estado_counts.get(o["estado_reparacion"], 0) + 1
         if o["origen"] == "preventivo":
             preventivo += 1
-    correctivo = total - preventivo
+    correctivo = len(ordenes) - preventivo
 
     estado_labels = [ESTADO_ORDEN_LABEL[e] for e in ordenes_repo.ESTADOS_VALIDOS]
     estado_values = [estado_counts[e] for e in ordenes_repo.ESTADOS_VALIDOS]
