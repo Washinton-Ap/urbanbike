@@ -135,7 +135,7 @@ def _bicicletas_exclusivas_nuevas() -> dict[str, date]:
 # ahora -- requiere decidir si se espeja también en sentido inverso o se
 # migra el flujo de reserva del ciclista a ClickHouse (la migración ya
 # estaba pendiente de antes, ver bicicletas_repo.py).
-def _catalogo_agrupado(tipo_membresia: str = "casual") -> list[dict]:
+def _catalogo_agrupado(tipo_membresia: str = "casual", bicicletas_pb: list[dict] | None = None) -> list[dict]:
     """Catálogo visible al ciclista (punto 7, "el producto del sistema"):
     bicicletas agrupadas por categoría con disponibilidad EN VIVO (cuántas
     hay disponibles ahora mismo, dato real de ClickHouse) y la tarifa por
@@ -154,7 +154,9 @@ def _catalogo_agrupado(tipo_membresia: str = "casual") -> list[dict]:
                    countIf(b.estado = 'disponible' AND m.es_electrica = 1) AS disponibles_electricas,
                    countIf(b.estado = 'disponible' AND (
                        dateDiff('day', b.fecha_adquisicion, today()) < %(dias)s OR m.es_electrica = 1
-                   )) AS disponibles_bloqueadas_no_member
+                   )) AS disponibles_bloqueadas_no_member,
+                   anyIf(b.codigo, b.estado = 'disponible') AS foto_codigo_disponible,
+                   min(b.codigo) AS foto_codigo_cualquiera
             FROM urbanbike_operativa.bicicletas AS b FINAL
             INNER JOIN urbanbike_operativa.modelos_bicicleta AS m FINAL ON m.id = b.id_modelo
             INNER JOIN urbanbike_operativa.categorias AS c FINAL ON c.id = m.id_categoria
@@ -167,6 +169,7 @@ def _catalogo_agrupado(tipo_membresia: str = "casual") -> list[dict]:
 
     es_member = tipo_membresia == "member"
     tarifas_por_categoria = _tarifas_por_categoria()
+    pb_por_codigo = {b.get("codigo"): b for b in (bicicletas_pb or [])}
     catalogo = []
     for f in filas:
         tarifas_cat = tarifas_por_categoria.get(f["id_categoria"], {})
@@ -178,6 +181,18 @@ def _catalogo_agrupado(tipo_membresia: str = "casual") -> list[dict]:
         # unión de ambos casos sin contar dos veces una bici que fuera las
         # dos cosas a la vez (nueva Y eléctrica).
         disponibles_viewer = f["disponibles"] if es_member else f["disponibles"] - f["disponibles_bloqueadas_no_member"]
+        # Foto real representativa de la categoria: la misma bicicleta que
+        # ya tiene foto real subida en PocketBase (ver auditoria del plan),
+        # nunca una imagen inventada. Preferencia por una unidad disponible
+        # (foto_codigo_disponible); si ninguna lo esta, cae al codigo
+        # deterministico de foto_codigo_cualquiera. Si esa bicicleta no
+        # tiene foto real (o la categoria no tiene ninguna bicicleta, caso
+        # real de "Montana" hoy), foto_url queda vacio y la plantilla usa
+        # el mismo fallback SVG que ya usa tarjeta_bicicleta.html.
+        foto_codigo = f["foto_codigo_disponible"] or f["foto_codigo_cualquiera"]
+        pb_bici = pb_por_codigo.get(foto_codigo) or {}
+        pb_id = pb_bici.get("id")
+        foto_url = file_url("bicicletas", pb_id, pb_bici.get("foto", ""), "400x300") if pb_id else ""
         catalogo.append({
             "nombre": f["nombre"], "descripcion": f["descripcion"],
             "es_premium": bool(f["es_premium"]),
@@ -186,6 +201,7 @@ def _catalogo_agrupado(tipo_membresia: str = "casual") -> list[dict]:
             "electricas_member": f["disponibles_electricas"],
             "precio_hora_member": tarifas_cat.get((tipo_membresia, "hora"), 0.0),
             "precio_hora_casual": tarifas_cat.get(("casual", "hora"), 0.0),
+            "foto_url": foto_url,
         })
     return catalogo
 
@@ -488,9 +504,14 @@ async def catalogo(request: Request):
         tipo_membresia = membresias_repo.tipo_membresia_real(user.get("email", ""))
     except Exception:
         pass
+    bicicletas_pb: list[dict] = []
+    try:
+        bicicletas_pb = _pb().list_records("bicicletas", sort="codigo", per_page=200).get("items", [])
+    except Exception:
+        bicicletas_pb = []
     return templates.TemplateResponse(request, "ciclista/catalogo.html", _ctx(request,
         title="Catálogo de Bicicletas", flash=flash,
-        categorias=_catalogo_agrupado(tipo_membresia),
+        categorias=_catalogo_agrupado(tipo_membresia, bicicletas_pb),
         es_member=(tipo_membresia == "member"),
     ))
 
