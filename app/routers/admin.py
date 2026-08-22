@@ -1363,64 +1363,109 @@ def respaldo_sql_completo(request: Request):
 #    sección 68). Espejo exacto de /empleado/vigilancia/soporte, mismo repo
 #    -- Admin ve y responde todas las conversaciones igual que Vigilancia. ──
 
+def _mensaje_json(m: dict) -> dict:
+    """Misma forma que ciclista.py/empleado.py:_mensaje_json()."""
+    return {
+        "id": m.get("id", ""),
+        "autor_rol": m.get("autor_rol", ""),
+        "autor_id": m.get("autor_id", ""),
+        "autor_nombre": m.get("autor_nombre", ""),
+        "texto": m.get("texto", ""),
+        "fecha": m.get("fecha", ""),
+        "eliminado": bool(m.get("eliminado")),
+        "adjunto_url": file_url("mensajes_soporte", m.get("id", ""), m.get("adjunto", "")),
+        "adjunto_nombre": m.get("adjunto", ""),
+    }
+
+
+async def _leer_adjunto_soporte(archivo: UploadFile | None) -> tuple[str, bytes, str] | None:
+    if archivo is None or not archivo.filename:
+        return None
+    mensajes_soporte_repo.validar_adjunto(archivo.content_type, archivo.size)
+    contenido = await archivo.read()
+    return (archivo.filename, contenido, archivo.content_type)
+
+
 @router.get("/soporte", response_class=HTMLResponse)
 def admin_soporte_lista(request: Request):
     flash = request.session.pop("flash", None)
-    conversaciones = mensajes_soporte_repo.listar_conversaciones()
+    # incluir_eliminadas=True: Admin conserva su vista de supervisión
+    # total, incluidas las conversaciones que Vigilancia borró completas
+    # (ver auditoría del punto 2.4) -- Vigilancia mismo ya no las ve.
+    conversaciones = mensajes_soporte_repo.listar_conversaciones(incluir_eliminadas=True)
     return templates.TemplateResponse(request, "admin/soporte.html", _ctx(request,
         title="Soporte", flash=flash, conversaciones=conversaciones,
-        base_url="/admin/soporte",
+        motivo_label=mensajes_soporte_repo.MOTIVO_LABEL, base_url="/admin/soporte",
     ))
 
 
-@router.get("/soporte/{ciclista_id}", response_class=HTMLResponse)
-def admin_soporte_detalle(request: Request, ciclista_id: str):
+@router.get("/soporte/{conversacion_id}", response_class=HTMLResponse)
+def admin_soporte_detalle(request: Request, conversacion_id: str):
     flash = request.session.pop("flash", None)
-    mensajes = mensajes_soporte_repo.listar_hilo(ciclista_id)
-    if not mensajes:
+    user = getattr(request.state, "user", {})
+    conv = mensajes_soporte_repo.obtener_conversacion(conversacion_id)
+    if not conv:
         return _flash(request, "/admin/soporte", "error", "Esa conversación no existe.")
-    mensajes_soporte_repo.marcar_leidos(ciclista_id, para_rol="admin")
-    ciclista_nombre = next((m["autor_nombre"] for m in mensajes if m.get("autor_rol") == "ciclista"), ciclista_id)
+    # incluir_eliminados=True: Admin ve tambien los mensajes/conversaciones
+    # borrados (soft-delete), a diferencia de la vista normal de Vigilancia.
+    mensajes = mensajes_soporte_repo.listar_hilo(conversacion_id, incluir_eliminados=True)
+    mensajes_soporte_repo.marcar_leidos(conversacion_id, para_rol="admin")
+    ciclista_nombre = conv.get("autor_nombre") or conv.get("ciclista_id", "")
     return templates.TemplateResponse(request, "admin/soporte_detalle.html", _ctx(request,
-        title=f"Soporte — {ciclista_nombre}", flash=flash, mensajes=mensajes,
-        ciclista_id=ciclista_id, ciclista_nombre=ciclista_nombre, soy_ciclista=False,
-        poll_url=f"/admin/soporte/{ciclista_id}/mensajes",
-        enviar_url=f"/admin/soporte/{ciclista_id}/enviar",
+        title=f"Soporte — {ciclista_nombre}", flash=flash, mensajes=[_mensaje_json(m) for m in mensajes],
+        conversacion_id=conversacion_id, ciclista_nombre=ciclista_nombre, soy_ciclista=False,
+        propio_id=user.get("id", ""),
+        agente_nombre=conv.get("agente_nombre", ""),
+        motivo_label=mensajes_soporte_repo.MOTIVO_LABEL.get(conv.get("motivo", ""), "—"),
+        poll_url=f"/admin/soporte/{conversacion_id}/mensajes",
+        enviar_url=f"/admin/soporte/{conversacion_id}/enviar",
+        eliminar_url_base=f"/admin/soporte/{conversacion_id}/eliminar-mensaje",
+        eliminar_conversacion_url=f"/admin/soporte/{conversacion_id}/eliminar",
+        puede_borrar_conversacion=True,
         base_url="/admin/soporte",
     ))
 
 
-@router.post("/soporte/{ciclista_id}/enviar")
-def admin_soporte_enviar(request: Request, ciclista_id: str, texto: str = Form(...)):
+@router.post("/soporte/{conversacion_id}/enviar")
+async def admin_soporte_enviar(
+    request: Request, conversacion_id: str,
+    texto: str = Form(""), adjunto: UploadFile | None = File(None),
+):
     user = getattr(request.state, "user", {})
     try:
+        archivo = await _leer_adjunto_soporte(adjunto)
         mensajes_soporte_repo.enviar(
-            ciclista_id=ciclista_id, autor_id=user.get("id", ""),
+            conversacion_id=conversacion_id, autor_id=user.get("id", ""),
             autor_rol=user.get("rol_slug", ""), autor_nombre=user.get("name") or user.get("email", ""),
-            texto=texto,
+            texto=texto, archivo=archivo,
         )
     except ValueError as e:
-        return _flash(request, f"/admin/soporte/{ciclista_id}", "error", str(e))
+        return _flash(request, f"/admin/soporte/{conversacion_id}", "error", str(e))
     except Exception:
-        return _flash(request, f"/admin/soporte/{ciclista_id}", "error", "No se pudo enviar la respuesta. Intenta de nuevo.")
-    return RedirectResponse(f"/admin/soporte/{ciclista_id}", status_code=302)
+        return _flash(request, f"/admin/soporte/{conversacion_id}", "error", "No se pudo enviar la respuesta. Intenta de nuevo.")
+    return RedirectResponse(f"/admin/soporte/{conversacion_id}", status_code=302)
 
 
-@router.get("/soporte/{ciclista_id}/mensajes")
-def admin_soporte_mensajes(request: Request, ciclista_id: str):
+@router.post("/soporte/{conversacion_id}/eliminar-mensaje/{mensaje_id}")
+def admin_soporte_eliminar_mensaje(request: Request, conversacion_id: str, mensaje_id: str):
+    user = getattr(request.state, "user", {})
+    ok, motivo_error = mensajes_soporte_repo.eliminar_mensaje(mensaje_id, actor_id=user.get("id", ""))
+    if not ok:
+        return _flash(request, f"/admin/soporte/{conversacion_id}", "error", motivo_error)
+    return RedirectResponse(f"/admin/soporte/{conversacion_id}", status_code=302)
+
+
+@router.post("/soporte/{conversacion_id}/eliminar")
+def admin_soporte_eliminar_conversacion(request: Request, conversacion_id: str):
+    user = getattr(request.state, "user", {})
+    mensajes_soporte_repo.eliminar_conversacion(conversacion_id, actor_id=user.get("id", ""))
+    return _flash(request, "/admin/soporte", "success", "Conversación eliminada.")
+
+
+@router.get("/soporte/{conversacion_id}/mensajes")
+def admin_soporte_mensajes(request: Request, conversacion_id: str):
     """JSON liviano para el sondeo de 4s de la conversación abierta
     (app/static/js/chat-soporte.js)."""
-    mensajes = mensajes_soporte_repo.listar_hilo(ciclista_id)
-    mensajes_soporte_repo.marcar_leidos(ciclista_id, para_rol="admin")
-    return JSONResponse({
-        "items": [
-            {
-                "id": m.get("id", ""),
-                "autor_rol": m.get("autor_rol", ""),
-                "autor_nombre": m.get("autor_nombre", ""),
-                "texto": m.get("texto", ""),
-                "fecha": m.get("fecha", ""),
-            }
-            for m in mensajes
-        ],
-    })
+    mensajes = mensajes_soporte_repo.listar_hilo(conversacion_id, incluir_eliminados=True)
+    mensajes_soporte_repo.marcar_leidos(conversacion_id, para_rol="admin")
+    return JSONResponse({"items": [_mensaje_json(m) for m in mensajes]})

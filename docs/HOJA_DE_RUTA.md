@@ -7158,6 +7158,109 @@ de esta Parte 2 fueron de solo lectura (conteos), sin crear ni modificar registr
 **Estado del plan: RESUELTO.** Punto 1.8 completo en los 5 roles, sobre fuentes reales
 verificadas, sin datos inventados ni simulados.
 
+## 85. Punto 2.4 -- Chat de soporte, versión completa: agente/motivo al iniciar,
+adjuntos reales, emoji, soft-delete (21-ago-2026)
+
+Construido sobre la auditoría previa (buzón genérico confirmado, sin selección de agente/motivo/
+adjuntos/borrado) y las 5 decisiones ya confirmadas por Washington. El cambio de fondo, no pedido
+explícito pero necesario para que "elegir agente" tuviera sentido real: el modelo pasó de "un hilo
+eterno por `ciclista_id`" a "una o más conversaciones reales por `conversacion_id`", cada una con su
+propio agente y motivo.
+
+### Esquema (`etl/21_agregar_adjunto_soporte.py`)
+
+Campos nuevos en `mensajes_soporte`: `conversacion_id`, `agente_id`, `agente_nombre`, `motivo`
+(select: infraccion/consulta_general/otro), `adjunto` (file, 1 archivo, máx 20MB, mimeTypes
+imagen/PDF/video), `eliminado`/`eliminado_por`/`eliminado_en`. Ejecutado real contra PocketBase,
+verificado idempotente (segunda corrida: "los campos nuevos ya existen, sin cambios"). El campo
+`type: "file"` no tenía precedente en ningún script de `etl/` del proyecto (avatar/comprobante_imagen
+se crearon a mano en el panel admin) -- se validó con una escritura+lectura real antes de construir
+nada encima (registro de prueba, subido, descargado con 200 real, y borrado por ser solo una prueba
+de esquema, no una conversación real).
+
+**Backfill real**: los 13 mensajes reales de pruebas anteriores (2 conversaciones de sesiones previas
+de Washington) no tenían `conversacion_id` -- se les asignó `conversacion_id = ciclista_id` (la misma
+agrupación exacta que ya tenían) y `motivo = "otro"`, sin inventar un `agente_id` que nunca existió
+en el modelo viejo (buzón de rol completo). Sin esto quedarían invisibles para siempre en la UI nueva.
+
+### Repositorio (`app/db/mensajes_soporte_repo.py`, reescrito)
+
+- `iniciar_conversacion()`: genera `conversacion_id` nuevo, notifica **al agente elegido puntualmente**
+  (`notificar_usuario`, nunca `notificar_rol` -- ese era el cambio de comportamiento real que pedía
+  el punto 2.4).
+- `enviar()`: ya no recibe agente/motivo -- los relee del primer mensaje real de la conversación
+  (`obtener_conversacion()`) para que nunca puedan desalinearse entre mensajes del mismo hilo. Ciclista
+  → notifica al agente de esa conversación; staff → notifica al ciclista (sin cambios, ya existía).
+- Adjuntos: dos pasos reales (`create_record` + `update_record_with_file`) -- PocketBase no tiene
+  "crear con archivo" en un solo paso, mismo patrón ya usado por `comprobante_imagen`.
+- `eliminar_mensaje()`: soft-delete, verifica que `autor_id == actor_id` antes de tocar nada -- ni el
+  ciclista puede borrar lo que mandó el staff, ni al revés.
+- `eliminar_conversacion()`: soft-delete de todos los mensajes de un hilo; la restricción real de
+  "solo Vigilancia/Admin" no vive en el repo -- la da el propio prefijo de ruta
+  (`/empleado/vigilancia/*`, `/admin/*`), restringido ya por `AuthMiddleware.ROLE_RULES`.
+- `listar_hilo(incluir_eliminados=)` / `listar_conversaciones(incluir_eliminadas=)`: por defecto
+  ocultan lo borrado (vista de ciclista/Vigilancia); Admin pasa `True` en ambos -- ve conversaciones
+  completas borradas y mensajes individuales borrados, marcados explícitamente, nunca con el DELETE
+  real que evita todo este módulo.
+
+### Frontend
+
+`componentes/mensaje_soporte.html` (una burbuja) separado de `hilo_soporte.html` (el hilo completo)
+a propósito: `chat-soporte.js` tiene que reproducir el mismo HTML en JS puro para el sondeo de 4s, y
+mantenerlos en includes distintos hace explícito qué estructura exacta hay que espejar. Adjuntos se
+clasifican por extensión del nombre real (imagen/video/documento) tanto en Jinja como en JS, mismo
+criterio en los dos lados. Selector de emoji: grilla estática de 24 emoji en `chat-soporte.js`, cero
+librerías nuevas -- confirmado sin cambio de backend (`enviar()` solo hace `.strip()`/límite de
+longitud, nunca filtra caracteres). Preview de adjunto antes de enviar: se extendió
+`file-preview.js` (ya existente del punto 1.6) para reconocer también `video/*` adjuntos, en vez de
+duplicar la lógica de preview.
+
+**Decisión de diseño encontrada durante la prueba, confirmada por Washington tal cual se
+implementó (21-ago-2026)**: un mensaje borrado se muestra como "Mensaje eliminado" para **todos
+los que ven el hilo, incluido Admin** -- el texto/adjunto original nunca se re-muestra en ninguna
+pantalla, solo queda recuperable leyendo el registro real de PocketBase directamente (rol
+`superusuario`, fuera de la UI). "Admin ve todo, incluida la conversación borrada" es "Admin puede
+seguir accediendo a la conversación y ver que un mensaje existió y fue borrado" -- no "Admin ve el
+contenido borrado en pantalla". Confirmado explícitamente: el propósito del soft-delete es
+preservar la evidencia en la base de datos, no exponerla libremente -- ni siquiera a Admin. Sin
+cambios pendientes.
+
+### Prueba real de punta a punta
+
+Servidor real (`:8002`), sin mocks. Solo existía 1 agente de Vigilancia activo real
+(`empleado.vig@urbanbike.com`, Miguel Torres) -- se creó un segundo real
+(`agente2.vig.e2e@urbanbike.com`, vía `POST /admin/usuarios/crear` real) para poder probar de verdad
+que 2 conversaciones con 2 agentes distintos no se mezclan; **desactivado al terminar** (`POST
+.../toggle-activo`, la misma acción real que usaría Washington) para que no quede como agente
+seleccionable permanente -- no se borró (conserva su conversación real asociada).
+
+1. Selector de agentes del ciclista: Miguel Torres y Agente Dos E2E presentes, **Admin ausente**
+   -- confirmado por texto real de la respuesta HTTP, no asumido.
+2. `POST /ciclista/soporte/iniciar` × 2 (Miguel/infracción, Agente Dos/consulta_general) -- 2
+   `conversacion_id` reales y distintos confirmados.
+3. `GET /ciclista/soporte`: las 2 conversaciones listadas por separado, cada una con su agente y
+   motivo reales, sin mezcla de textos entre ellas.
+4. `POST .../enviar` con un PNG real (multipart) + texto con emoji real (`🚲✅`) en la conversación 1:
+   respuesta HTML confirmada con `<img class="chat-adjunto-imagen">` real y el emoji intacto.
+5. Ciclista borra ese mismo mensaje: desaparece del hilo visible (confirmado por texto ausente en la
+   respuesta) **y** se confirmó directo contra PocketBase que el registro real sigue existiendo,
+   `eliminado=True`, `eliminado_por` = id real del ciclista, y el texto original (con el emoji)
+   intacto en la base -- soft-delete real, no ocultamiento de UI nada más.
+6. Vigilancia (Miguel) borra la conversación 1 completa: desaparece de la lista de Vigilancia y de la
+   lista del propio ciclista.
+7. Admin: la conversación 1 **sí** aparece en su lista (con badge "Eliminada" real) y su detalle
+   carga (200) mostrando "Mensaje eliminado" donde corresponde -- supervisión total confirmada, sin
+   que la conversación se vuelva inaccesible.
+8. Re-confirmado que Admin sigue sin aparecer en el selector de agentes del ciclista después de todo
+   lo anterior.
+9. Extra no pedido explícito, verificado igual por consistencia del diseño: la conversación 2 (con el
+   agente ahora desactivado) sigue siendo visible y accesible para Miguel desde el WorkPanel de
+   Vigilancia -- ninguna conversación queda huérfana si su agente original deja de estar activo.
+
+**Estado del plan: RESUELTO.** Punto 2.4 completo, probado de punta a punta con cuentas y datos
+reales, incluida la confirmación de Washington sobre el matiz de "qué ve Admin exactamente" -- sin
+nada pendiente.
+
 ## 86. Punto 2.1 -- categoría eléctrica exclusiva para suscriptores (RESUELTO, Washington
 18-ago-2026), implementada sobre el mismo mecanismo real del punto 4 (21-ago-2026)
 

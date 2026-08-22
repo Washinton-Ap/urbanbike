@@ -1,21 +1,22 @@
 {% extends "base.html" %}
-{% block title %}Soporte — {{ ciclista_nombre }}{% endblock %}
-{% block page_title %}Soporte — {{ ciclista_nombre }}{% endblock %}
+{% block title %}Soporte{% endblock %}
+{% block page_title %}Soporte{% endblock %}
 
 {% block content %}
 
-<a href="/admin/soporte" class="btn btn-ghost" style="font-size:0.8rem;padding:6px 12px;margin-bottom:16px;display:inline-flex;">
+<a href="/ciclista/soporte" class="btn btn-ghost" style="font-size:0.8rem;padding:6px 12px;margin-bottom:16px;display:inline-flex;">
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
-  Volver a conversaciones
+  Volver a mis conversaciones
 </a>
 
 <div class="card">
   <div class="card-header">
-    <span class="card-title">{{ ciclista_nombre }}</span>
+    <span class="card-title">Conversación con soporte</span>
   </div>
   <div style="padding:20px;">
     <p class="text-muted text-sm" style="margin-bottom:16px;">
-      Vista de supervisión: se muestran también los mensajes y conversaciones que Vigilancia haya eliminado.
+      También puedes escribirnos a
+      <a href="mailto:{{ soporte_email }}" style="color:var(--primary);font-weight:600;">{{ soporte_email }}</a>.
     </p>
     {% include "componentes/hilo_soporte.html" with context %}
   </div>

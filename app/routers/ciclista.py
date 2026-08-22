@@ -2773,59 +2773,150 @@ async def reportes(request: Request):
     ))
 
 
-# ── Soporte (chat interno, punto 12 Opción B -- ver docs/HOJA_DE_RUTA.md
-#    sección 68) ─────────────────────────────────────────────────────────────
+# ── Soporte (chat interno, punto 12 Opción B; expandido punto 2.4 -- ver
+#    docs/HOJA_DE_RUTA.md secciones 68 y 85) ──────────────────────────────────
+
+def _mensaje_json(m: dict) -> dict:
+    """Forma real compartida entre el render inicial (Jinja) y el sondeo
+    de 4s (JSON) -- mismos campos en los dos, para que chat-soporte.js no
+    tenga que reconciliar dos formatos distintos."""
+    return {
+        "id": m.get("id", ""),
+        "autor_rol": m.get("autor_rol", ""),
+        "autor_id": m.get("autor_id", ""),
+        "autor_nombre": m.get("autor_nombre", ""),
+        "texto": m.get("texto", ""),
+        "fecha": m.get("fecha", ""),
+        "adjunto_url": file_url("mensajes_soporte", m.get("id", ""), m.get("adjunto", "")),
+        "adjunto_nombre": m.get("adjunto", ""),
+    }
+
+
+async def _leer_adjunto(archivo: UploadFile | None) -> tuple[str, bytes, str] | None:
+    if archivo is None or not archivo.filename:
+        return None
+    mensajes_soporte_repo.validar_adjunto(archivo.content_type, archivo.size)
+    contenido = await archivo.read()
+    return (archivo.filename, contenido, archivo.content_type)
+
+
+def _flash_ciclista(request: Request, url: str, tipo: str, msg: str) -> RedirectResponse:
+    request.session["flash"] = {"type": tipo, "msg": msg}
+    return RedirectResponse(url, status_code=302)
+
 
 @router.get("/soporte", response_class=HTMLResponse)
-async def soporte(request: Request):
+async def soporte_lista(request: Request):
     user = getattr(request.state, "user", {})
     flash = request.session.pop("flash", None)
-    ciclista_id = user.get("id", "")
-    mensajes = mensajes_soporte_repo.listar_hilo(ciclista_id)
-    # Al abrir la conversación, lo que mandó el staff queda leído -- mismo
-    # criterio que abrir la campana de notificaciones.
-    mensajes_soporte_repo.marcar_leidos(ciclista_id, para_rol="ciclista")
+    conversaciones = mensajes_soporte_repo.listar_conversaciones_de_ciclista(user.get("id", ""))
     return templates.TemplateResponse(request, "ciclista/soporte.html", _ctx(request,
-        title="Soporte", flash=flash, mensajes=mensajes, soy_ciclista=True,
-        poll_url="/ciclista/soporte/mensajes", enviar_url="/ciclista/soporte/enviar",
-        soporte_email=settings.support_email,
+        title="Soporte", flash=flash, conversaciones=conversaciones,
+        motivo_label=mensajes_soporte_repo.MOTIVO_LABEL, soporte_email=settings.support_email,
     ))
 
 
-@router.post("/soporte/enviar")
-async def soporte_enviar(request: Request, texto: str = Form(...)):
+@router.get("/soporte/iniciar", response_class=HTMLResponse)
+async def soporte_iniciar_form(request: Request):
+    flash = request.session.pop("flash", None)
+    agentes = mensajes_soporte_repo.listar_agentes_vigilancia_activos()
+    return templates.TemplateResponse(request, "ciclista/soporte_iniciar.html", _ctx(request,
+        title="Iniciar chat de soporte", flash=flash, agentes=agentes,
+        motivos=mensajes_soporte_repo.MOTIVOS_VALIDOS, motivo_label=mensajes_soporte_repo.MOTIVO_LABEL,
+    ))
+
+
+@router.post("/soporte/iniciar")
+async def soporte_iniciar(
+    request: Request, agente_id: str = Form(...), motivo: str = Form(...),
+    texto: str = Form(""), adjunto: UploadFile | None = File(None),
+):
     user = getattr(request.state, "user", {})
+    agentes = {a["id"]: a["nombre"] for a in mensajes_soporte_repo.listar_agentes_vigilancia_activos()}
+    if agente_id not in agentes:
+        request.session["flash"] = {"type": "error", "msg": "Elige un agente de Vigilancia activo real de la lista."}
+        return RedirectResponse("/ciclista/soporte/iniciar", status_code=302)
     try:
-        mensajes_soporte_repo.enviar(
-            ciclista_id=user.get("id", ""), autor_id=user.get("id", ""),
-            autor_rol="ciclista", autor_nombre=user.get("name") or user.get("email", ""),
-            texto=texto,
+        archivo = await _leer_adjunto(adjunto)
+        registro = mensajes_soporte_repo.iniciar_conversacion(
+            ciclista_id=user.get("id", ""), ciclista_nombre=user.get("name") or user.get("email", ""),
+            agente_id=agente_id, agente_nombre=agentes[agente_id], motivo=motivo,
+            texto=texto, archivo=archivo,
         )
     except ValueError as e:
         request.session["flash"] = {"type": "error", "msg": str(e)}
+        return RedirectResponse("/ciclista/soporte/iniciar", status_code=302)
     except Exception:
-        request.session["flash"] = {"type": "error", "msg": "No se pudo enviar el mensaje. Intenta de nuevo."}
-    return RedirectResponse("/ciclista/soporte", status_code=302)
+        request.session["flash"] = {"type": "error", "msg": "No se pudo iniciar el chat. Intenta de nuevo."}
+        return RedirectResponse("/ciclista/soporte/iniciar", status_code=302)
+    return RedirectResponse(f"/ciclista/soporte/{registro['conversacion_id']}", status_code=302)
 
 
-@router.get("/soporte/mensajes")
-async def soporte_mensajes(request: Request):
+@router.get("/soporte/{conversacion_id}", response_class=HTMLResponse)
+async def soporte_detalle(request: Request, conversacion_id: str):
+    user = getattr(request.state, "user", {})
+    flash = request.session.pop("flash", None)
+    conv = mensajes_soporte_repo.obtener_conversacion(conversacion_id)
+    if not conv or conv.get("ciclista_id") != user.get("id", ""):
+        return _flash_ciclista(request, "/ciclista/soporte", "error", "Esa conversación no existe.")
+    mensajes = mensajes_soporte_repo.listar_hilo(conversacion_id)
+    # Al abrir la conversación, lo que mandó el staff queda leído -- mismo
+    # criterio que abrir la campana de notificaciones.
+    mensajes_soporte_repo.marcar_leidos(conversacion_id, para_rol="ciclista")
+    return templates.TemplateResponse(request, "ciclista/soporte_detalle.html", _ctx(request,
+        title="Soporte", flash=flash, mensajes=[_mensaje_json(m) for m in mensajes],
+        conversacion_id=conversacion_id, soy_ciclista=True, propio_id=user.get("id", ""),
+        agente_nombre=conv.get("agente_nombre", ""),
+        motivo_label=mensajes_soporte_repo.MOTIVO_LABEL.get(conv.get("motivo", ""), "—"),
+        poll_url=f"/ciclista/soporte/{conversacion_id}/mensajes",
+        enviar_url=f"/ciclista/soporte/{conversacion_id}/enviar",
+        eliminar_url_base=f"/ciclista/soporte/{conversacion_id}/eliminar-mensaje",
+        puede_borrar_conversacion=False, soporte_email=settings.support_email,
+    ))
+
+
+@router.post("/soporte/{conversacion_id}/enviar")
+async def soporte_enviar(
+    request: Request, conversacion_id: str,
+    texto: str = Form(""), adjunto: UploadFile | None = File(None),
+):
+    user = getattr(request.state, "user", {})
+    conv = mensajes_soporte_repo.obtener_conversacion(conversacion_id)
+    if not conv or conv.get("ciclista_id") != user.get("id", ""):
+        return _flash_ciclista(request, "/ciclista/soporte", "error", "Esa conversación no existe.")
+    try:
+        archivo = await _leer_adjunto(adjunto)
+        mensajes_soporte_repo.enviar(
+            conversacion_id=conversacion_id, autor_id=user.get("id", ""),
+            autor_rol="ciclista", autor_nombre=user.get("name") or user.get("email", ""),
+            texto=texto, archivo=archivo,
+        )
+    except ValueError as e:
+        return _flash_ciclista(request, f"/ciclista/soporte/{conversacion_id}", "error", str(e))
+    except Exception:
+        return _flash_ciclista(request, f"/ciclista/soporte/{conversacion_id}", "error",
+                                "No se pudo enviar el mensaje. Intenta de nuevo.")
+    return RedirectResponse(f"/ciclista/soporte/{conversacion_id}", status_code=302)
+
+
+@router.post("/soporte/{conversacion_id}/eliminar-mensaje/{mensaje_id}")
+async def soporte_eliminar_mensaje(request: Request, conversacion_id: str, mensaje_id: str):
+    user = getattr(request.state, "user", {})
+    ok, motivo_error = mensajes_soporte_repo.eliminar_mensaje(mensaje_id, actor_id=user.get("id", ""))
+    if not ok:
+        return _flash_ciclista(request, f"/ciclista/soporte/{conversacion_id}", "error", motivo_error)
+    return RedirectResponse(f"/ciclista/soporte/{conversacion_id}", status_code=302)
+
+
+@router.get("/soporte/{conversacion_id}/mensajes")
+async def soporte_mensajes(request: Request, conversacion_id: str):
     """JSON liviano para el sondeo de 4s de la conversación abierta
     (app/static/js/chat-soporte.js) -- misma idea que GET /notificaciones,
     sin recargar la página."""
     user = getattr(request.state, "user", {})
-    ciclista_id = user.get("id", "")
-    mensajes = mensajes_soporte_repo.listar_hilo(ciclista_id)
-    mensajes_soporte_repo.marcar_leidos(ciclista_id, para_rol="ciclista")
-    return JSONResponse({
-        "items": [
-            {
-                "id": m.get("id", ""),
-                "autor_rol": m.get("autor_rol", ""),
-                "autor_nombre": m.get("autor_nombre", ""),
-                "texto": m.get("texto", ""),
-                "fecha": m.get("fecha", ""),
-            }
-            for m in mensajes
-        ],
-    })
+    conv = mensajes_soporte_repo.obtener_conversacion(conversacion_id)
+    if not conv or conv.get("ciclista_id") != user.get("id", ""):
+        return JSONResponse({"items": []}, status_code=404)
+    mensajes = mensajes_soporte_repo.listar_hilo(conversacion_id)
+    mensajes_soporte_repo.marcar_leidos(conversacion_id, para_rol="ciclista")
+    return JSONResponse({"items": [_mensaje_json(m) for m in mensajes]})

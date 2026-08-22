@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Iniciar chat de soporte{% endblock %}
+{% block page_title %}Iniciar chat de soporte{% endblock %}
+
+{% block content %}
+
+<a href="/ciclista/soporte" class="btn btn-ghost" style="font-size:0.8rem;padding:6px 12px;margin-bottom:16px;display:inline-flex;">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+  Volver a mis conversaciones
+</a>
+
+<form method="post" action="/ciclista/soporte/iniciar" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-header"><span class="card-title">1. ¿Con quién quieres hablar?</span></div>
+    <div style="padding:16px 20px;display:flex;flex-direction:column;gap:8px;">
+      {% if agentes %}
+      {% for a in agentes %}
+      <div class="agente-card">
+        <input type="radio" name="agente_id" id="agente-{{ a.id }}" value="{{ a.id }}" required {{ "checked" if loop.first }}>
+        <label for="agente-{{ a.id }}">
+          <span style="width:34px;height:34px;border-radius:50%;background:var(--primary-light);color:#1E86BD;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.85rem;flex-shrink:0;">
+            {{ (a.nombre or "?")[0] | upper }}
+          </span>
+          <span style="font-weight:600;color:var(--text);font-size:0.9rem;">{{ a.nombre }}</span>
+        </label>
+      </div>
+      {% endfor %}
+      {% else %}
+      <p class="text-muted text-sm">No hay agentes de Vigilancia activos en este momento. Intenta de nuevo más tarde.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-header"><span class="card-title">2. Motivo</span></div>
+    <div style="padding:16px 20px;">
+      <select name="motivo" class="form-input" required>
+        {% for m in motivos %}
+        <option value="{{ m }}">{{ motivo_label.get(m, m) }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-header"><span class="card-title">3. Tu mensaje</span></div>
+    <div style="padding:16px 20px;">
+      <textarea class="form-input" name="texto" rows="4" maxlength="2000" placeholder="Cuéntanos qué necesitas..."></textarea>
+      <div style="margin-top:10px;">
+        <label class="btn btn-ghost" style="font-size:0.8rem;padding:6px 12px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+          Adjuntar imagen, PDF o video
+          <input type="file" name="adjunto" data-preview="soporte-iniciar-adjunto-preview"
+                 accept="image/jpeg,image/png,image/gif,application/pdf,video/mp4,video/quicktime,video/webm" hidden>
+        </label>
+        <div id="soporte-iniciar-adjunto-preview" style="margin-top:8px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <button type="submit" class="btn btn-primary" {{ "disabled" if not agentes }}>Iniciar chat</button>
+</form>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/file-preview.js" defer></script>
+{% endblock %}

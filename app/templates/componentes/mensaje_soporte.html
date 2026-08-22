@@ -1,0 +1,40 @@
+{# Una burbuja del hilo de soporte -- separado de hilo_soporte.html porque
+   el mismo layout lo tiene que reproducir chat-soporte.js en JS puro para
+   el sondeo de 4s (ver pintarMensaje() ahí); mantenerlo en un include
+   aparte hace explícito qué HTML exacto hay que espejar. #}
+{% set es_propio = (m.autor_rol == "ciclista") == soy_ciclista %}
+<div class="chat-msg {{ 'chat-msg-propio' if es_propio else 'chat-msg-otro' }}">
+  <div class="chat-msg-autor">{{ m.autor_nombre or "—" }}</div>
+  {% if m.eliminado %}
+  <div class="chat-msg-burbuja chat-msg-eliminado">Mensaje eliminado</div>
+  {% else %}
+  <div class="chat-msg-burbuja">
+    {% if m.texto %}<div class="chat-msg-texto">{{ m.texto }}</div>{% endif %}
+    {% if m.adjunto_url %}
+    {% set ext = (m.adjunto_nombre.rsplit(".", 1)[-1] | lower) if "." in m.adjunto_nombre else "" %}
+    <div class="chat-adjunto">
+      {% if ext in ("jpg", "jpeg", "png", "gif") %}
+      <a href="{{ m.adjunto_url }}" target="_blank" rel="noopener"><img src="{{ m.adjunto_url }}" alt="Adjunto" class="chat-adjunto-imagen"></a>
+      {% elif ext in ("mp4", "mov", "webm") %}
+      <video src="{{ m.adjunto_url }}" controls class="chat-adjunto-video"></video>
+      {% else %}
+      <a href="{{ m.adjunto_url }}" target="_blank" rel="noopener" class="chat-adjunto-archivo">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        Ver archivo adjunto
+      </a>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+  {% if m.autor_id == propio_id %}
+  <form method="post" action="{{ eliminar_url_base }}/{{ m.id }}" class="chat-msg-eliminar-form"
+        data-ub-confirm="¿Borrar este mensaje? Dejará de verse en la conversación." data-ub-peligro>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <button type="submit" class="chat-msg-eliminar" title="Borrar mensaje">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+    </button>
+  </form>
+  {% endif %}
+  {% endif %}
+  <div class="chat-msg-fecha">{{ m.fecha | replace("T", " ") | replace("Z", "") if m.fecha else "" }}</div>
+</div>

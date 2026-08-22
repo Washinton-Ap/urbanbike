@@ -1,37 +1,70 @@
 {# ─────────────────────────────────────────────────────────────────────────
-   Componente: hilo de una conversación de soporte (ver
-   docs/Requerimientos_Mejoras_UrbanBike.md, punto 12, Opción B -- ver
-   docs/HOJA_DE_RUTA.md sección 68). Reutilizado por ciclista/soporte.html
-   y por el detalle de conversación de Vigilancia/Admin -- misma burbuja,
-   mismo formulario, mismo sondeo de 4s (app/static/js/chat-soporte.js).
+   Componente: hilo de una conversación de soporte (punto 12 Opción B;
+   expandido punto 2.4 -- ver docs/HOJA_DE_RUTA.md secciones 68 y 85).
+   Reutilizado por ciclista/soporte_detalle.html y por el detalle de
+   conversación de Vigilancia/Admin -- misma burbuja, mismo formulario,
+   mismo sondeo de 4s (app/static/js/chat-soporte.js).
 
    Variables esperadas en el contexto:
-     mensajes      -- list[dict], en orden cronológico (viejo -> nuevo).
-     soy_ciclista  -- bool: True si quien ve la pantalla es el ciclista
-                      dueño de la conversación (alinea sus propios
-                      mensajes a la derecha); False para Vigilancia/Admin
-                      (alinea los mensajes del staff a la derecha).
-     poll_url      -- URL del endpoint JSON que refresca el hilo.
-     enviar_url    -- action del formulario para mandar un mensaje nuevo.
+     mensajes       -- list[dict] ya en forma JSON (ver _mensaje_json en
+                       cada router), orden cronológico (viejo -> nuevo).
+     soy_ciclista   -- bool: True si quien ve la pantalla es el ciclista
+                       dueño de la conversación.
+     propio_id      -- id real del usuario que ve la pantalla -- decide
+                       qué mensajes puede borrar (solo los suyos).
+     agente_nombre, motivo_label -- metadatos reales de la conversación.
+     poll_url       -- URL del endpoint JSON que refresca el hilo.
+     enviar_url     -- action del formulario para mandar un mensaje nuevo.
+     eliminar_url_base -- prefijo real para borrar UN mensaje propio
+                       (se le agrega "/{id}").
+     eliminar_conversacion_url, puede_borrar_conversacion -- borrado de
+                       TODA la conversación, solo Vigilancia/Admin.
    ───────────────────────────────────────────────────────────────────────── #}
+<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+  <div style="display:flex;gap:6px;flex-wrap:wrap;">
+    {% if agente_nombre %}<span class="badge badge-blue">Agente: {{ agente_nombre }}</span>{% endif %}
+    {% if motivo_label %}<span class="badge badge-gray">{{ motivo_label }}</span>{% endif %}
+  </div>
+  {% if puede_borrar_conversacion %}
+  <form method="post" action="{{ eliminar_conversacion_url }}"
+        data-ub-confirm="¿Eliminar esta conversación completa? Dejará de verse para el ciclista y el equipo -- el registro se conserva internamente."
+        data-ub-titulo="Eliminar conversación" data-ub-peligro>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <button type="submit" class="btn btn-ghost" style="font-size:0.78rem;padding:5px 10px;color:#EF4444;">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:4px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+      Eliminar conversación
+    </button>
+  </form>
+  {% endif %}
+</div>
+
 <div class="chat-hilo" id="chat-hilo"
      data-poll-url="{{ poll_url }}"
      data-soy-ciclista="{{ '1' if soy_ciclista else '0' }}"
+     data-propio-id="{{ propio_id }}"
+     data-eliminar-url-base="{{ eliminar_url_base }}"
      data-ultimo-id="{{ mensajes[-1].id if mensajes else '' }}">
   {% for m in mensajes %}
-  {% set es_propio = (m.autor_rol == "ciclista") == soy_ciclista %}
-  <div class="chat-msg {{ 'chat-msg-propio' if es_propio else 'chat-msg-otro' }}">
-    <div class="chat-msg-autor">{{ m.autor_nombre or "—" }}</div>
-    <div class="chat-msg-burbuja">{{ m.texto }}</div>
-    <div class="chat-msg-fecha">{{ m.fecha | replace("T", " ") | replace("Z", "") if m.fecha else "" }}</div>
-  </div>
+  {% include "componentes/mensaje_soporte.html" %}
   {% else %}
   <div class="chat-vacio">Todavía no hay mensajes en esta conversación.</div>
   {% endfor %}
 </div>
 
-<form method="post" action="{{ enviar_url }}" class="chat-form">
+<form method="post" action="{{ enviar_url }}" class="chat-form" enctype="multipart/form-data">
   <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-  <textarea class="form-input" name="texto" rows="2" maxlength="2000" placeholder="Escribe un mensaje..." required></textarea>
-  <button type="submit" class="btn btn-primary">Enviar</button>
+  <div class="chat-form-columna">
+    <div class="chat-form-fila">
+      <button type="button" class="btn btn-ghost chat-btn-emoji" id="chat-btn-emoji" title="Insertar emoji">🙂</button>
+      <label class="btn btn-ghost chat-btn-adjunto" title="Adjuntar imagen, PDF o video">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+        <input type="file" name="adjunto" data-preview="chat-adjunto-preview"
+               accept="image/jpeg,image/png,image/gif,application/pdf,video/mp4,video/quicktime,video/webm" hidden>
+      </label>
+      <textarea class="form-input" name="texto" id="chat-textarea" rows="2" maxlength="2000" placeholder="Escribe un mensaje..."></textarea>
+      <button type="submit" class="btn btn-primary">Enviar</button>
+    </div>
+    <div id="chat-emoji-panel" class="chat-emoji-panel" hidden></div>
+    <div id="chat-adjunto-preview"></div>
+  </div>
 </form>

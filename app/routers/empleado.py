@@ -17,7 +17,7 @@ from app.db.pocketbase import filter_literal, get_admin_client, registrar_audito
 from app.middleware.permisos import requiere_permiso
 from app.reportes.excel import ColumnaReporte, generar_excel_reporte
 from app.reportes.pdf import generar_pdf_reporte
-from app.templating import templates
+from app.templating import file_url, templates
 
 router = APIRouter(prefix="/empleado", tags=["empleado"])
 
@@ -2811,11 +2811,35 @@ async def vig_reportes(request: Request):
     ))
 
 
-# ── Soporte (chat interno, punto 12 Opción B -- ver docs/HOJA_DE_RUTA.md
-#    sección 68). El documento de requerimientos dice explícitamente que
-#    Vigilancia da soporte a los ciclistas -- Admin también puede entrar
-#    (ruta espejo en admin.py, mismo repo) por el mismo criterio que
-#    estaciones/tarifas/promociones. ────────────────────────────────────────
+# ── Soporte (chat interno, punto 12 Opción B; expandido punto 2.4 -- ver
+#    docs/HOJA_DE_RUTA.md secciones 68 y 85). El documento de requerimientos
+#    dice explícitamente que Vigilancia da soporte a los ciclistas -- Admin
+#    también puede entrar (ruta espejo en admin.py, mismo repo), con
+#    supervisión total incluidas las conversaciones borradas, por el mismo
+#    criterio que estaciones/tarifas/promociones. ───────────────────────────
+
+def _mensaje_json(m: dict) -> dict:
+    """Misma forma que ciclista.py:_mensaje_json() -- compartida entre el
+    render inicial (Jinja) y el sondeo de 4s (JSON)."""
+    return {
+        "id": m.get("id", ""),
+        "autor_rol": m.get("autor_rol", ""),
+        "autor_id": m.get("autor_id", ""),
+        "autor_nombre": m.get("autor_nombre", ""),
+        "texto": m.get("texto", ""),
+        "fecha": m.get("fecha", ""),
+        "adjunto_url": file_url("mensajes_soporte", m.get("id", ""), m.get("adjunto", "")),
+        "adjunto_nombre": m.get("adjunto", ""),
+    }
+
+
+async def _leer_adjunto_soporte(archivo: UploadFile | None) -> tuple[str, bytes, str] | None:
+    if archivo is None or not archivo.filename:
+        return None
+    mensajes_soporte_repo.validar_adjunto(archivo.content_type, archivo.size)
+    contenido = await archivo.read()
+    return (archivo.filename, contenido, archivo.content_type)
+
 
 @router.get("/vigilancia/soporte", response_class=HTMLResponse)
 async def vig_soporte_lista(request: Request):
@@ -2823,58 +2847,77 @@ async def vig_soporte_lista(request: Request):
     conversaciones = mensajes_soporte_repo.listar_conversaciones()
     return templates.TemplateResponse(request, "empleado/vigilancia/soporte.html", _ctx(request,
         title="Soporte", flash=flash, conversaciones=conversaciones,
-        base_url="/empleado/vigilancia/soporte",
+        motivo_label=mensajes_soporte_repo.MOTIVO_LABEL, base_url="/empleado/vigilancia/soporte",
     ))
 
 
-@router.get("/vigilancia/soporte/{ciclista_id}", response_class=HTMLResponse)
-async def vig_soporte_detalle(request: Request, ciclista_id: str):
+@router.get("/vigilancia/soporte/{conversacion_id}", response_class=HTMLResponse)
+async def vig_soporte_detalle(request: Request, conversacion_id: str):
     flash = request.session.pop("flash", None)
-    mensajes = mensajes_soporte_repo.listar_hilo(ciclista_id)
-    if not mensajes:
+    user = getattr(request.state, "user", {})
+    conv = mensajes_soporte_repo.obtener_conversacion(conversacion_id)
+    if not conv:
         return _flash(request, "/empleado/vigilancia/soporte", "error", "Esa conversación no existe.")
-    mensajes_soporte_repo.marcar_leidos(ciclista_id, para_rol="empleado-vigilancia")
-    ciclista_nombre = next((m["autor_nombre"] for m in mensajes if m.get("autor_rol") == "ciclista"), ciclista_id)
+    mensajes = mensajes_soporte_repo.listar_hilo(conversacion_id)
+    mensajes_soporte_repo.marcar_leidos(conversacion_id, para_rol="empleado-vigilancia")
+    ciclista_nombre = conv.get("autor_nombre") or conv.get("ciclista_id", "")
     return templates.TemplateResponse(request, "empleado/vigilancia/soporte_detalle.html", _ctx(request,
-        title=f"Soporte — {ciclista_nombre}", flash=flash, mensajes=mensajes,
-        ciclista_id=ciclista_id, ciclista_nombre=ciclista_nombre, soy_ciclista=False,
-        poll_url=f"/empleado/vigilancia/soporte/{ciclista_id}/mensajes",
-        enviar_url=f"/empleado/vigilancia/soporte/{ciclista_id}/enviar",
+        title=f"Soporte — {ciclista_nombre}", flash=flash, mensajes=[_mensaje_json(m) for m in mensajes],
+        conversacion_id=conversacion_id, ciclista_nombre=ciclista_nombre, soy_ciclista=False,
+        propio_id=user.get("id", ""),
+        agente_nombre=conv.get("agente_nombre", ""),
+        motivo_label=mensajes_soporte_repo.MOTIVO_LABEL.get(conv.get("motivo", ""), "—"),
+        poll_url=f"/empleado/vigilancia/soporte/{conversacion_id}/mensajes",
+        enviar_url=f"/empleado/vigilancia/soporte/{conversacion_id}/enviar",
+        eliminar_url_base=f"/empleado/vigilancia/soporte/{conversacion_id}/eliminar-mensaje",
+        eliminar_conversacion_url=f"/empleado/vigilancia/soporte/{conversacion_id}/eliminar",
+        puede_borrar_conversacion=True,
         base_url="/empleado/vigilancia/soporte",
     ))
 
 
-@router.post("/vigilancia/soporte/{ciclista_id}/enviar")
-async def vig_soporte_enviar(request: Request, ciclista_id: str, texto: str = Form(...)):
+@router.post("/vigilancia/soporte/{conversacion_id}/enviar")
+async def vig_soporte_enviar(
+    request: Request, conversacion_id: str,
+    texto: str = Form(""), adjunto: UploadFile | None = File(None),
+):
     user = getattr(request.state, "user", {})
     try:
+        archivo = await _leer_adjunto_soporte(adjunto)
         mensajes_soporte_repo.enviar(
-            ciclista_id=ciclista_id, autor_id=user.get("id", ""),
+            conversacion_id=conversacion_id, autor_id=user.get("id", ""),
             autor_rol=user.get("rol_slug", ""), autor_nombre=user.get("name") or user.get("email", ""),
-            texto=texto,
+            texto=texto, archivo=archivo,
         )
     except ValueError as e:
-        return _flash(request, f"/empleado/vigilancia/soporte/{ciclista_id}", "error", str(e))
+        return _flash(request, f"/empleado/vigilancia/soporte/{conversacion_id}", "error", str(e))
     except Exception:
-        return _flash(request, f"/empleado/vigilancia/soporte/{ciclista_id}", "error", "No se pudo enviar la respuesta. Intenta de nuevo.")
-    return RedirectResponse(f"/empleado/vigilancia/soporte/{ciclista_id}", status_code=302)
+        return _flash(request, f"/empleado/vigilancia/soporte/{conversacion_id}", "error", "No se pudo enviar la respuesta. Intenta de nuevo.")
+    return RedirectResponse(f"/empleado/vigilancia/soporte/{conversacion_id}", status_code=302)
 
 
-@router.get("/vigilancia/soporte/{ciclista_id}/mensajes")
-async def vig_soporte_mensajes(request: Request, ciclista_id: str):
+@router.post("/vigilancia/soporte/{conversacion_id}/eliminar-mensaje/{mensaje_id}")
+async def vig_soporte_eliminar_mensaje(request: Request, conversacion_id: str, mensaje_id: str):
+    user = getattr(request.state, "user", {})
+    ok, motivo_error = mensajes_soporte_repo.eliminar_mensaje(mensaje_id, actor_id=user.get("id", ""))
+    if not ok:
+        return _flash(request, f"/empleado/vigilancia/soporte/{conversacion_id}", "error", motivo_error)
+    return RedirectResponse(f"/empleado/vigilancia/soporte/{conversacion_id}", status_code=302)
+
+
+@router.post("/vigilancia/soporte/{conversacion_id}/eliminar")
+async def vig_soporte_eliminar_conversacion(request: Request, conversacion_id: str):
+    """Borra (soft-delete) TODA la conversación -- reservado a Vigilancia/
+    Admin por el propio prefijo de ruta, nunca expuesto a /ciclista/."""
+    user = getattr(request.state, "user", {})
+    mensajes_soporte_repo.eliminar_conversacion(conversacion_id, actor_id=user.get("id", ""))
+    return _flash(request, "/empleado/vigilancia/soporte", "success", "Conversación eliminada.")
+
+
+@router.get("/vigilancia/soporte/{conversacion_id}/mensajes")
+async def vig_soporte_mensajes(request: Request, conversacion_id: str):
     """JSON liviano para el sondeo de 4s de la conversación abierta
     (app/static/js/chat-soporte.js)."""
-    mensajes = mensajes_soporte_repo.listar_hilo(ciclista_id)
-    mensajes_soporte_repo.marcar_leidos(ciclista_id, para_rol="empleado-vigilancia")
-    return JSONResponse({
-        "items": [
-            {
-                "id": m.get("id", ""),
-                "autor_rol": m.get("autor_rol", ""),
-                "autor_nombre": m.get("autor_nombre", ""),
-                "texto": m.get("texto", ""),
-                "fecha": m.get("fecha", ""),
-            }
-            for m in mensajes
-        ],
-    })
+    mensajes = mensajes_soporte_repo.listar_hilo(conversacion_id)
+    mensajes_soporte_repo.marcar_leidos(conversacion_id, para_rol="empleado-vigilancia")
+    return JSONResponse({"items": [_mensaje_json(m) for m in mensajes]})

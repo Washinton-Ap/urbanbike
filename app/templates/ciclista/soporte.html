@@ -6,20 +6,42 @@
 
 <div class="card">
   <div class="card-header">
-    <span class="card-title">Conversación con soporte</span>
+    <span class="card-title">Mis conversaciones <span class="text-muted text-sm">({{ conversaciones | length }})</span></span>
+    <a href="/ciclista/soporte/iniciar" class="btn btn-primary" style="font-size:0.82rem;padding:7px 14px;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:4px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Iniciar chat
+    </a>
   </div>
-  <div style="padding:20px;">
-    <p class="text-muted text-sm" style="margin-bottom:16px;">
-      Un miembro del equipo de Vigilancia o Administración te responderá aquí.
+
+  {% if conversaciones %}
+  <div style="display:flex;flex-direction:column;">
+    {% for c in conversaciones %}
+    <a href="/ciclista/soporte/{{ c.conversacion_id }}" class="chat-conv-fila" style="text-decoration:none;display:block;padding:14px 20px;border-top:1px solid var(--border);">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div style="min-width:0;flex:1;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">
+            <span style="font-weight:600;color:var(--text);font-size:0.9rem;">{{ c.agente_nombre or "Sin agente asignado" }}</span>
+            <span class="badge badge-gray">{{ motivo_label.get(c.motivo, c.motivo) }}</span>
+          </div>
+          <div class="text-sm text-muted" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ c.ultimo_texto }}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
+          <span class="text-muted text-xs">{{ c.ultima_fecha | replace("T", " ") | replace("Z", "") if c.ultima_fecha else "—" }}</span>
+          {% if c.no_leidos %}<span class="chat-conv-no-leidos">{{ c.no_leidos }}</span>{% endif %}
+        </div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div style="padding:48px 24px;text-align:center;">
+    <p class="text-muted" style="margin-bottom:16px;">Todavía no tienes conversaciones de soporte.</p>
+    <p class="text-muted text-sm">
       También puedes escribirnos a
       <a href="mailto:{{ soporte_email }}" style="color:var(--primary);font-weight:600;">{{ soporte_email }}</a>.
     </p>
-    {% include "componentes/hilo_soporte.html" with context %}
   </div>
+  {% endif %}
 </div>
 
-{% endblock %}
-
-{% block scripts %}
-<script src="/static/js/chat-soporte.js" defer></script>
 {% endblock %}

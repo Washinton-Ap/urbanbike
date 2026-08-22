@@ -16,18 +16,23 @@
       <thead>
         <tr>
           <th>Ciclista</th>
+          <th>Motivo</th>
           <th>Último mensaje</th>
           <th>Fecha</th>
-          <th style="width:90px;"></th>
+          <th style="width:110px;"></th>
         </tr>
       </thead>
       <tbody>
         {% for c in conversaciones %}
-        <tr class="chat-conv-fila" onclick="window.location='{{ base_url }}/{{ c.ciclista_id }}'">
+        <tr class="chat-conv-fila" onclick="window.location='{{ base_url }}/{{ c.conversacion_id }}'">
           <td class="font-semibold">{{ c.ciclista_nombre or "—" }}</td>
-          <td class="text-sm text-muted" style="max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ c.ultimo_texto }}</td>
+          <td><span class="badge badge-gray">{{ motivo_label.get(c.motivo, c.motivo) }}</span></td>
+          <td class="text-sm text-muted" style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ c.ultimo_texto }}</td>
           <td class="text-muted text-xs">{{ c.ultima_fecha | replace("T", " ") | replace("Z", "") if c.ultima_fecha else "—" }}</td>
-          <td>{% if c.no_leidos %}<span class="chat-conv-no-leidos">{{ c.no_leidos }}</span>{% endif %}</td>
+          <td>
+            {% if c.eliminada %}<span class="badge badge-red">Eliminada</span>
+            {% elif c.no_leidos %}<span class="chat-conv-no-leidos">{{ c.no_leidos }}</span>{% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>
