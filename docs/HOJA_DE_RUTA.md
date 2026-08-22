@@ -7571,3 +7571,49 @@ que limpiar. No se encontró ningún hallazgo que corregir.
 | Datos de prueba huérfanos | Ninguno fabricado, nada que limpiar | Confirmado (todo evidencia real reutilizada) |
 
 **Estado del plan: RESUELTO.**
+
+## 90. Punto 2.3 -- detalle de viaje ampliado ("Mis Viajes") (22-ago-2026)
+
+**Auditoría previa (confirmada leyendo código real):** `/ciclista/historial` ya mostraba bicicleta,
+estaciones, fecha/duración y monto/estado de pago por viaje -- bastante más que un "historial
+simple". Lo que no existía en ningún lugar alcanzable desde ahí era el desglose de CÓMO se llegó a
+ese monto (segmentos de modalidad, recargo por demora, descuento, IVA): ese desglose ya lo calculaba
+`_construir_factura_pago()`, pero solo era visible en `/ciclista/comprobante/{pago_id}`, alcanzable
+únicamente desde Historial de Pagos y solo si el pago ya estaba `pagado`. Un viaje sin pago, con pago
+pendiente o rechazado no tenía ninguna vista de detalle propia.
+
+**Refactor puro (Task 1):** la consulta SQL inline de segmentos de modalidad (`ch.query(...)` dentro
+de `_construir_factura_pago()`) se extrajo a `alquileres_repo.segmentos_modalidad(viaje_id)` para
+reusarla sin duplicar SQL. Verificado antes/después con el servidor real (puerto 8004): se capturó el
+HTML de `/ciclista/comprobante/g8zd0jug0bnojkt` con el código viejo (`git stash`), se aplicó el
+refactor y se volvió a capturar -- **idéntico byte a byte** (Subtotal $196.52, IVA $29.48, TOTAL
+$226.00 en ambos casos). Sin cambio de comportamiento.
+
+**Construido:** `_viaje_detalle_data(viaje_id, user_id)` (bicicleta, estación fin, pagos, segmentos,
+factura si hay pago), con el mismo criterio de propiedad que `viaje_activo()`/`pago()`/`comprobante()`
+(`viaje.ciclista_id == user_id`, si no coincide devuelve `None` -> flash + redirect, nunca expone el
+viaje de otro ciclista). Ruta `GET /ciclista/historial/{viaje_id}`, insertada después de
+`historial_pdf()` (no después de `historial()`) para que FastAPI no intente resolver `excel`/`pdf`
+como si fueran un `viaje_id` -- confirmado leyendo el archivo real antes de insertar, no asumiendo el
+orden. Plantilla `historial_detalle.html` (bicicleta, tiempos hh:mm:ss, segmentos de modalidad si
+los hay, líneas de cobro + total + estado + acción según el estado del pago). Enlace "Ver detalle →"
+agregado a cada fila de `historial.html`.
+
+**Prueba E2E real (servidor real, puerto 8004, sin mocks, 100% lectura sobre datos ya existentes --
+no se generó ningún dato de prueba nuevo):**
+
+| Caso | Resultado |
+|---|---|
+| `/ciclista/historial` (ciclista@) | 200, enlaces "Ver detalle" presentes en todas las filas |
+| Detalle propio de un viaje pagado con segmentos (`mt4599qngz92az2`) | 200, Total $226.00 -- coincide exacto con el $226.00 de la fila de Historial, 4 segmentos de modalidad reales mostrados |
+| Detalle de viaje sin cobro (6 viajes reales de la cuenta sin ningún pago) | mensaje "Este viaje todavía no generó ningún cobro.", sin excepción |
+| Detalle de viaje con pago `pendiente_efectivo` (`cg9k0pv9jkyllcv`) | badge correcto + botón "Pagar" (no "Ver comprobante") |
+| Bypass de propiedad: `ciclista@` pidiendo un `viaje_id` real de `wacho@` (`znluw6ybwsjk1z1`) | 302 a `/ciclista/historial` (bloqueado) |
+| `viaje_id` inexistente (UUID random) | 302 a `/ciclista/historial` (mismo bloqueo) |
+| `/ciclista/historial/excel` y `/ciclista/historial/pdf` (regresión -- no interceptados por la ruta nueva) | 200, `application/vnd.openxmlformats...`/`application/pdf`, tamaños reales (8174/32077 bytes) |
+
+**Sin hallazgos de alcance mayor** al punto 2.3 del plan.
+
+**Estado del plan: RESUELTO.** Las 4 tareas de código completas y comiteadas, refactor de Task 1
+verificado byte-idéntico antes/después, bypass de propiedad confirmado bloqueado, exports existentes
+sin regresión.

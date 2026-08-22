@@ -360,3 +360,23 @@ def total_segmentos_cerrados(viaje_id: str) -> float:
         {"viaje_id": viaje_id},
     )
     return float(fila["total"] or 0) if fila else 0.0
+
+
+def segmentos_modalidad(viaje_id: str) -> list[dict]:
+    """Cada segmento de modalidad real ya cerrado de un viaje (ver
+    cerrar_segmento() y vig_devolver() en empleado.py, que inserta el
+    ultimo segmento al finalizar) -- {modalidad, subtotal} en el orden en
+    que se cursaron. Usado por _construir_factura_pago() (ciclista.py)
+    para las lineas de la factura/detalle de un viaje, y por la vista de
+    detalle de viaje (punto 2.3). Nunca lanza: si ClickHouse falla,
+    devuelve [] y el llamador cae a su propio fallback (mismo contrato
+    que ya tenia esta consulta cuando vivia inline en ciclista.py)."""
+    try:
+        return ch.query(
+            "SELECT modalidad, subtotal FROM urbanbike_operativa.alquileres "
+            "WHERE id_origen_pocketbase = %(viaje_id)s AND origen = 'segmento_modalidad' "
+            "ORDER BY fecha_inicio",
+            {"viaje_id": viaje_id},
+        )
+    except Exception:
+        return []
