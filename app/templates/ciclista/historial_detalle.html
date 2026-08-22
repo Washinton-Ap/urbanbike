@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Detalle de viaje{% endblock %}
+{% block page_title %}Detalle de viaje{% endblock %}
+
+{% block content %}
+
+<div style="max-width:720px;margin:0 auto;">
+
+  <div style="margin-bottom:16px;">
+    <a href="/ciclista/historial" class="btn btn-ghost" style="font-size:0.85rem;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+      Volver a Mis Viajes
+    </a>
+  </div>
+
+  <div class="card" style="padding:20px;margin-bottom:16px;">
+    <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;">
+      {% if bici.foto %}
+      <img src="{{ file_url('bicicletas', bici.id, bici.foto, '160x160') }}" alt="{{ viaje.bicicleta_codigo }}"
+           style="width:84px;height:84px;object-fit:cover;border-radius:10px;border:1px solid var(--border);">
+      {% else %}
+      <div style="width:84px;height:84px;border-radius:10px;border:1px solid var(--border);background:var(--bg-soft);display:flex;align-items:center;justify-content:center;color:var(--text-muted);flex-shrink:0;">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm-9.5 11.5L9 10l4 4 4-4 4 7.5M9 10l-1-3h-3"/></svg>
+      </div>
+      {% endif %}
+      <div style="flex:1;min-width:200px;">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+          <span style="font-family:'Sora',sans-serif;font-weight:800;font-size:1.2rem;color:var(--text);">{{ viaje.bicicleta_codigo or "S/N" }}</span>
+          {% if bici and bici.tipo == "electric_bike" %}<span class="badge badge-green">Eléctrica</span>
+          {% else %}<span class="badge badge-blue">Clásica</span>{% endif %}
+          {% if viaje.estado == 'activo' %}<span class="badge badge-blue">Activo</span>
+          {% elif viaje.estado == 'pendiente_validacion' %}<span class="badge badge-yellow">Pendiente de validación</span>
+          {% elif viaje.estado == 'completado' %}<span class="badge badge-green">Completado</span>
+          {% else %}<span class="badge badge-gray">Cancelado</span>{% endif %}
+        </div>
+        <div style="font-size:0.85rem;color:var(--text-muted);">
+          {{ viaje.estacion_inicio_nombre or "—" }} → {{ estacion_fin_nombre }}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="padding:20px;margin-bottom:16px;">
+    <div class="card-title" style="margin-bottom:12px;">Tiempos del viaje</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:0.9rem;">
+      <div><span style="color:var(--text-muted);">Inicio</span><br>{{ viaje.fecha_inicio | replace("T", " ") | replace("Z", "") if viaje.fecha_inicio else "—" }}</div>
+      <div><span style="color:var(--text-muted);">Fin</span><br>{{ viaje.fecha_fin | replace("T", " ") | replace("Z", "") if viaje.fecha_fin else "—" }}</div>
+      <div><span style="color:var(--text-muted);">Duración</span><br>{{ duracion_hms }} (hh:mm:ss)</div>
+      <div><span style="color:var(--text-muted);">Modalidad actual</span><br>{{ {"hora": "Por hora", "dia": "Por día", "semana": "Por semana"}.get(viaje.modalidad_actual, viaje.modalidad_actual or "—") }}</div>
+    </div>
+  </div>
+
+  {% if segmentos %}
+  <div class="card" style="padding:20px;margin-bottom:16px;">
+    <div class="card-title" style="margin-bottom:12px;">Modalidades usadas durante el viaje</div>
+    <div style="display:flex;flex-direction:column;gap:6px;font-size:0.88rem;">
+      {% for s in segmentos %}
+      <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);">
+        <span>{{ {"hora": "Tarifa por hora", "dia": "Tarifa por día", "semana": "Tarifa por semana"}.get(s.modalidad, s.modalidad) }}</span>
+        <span style="font-weight:600;">${{ "%.2f" | format(s.subtotal | float) }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="card" style="padding:20px;">
+    <div class="card-title" style="margin-bottom:12px;">Cobro de este viaje</div>
+    {% if pago_principal and factura %}
+      <div style="display:flex;flex-direction:column;gap:6px;font-size:0.88rem;margin-bottom:12px;">
+        {% for l in factura.lineas %}
+        <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);">
+          <span>{{ l.descripcion }}</span>
+          <span style="font-weight:600;">${{ "%.2f" | format(l.importe | float) }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      <div style="display:flex;justify-content:space-between;font-family:'Sora',sans-serif;font-weight:800;font-size:1.1rem;color:var(--text);margin-bottom:12px;">
+        <span>Total</span><span>${{ "%.2f" | format(factura.total | float) }}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        {% if pago_principal.estado == "pagado" %}
+          <span class="badge badge-green">Pagado</span>
+          <a href="/ciclista/comprobante/{{ pago_principal.id }}" class="btn btn-ghost" style="font-size:0.82rem;padding:6px 12px;">Ver comprobante</a>
+          <a href="/ciclista/comprobante/{{ pago_principal.id }}/pdf" class="btn btn-ghost" style="font-size:0.82rem;padding:6px 12px;">Descargar PDF</a>
+        {% elif pago_principal.estado == "pendiente_efectivo" %}
+          <span class="badge badge-yellow">Pendiente en efectivo</span>
+          <a href="/ciclista/pago/{{ pago_principal.id }}" class="btn btn-primary" style="font-size:0.82rem;padding:6px 12px;">Pagar</a>
+        {% elif pago_principal.estado == "verificacion_pendiente" %}
+          <span class="badge badge-blue">En verificación</span>
+        {% elif pago_principal.estado == "rechazado" %}
+          <span class="badge badge-red">Rechazado</span>
+          {% if pago_principal.observaciones_pago %}<span style="font-size:0.82rem;color:var(--text-muted);">{{ pago_principal.observaciones_pago }}</span>{% endif %}
+          <a href="/ciclista/pago/{{ pago_principal.id }}" class="btn btn-primary" style="font-size:0.82rem;padding:6px 12px;">Reintentar pago</a>
+        {% else %}
+          <span class="badge badge-yellow">Pendiente</span>
+          <a href="/ciclista/pago/{{ pago_principal.id }}" class="btn btn-primary" style="font-size:0.82rem;padding:6px 12px;">Pagar</a>
+        {% endif %}
+      </div>
+    {% else %}
+      <div class="text-muted text-sm">Este viaje todavía no generó ningún cobro.</div>
+    {% endif %}
+  </div>
+
+</div>
+
+{% endblock %}

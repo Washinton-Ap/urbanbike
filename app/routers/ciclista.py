@@ -1918,6 +1918,60 @@ def _historial_data(ciclista_id: str, q: str = "", estado: str = "") -> dict:
     }
 
 
+def _viaje_detalle_data(viaje_id: str, user_id: str) -> dict | None:
+    """Datos completos de UN viaje para su vista de detalle (punto 2.3) --
+    bicicleta, estaciones, segmentos de modalidad reales y el/los pago(s)
+    asociados. Devuelve None si el viaje no existe o no pertenece a
+    user_id (nunca expone el detalle de otro ciclista) -- mismo criterio
+    de propiedad que viaje_activo()/pago()/comprobante()."""
+    pb = _pb()
+    try:
+        viaje = pb.get_record("viajes", viaje_id)
+    except Exception:
+        return None
+    if viaje.get("ciclista_id") != user_id:
+        return None
+
+    bici: dict = {}
+    if viaje.get("bicicleta_id"):
+        try:
+            bici = pb.get_record("bicicletas", viaje["bicicleta_id"])
+        except Exception:
+            pass
+
+    estacion_fin_nombre = "—"
+    if viaje.get("estacion_fin_id"):
+        try:
+            estacion_fin_nombre = pb.get_record("estaciones", viaje["estacion_fin_id"]).get("nombre", "—")
+        except Exception:
+            pass
+
+    pagos_v: list[dict] = []
+    try:
+        pagos_v = pb.list_records(
+            "pagos", filter=f'viaje_id = {filter_literal(viaje_id)}', sort="-fecha_generado", per_page=20,
+        ).get("items", [])
+    except Exception:
+        pass
+    pagados_v = [p for p in pagos_v if p.get("estado") == "pagado"]
+    pago_principal = pagados_v[0] if pagados_v else (pagos_v[0] if pagos_v else None)
+
+    segmentos = alquileres_repo.segmentos_modalidad(viaje_id)
+
+    factura = None
+    if pago_principal:
+        try:
+            factura = _construir_factura_pago(pago_principal, viaje, {"id": user_id})
+        except Exception:
+            factura = None
+
+    return {
+        "viaje": viaje, "bici": bici, "estacion_fin_nombre": estacion_fin_nombre,
+        "pagos": pagos_v, "pago_principal": pago_principal, "segmentos": segmentos,
+        "factura": factura,
+    }
+
+
 @router.get("/historial", response_class=HTMLResponse)
 async def historial(request: Request, q: str = "", estado: str = ""):
     user = getattr(request.state, "user", {})
@@ -2019,6 +2073,23 @@ async def historial_pdf(request: Request, q: str = "", estado: str = ""):
         nombre_archivo="urbanbike_mi_historial.pdf",
         horizontal=True,
     )
+
+
+@router.get("/historial/{viaje_id}", response_class=HTMLResponse)
+async def historial_detalle(request: Request, viaje_id: str):
+    user = getattr(request.state, "user", {})
+    flash = request.session.pop("flash", None)
+    d = _viaje_detalle_data(viaje_id, user.get("id", ""))
+    if d is None:
+        request.session["flash"] = {"type": "error", "msg": "Viaje no encontrado."}
+        return RedirectResponse("/ciclista/historial", status_code=302)
+
+    return templates.TemplateResponse(request, "ciclista/historial_detalle.html", _ctx(request,
+        title="Detalle de viaje", flash=flash,
+        viaje=d["viaje"], bici=d["bici"], estacion_fin_nombre=d["estacion_fin_nombre"],
+        pagos=d["pagos"], pago_principal=d["pago_principal"], segmentos=d["segmentos"],
+        factura=d["factura"], duracion_hms=_duracion_hms(d["viaje"].get("duracion_minutos") or 0),
+    ))
 
 
 # ── Historial de pagos (punto 2 de docs/Requerimientos_Mejoras_UrbanBike.md) ──
