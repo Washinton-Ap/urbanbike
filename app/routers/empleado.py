@@ -2846,29 +2846,34 @@ def op_reportes_bicicletas_pdf():
 @router.get("/mantenimiento/reportes", response_class=HTMLResponse)
 async def mnt_reportes(request: Request):
     flash = request.session.pop("flash", None)
+    # Punto 2.6/87: la fuente real de ordenes es ordenes_repo/ClickHouse
+    # (mismo patron que /mantenimiento/ordenes y el dashboard) -- la
+    # coleccion ordenes_mant de PocketBase es huerfana desde el punto 1.8
+    # Parte 1 (ver docs/HOJA_DE_RUTA.md seccion 83) y quedaba mostrando un
+    # total incompleto sin ningun aviso.
     ordenes: list[dict] = []
+    total = 0
     try:
-        ordenes = _pb().list_records("ordenes_mant", per_page=500).get("items", [])
+        ordenes, total = ordenes_repo.listar(page=1, per_page=100_000)
     except Exception:
         pass
 
-    estado_counts = {"pendiente": 0, "en_proceso": 0, "completado": 0, "cancelado": 0}
-    tipo_counts = {"preventivo": 0, "correctivo": 0}
+    estado_counts = {e: 0 for e in ordenes_repo.ESTADOS_VALIDOS}
+    preventivo = 0
     for o in ordenes:
-        estado = o.get("estado", "pendiente")
-        estado_counts[estado] = estado_counts.get(estado, 0) + 1
-        tipo = o.get("tipo", "correctivo")
-        tipo_counts[tipo] = tipo_counts.get(tipo, 0) + 1
+        estado_counts[o["estado_reparacion"]] = estado_counts.get(o["estado_reparacion"], 0) + 1
+        if o["origen"] == "preventivo":
+            preventivo += 1
+    correctivo = len(ordenes) - preventivo
 
-    estado_labels = ["Pendiente", "En proceso", "Completado", "Cancelado"]
-    estado_values = [estado_counts["pendiente"], estado_counts["en_proceso"],
-                     estado_counts["completado"], estado_counts["cancelado"]]
+    estado_labels = [ESTADO_ORDEN_LABEL[e] for e in ordenes_repo.ESTADOS_VALIDOS]
+    estado_values = [estado_counts[e] for e in ordenes_repo.ESTADOS_VALIDOS]
     tipo_labels = ["Preventivo", "Correctivo"]
-    tipo_values = [tipo_counts["preventivo"], tipo_counts["correctivo"]]
+    tipo_values = [preventivo, correctivo]
 
     return templates.TemplateResponse(request, "empleado/mantenimiento/reportes.html", _ctx(request,
         title="Reportes — Mantenimiento", flash=flash,
-        total_ordenes=len(ordenes),
+        total_ordenes=total,
         estado_labels=json.dumps(estado_labels), estado_values=json.dumps(estado_values),
         tipo_labels=json.dumps(tipo_labels), tipo_values=json.dumps(tipo_values),
     ))
