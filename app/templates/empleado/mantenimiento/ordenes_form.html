@@ -55,6 +55,11 @@
         {{ orden.fecha_apertura.strftime('%Y-%m-%d %H:%M') }}
         {% if orden.estado_reparacion == 'cerrada' %} &rarr; {{ orden.fecha_cierre.strftime('%Y-%m-%d %H:%M') }}{% endif %}
       </div>
+      <div class="form-label">Fecha límite</div>
+      <div style="margin-bottom:16px;{% if orden.vencida %}color:#EF4444;font-weight:600;{% else %}color:var(--text);{% endif %}">
+        {{ orden.fecha_limite.strftime('%Y-%m-%d') if orden.fecha_limite else '—' }}
+        {% if orden.vencida %}<span class="badge badge-red" style="margin-left:6px;">Vencida</span>{% endif %}
+      </div>
       <div class="form-label">Costo repuestos / mano de obra</div>
       <div style="margin-bottom:16px;color:var(--text);">${{ "%.2f" | format(orden.costo_repuestos | float) }} / ${{ "%.2f" | format(orden.costo_mano_obra | float) }}</div>
     </div>
@@ -149,6 +154,9 @@
         <input class="form-input" type="number" step="0.01" min="0" name="costo_repuestos" value="{{ orden.costo_repuestos if orden else '0' }}"></div>
       <div class="form-group"><label class="form-label">Costo mano de obra</label>
         <input class="form-input" type="number" step="0.01" min="0" name="costo_mano_obra" value="{{ orden.costo_mano_obra if orden else '0' }}"></div>
+      <div class="form-group"><label class="form-label">Fecha límite *</label>
+        <input class="form-input" type="date" name="fecha_limite" required
+               value="{{ orden.fecha_limite.strftime('%Y-%m-%d') if orden and orden.fecha_limite else '' }}"></div>
       {% endif %}
     </div>
     <div class="form-group"><label class="form-label">Diagnóstico</label>
