@@ -201,6 +201,12 @@
       Bicicleta nueva — acceso anticipado exclusivo para suscriptores hasta el {{ catalogo_bici.exclusiva_hasta.strftime('%d/%m/%Y') }}.
       <a href="/ciclista/membresia" style="font-weight:600;">Ver membresía</a>
     </div>
+    {% elif bloqueada_electrica %}
+    <div class="flash info">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      Esta bicicleta es eléctrica — exclusiva para ciclistas con membresía activa.
+      <a href="/ciclista/membresia" style="font-weight:600;">Activar membresía</a>
+    </div>
     {% elif bici.estado == "disponible" and not en_limite_viajes %}
     <form method="post" action="/ciclista/reservar" id="form-reservar">
       <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">

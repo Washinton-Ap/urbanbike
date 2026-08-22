@@ -6971,3 +6971,91 @@ Critical/Important cada uno, minores heredados del propio código del plan difer
 revisión final de la rama completa también limpia (0 Critical/Important, 3 minores cosméticos
 diferidos) -- listo para una recomendación de fusión, pendiente de que Washington decida el
 momento/proceso (esta sesión no fusiona ni pushea por su cuenta).
+
+## 86. Punto 2.1 -- categoría eléctrica exclusiva para suscriptores (RESUELTO, Washington
+18-ago-2026), implementada sobre el mismo mecanismo real del punto 4 (21-ago-2026)
+
+### Auditoría previa
+
+1. `_catalogo_bicicletas()` y `_catalogo_agrupado()` (`app/routers/ciclista.py`) ya controlan por
+   completo qué bicicletas ve el ciclista, y ambas ya reciben `tipo_membresia` resuelto por el
+   llamador vía `membresias_repo.tipo_membresia_real()` -- no hacía falta ningún dato nuevo, solo
+   una nueva condición sobre `es_electrica` (ya presente en cada fila).
+2. `membresias_repo.esta_activa(id_usuario)` ya existe y ya está en uso real
+   (`tipo_membresia_real()` la envuelve, resolviendo primero el `id_usuario` de ClickHouse desde el
+   email de la sesión vía `resolver_id_usuario_por_email()`).
+3. Hallazgo clave de la auditoría: el punto 4 ("acceso anticipado a bicicletas nuevas") ya
+   resuelve exactamente el mismo tipo de problema -- una restricción "exclusiva para
+   suscriptores" sobre bicicletas puntuales, con bloqueo real en 3 capas (catálogo, ficha de
+   detalle, y dentro del lock de `_crear_viaje()` contra bypass por POST directo). Se implementó el
+   punto 2.1 como una variante de ese mismo mecanismo ya probado, no como algo nuevo.
+
+### Implementación
+
+- `_catalogo_bicicletas()`: nuevo campo `bloqueada_electrica` = `es_electrica and not es_member`
+  (mismo criterio que `bloqueada_exclusiva`, la bici se sigue mostrando, no se oculta).
+- `_catalogo_agrupado()`: nuevo `disponibles_bloqueadas_no_member` en la consulta SQL (unión real
+  de "nueva en ventana" O "eléctrica", sin contar dos veces una bici que fuera ambas cosas) para
+  que el conteo de "disponibles" de la vista agrupada por categoría sea honesto para un no-miembro.
+- `bicicleta_detalle()`: nuevo `bloqueada_electrica` en el contexto, mismo patrón que
+  `bloqueada_exclusiva` ya existente.
+- **`_crear_viaje()` (el punto real de aplicación, dentro del lock de concurrencia)**: nuevo
+  chequeo `bici_actual.get("tipo") == "electric_bike" and tipo_membresia_actual != "member"` ->
+  `ValueError`, inmediatamente después del chequeo de exclusividad existente. `tipo` sale del mismo
+  registro de PocketBase ya leído para el chequeo de exclusividad -- no se confía en nada enviado
+  por el cliente, mismo criterio anti-bypass que ya cerró el hallazgo real de la sección 79/80.
+- **Fix necesario en los llamadores** (`reservar()` y `reservar_grupo()`): ambos tenían un atajo
+  real ("`tipo_membresia_actual` solo se consulta si `exclusivas_nuevas` no está vacío") que dejaba
+  de ser seguro en cuanto `_crear_viaje()` empezó a usar ese mismo valor para un segundo chequeo
+  independiente -- si no había ninguna bici en ventana de acceso anticipado ese día, el atajo
+  fijaba `tipo_membresia_actual = "member"` sin consultar nada, lo que habría dejado pasar
+  cualquier bicicleta eléctrica a un no-miembro. Se quitó el atajo en los dos lugares: ahora
+  siempre se resuelve la membresía real antes de crear el viaje.
+- `tarjeta_bicicleta.html` / `detalle_bicicleta.html`: mismo patrón visual que `bloqueada_exclusiva`
+  (no se oculta la tarjeta, se reemplaza el botón "Alquilar" por un aviso), pero con un enlace real
+  a `/ciclista/membresia` -- a diferencia del bloqueo por exclusividad (que solo informa una fecha),
+  este sí tiene una acción real disponible ahora mismo.
+- `catalogo.html`: nueva nota "N eléctricas -- exclusivas para suscriptores" cuando corresponde,
+  mismo patrón que la nota de "acceso anticipado" ya existente.
+
+### Prueba real de punta a punta (antes/después con membresía, mismo patrón que promociones)
+
+Servidor real (`:8002`), sin mocks, con las 3 capas de bloqueo verificadas por separado:
+
+**ANTES (ciclista sin membresía activa, confirmado real en ClickHouse antes de probar):**
+- `/ciclista/alquilar`: la bicicleta eléctrica real disponible aparece en el catálogo con el aviso
+  "Eléctrica — solo para miembros. Activar membresía" en vez del botón normal de alquilar.
+- `/ciclista/bicicleta/{id}`: mismo aviso, con enlace real a `/ciclista/membresia`, **sin** el
+  formulario de reserva (`id="form-reservar"` ausente del HTML).
+- **Bypass real por `POST /ciclista/reservar` directo** (sin pasar por la UI, con el id real de la
+  bicicleta): rechazado con el mensaje real "UB-005 es una bicicleta eléctrica -- exclusiva para
+  ciclistas con membresía activa." (confirmado vía `UB.toast()`, el mecanismo real de flash de este
+  proyecto -- no un `<div class="flash">` estático, hallazgo de la propia prueba). La bicicleta
+  permaneció `disponible` en PocketBase, verificado directo.
+
+**Activación real de membresía** (`wacho@urbanbike.com`, vía `POST /ciclista/membresia/activar`,
+tarjeta de pruebas 4242 4242 4242 4242, pago simulado real) -- confirmado `esta_activa() == True`
+contra ClickHouse.
+
+**DESPUÉS (mismo ciclista, con membresía activa):**
+- `/ciclista/alquilar`: la misma bicicleta ahora muestra el botón normal "Alquilar esta bicicleta".
+- `/ciclista/bicicleta/{id}`: formulario de reserva presente.
+- **Reserva real completada por `POST /ciclista/reservar`**: viaje real creado, la bicicleta pasó a
+  `en_uso` en PocketBase -- confirmado directo, no asumido por el código de estado HTTP.
+
+**Nota real, no forzada**: la prueba de bypass se hizo con una segunda bicicleta eléctrica real
+(`UB-005`) puesta `disponible` temporalmente desde Operación (estaba en `mantenimiento`) solo para
+tener una unidad disponible con la que probar el rechazo sin afectar la reserva real de la primera
+prueba -- **restaurada a `mantenimiento` al terminar**, mismo estado real en el que estaba antes,
+vía la misma ruta administrativa real que usaría Operación. La reserva real de `UB-010` (la primera
+prueba, con membresía activa) se dejó tal cual -- viaje activo real de `wacho@urbanbike.com`,
+membresía real activa -- como evidencia real de que el flujo funciona de punta a punta, mismo
+criterio de no revertir evidencia real ya usado en el resto de esta sesión.
+
+**Hallazgo real de la propia prueba, no relacionado al punto 2.1**: los mensajes de error/éxito de
+este sistema se muestran vía `UB.toast()` (JavaScript), no como un bloque HTML estático -- cualquier
+prueba futura que busque un `<div class="flash">` en el HTML de respuesta no lo va a encontrar
+aunque el mensaje se haya mostrado correctamente en el navegador real.
+
+**Estado del plan: RESUELTO.** Punto 2.1 completo en las 3 capas (catálogo, ficha de detalle,
+servidor), probado antes/después con membresía real, sin bypass posible confirmado.

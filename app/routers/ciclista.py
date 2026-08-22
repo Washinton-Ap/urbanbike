@@ -150,7 +150,11 @@ def _catalogo_agrupado(tipo_membresia: str = "casual") -> list[dict]:
                    count() AS total,
                    countIf(b.estado = 'disponible') AS disponibles,
                    countIf(b.estado = 'disponible'
-                           AND dateDiff('day', b.fecha_adquisicion, today()) < %(dias)s) AS disponibles_exclusivas
+                           AND dateDiff('day', b.fecha_adquisicion, today()) < %(dias)s) AS disponibles_exclusivas,
+                   countIf(b.estado = 'disponible' AND m.es_electrica = 1) AS disponibles_electricas,
+                   countIf(b.estado = 'disponible' AND (
+                       dateDiff('day', b.fecha_adquisicion, today()) < %(dias)s OR m.es_electrica = 1
+                   )) AS disponibles_bloqueadas_no_member
             FROM urbanbike_operativa.bicicletas AS b FINAL
             INNER JOIN urbanbike_operativa.modelos_bicicleta AS m FINAL ON m.id = b.id_modelo
             INNER JOIN urbanbike_operativa.categorias AS c FINAL ON c.id = m.id_categoria
@@ -166,15 +170,20 @@ def _catalogo_agrupado(tipo_membresia: str = "casual") -> list[dict]:
     catalogo = []
     for f in filas:
         tarifas_cat = tarifas_por_categoria.get(f["id_categoria"], {})
-        # Punto 4: un ciclista casual no puede contar como "disponible" una
-        # bicicleta que todavía está en su ventana de acceso anticipado
-        # para miembros -- para él, esas unidades no son reservables hoy.
-        disponibles_viewer = f["disponibles"] if es_member else f["disponibles"] - f["disponibles_exclusivas"]
+        # Punto 4 (acceso anticipado) + punto 2.1 (categoría eléctrica
+        # exclusiva de suscriptores): un ciclista casual no puede contar
+        # como "disponible" una bicicleta nueva en ventana de acceso
+        # anticipado NI una eléctrica -- para él, esas unidades no son
+        # reservables hoy. `disponibles_bloqueadas_no_member` ya cuenta la
+        # unión de ambos casos sin contar dos veces una bici que fuera las
+        # dos cosas a la vez (nueva Y eléctrica).
+        disponibles_viewer = f["disponibles"] if es_member else f["disponibles"] - f["disponibles_bloqueadas_no_member"]
         catalogo.append({
             "nombre": f["nombre"], "descripcion": f["descripcion"],
             "es_premium": bool(f["es_premium"]),
             "total": f["total"], "disponibles": disponibles_viewer,
             "exclusivas_member": f["disponibles_exclusivas"],
+            "electricas_member": f["disponibles_electricas"],
             "precio_hora_member": tarifas_cat.get((tipo_membresia, "hora"), 0.0),
             "precio_hora_casual": tarifas_cat.get(("casual", "hora"), 0.0),
         })
@@ -307,6 +316,11 @@ def _catalogo_bicicletas(pb, bicicletas_pb: list[dict], tipo_membresia: str = "c
             # verdad usa la plantilla para deshabilitar "Alquilar".
             "exclusiva_hasta": exclusivas_nuevas.get(codigo),
             "bloqueada_exclusiva": codigo in exclusivas_nuevas and not es_member_viewer,
+            # Punto 2.1 (RESUELTO, Washington 18-ago-2026): categoría
+            # eléctrica exclusiva para suscriptores -- mismo criterio que
+            # bloqueada_exclusiva de arriba, la bici se sigue mostrando en
+            # el catálogo (no se oculta), solo queda bloqueada para reservar.
+            "bloqueada_electrica": bool(f["es_electrica"]) and not es_member_viewer,
         })
     return catalogo
 
@@ -607,6 +621,17 @@ def _crear_viaje(
                 f"{codigo_real} es una bicicleta nueva con acceso anticipado exclusivo para "
                 f"suscriptores hasta el {fecha_liberacion}."
             )
+        # Punto 2.1: categoria electrica exclusiva de suscriptores (RESUELTO,
+        # Washington 18-ago-2026). `tipo` viene del mismo registro real ya
+        # leido arriba -- no se confia en nada enviado por el cliente, mismo
+        # criterio que el chequeo de exclusividad de arriba. Dentro del lock:
+        # cierra el mismo tipo de bypass por POST directo que el fix de
+        # exclusividad (ver docstring de esta funcion).
+        if bici_actual.get("tipo") == "electric_bike" and tipo_membresia_actual != "member":
+            raise ValueError(
+                f"{codigo_real} es una bicicleta eléctrica -- exclusiva para ciclistas con "
+                "membresía activa."
+            )
         nuevo_viaje = pb.create_record("viajes", {
             "ciclista_id":            user_id,
             "ciclista_nombre":        user.get("name") or user.get("email", ""),
@@ -724,19 +749,16 @@ async def reservar(
         pb = _pb()
         lat = float(latitud)
         lng = float(longitud)
-        # Exclusividad (punto 4): resueltos UNA vez acá, no por bicicleta --
-        # ver el docstring de _crear_viaje() para por que ya no se confia en
-        # ningun codigo/estado enviado por el cliente para esta decision.
-        # tipo_membresia_actual solo importa si hay alguna bici exclusiva
-        # hoy -- si exclusivas_nuevas esta vacio, _crear_viaje() nunca lo
-        # usa (ningun codigo_real puede estar en un dict vacio), asi que
-        # nos ahorramos la consulta a tipo_membresia_real() en el caso
-        # comun (revision de codigo, hallazgo real: se llamaba siempre,
-        # el codigo anterior a este fix la evitaba con el mismo criterio).
+        # Exclusividad (punto 4) + categoría eléctrica exclusiva de
+        # suscriptores (punto 2.1): resueltos UNA vez acá, no por bicicleta
+        # -- ver el docstring de _crear_viaje() para por que ya no se
+        # confia en ningun codigo/estado enviado por el cliente para esta
+        # decision. tipo_membresia_actual ya NO se puede saltar cuando
+        # exclusivas_nuevas esta vacio (como antes del punto 2.1): ahora
+        # _crear_viaje() tambien lo usa para el chequeo de electricas,
+        # independiente de si hay bicis en ventana de acceso anticipado hoy.
         exclusivas_nuevas = _bicicletas_exclusivas_nuevas()
-        tipo_membresia_actual = (
-            membresias_repo.tipo_membresia_real(user.get("email", "")) if exclusivas_nuevas else "member"
-        )
+        tipo_membresia_actual = membresias_repo.tipo_membresia_real(user.get("email", ""))
 
         nuevo_viaje = _crear_viaje(
             pb, user, user_id, bicicleta_id,
@@ -888,17 +910,17 @@ async def reservar_grupo(
                 "El código de descuento no es válido, ya fue usado, o no te pertenece."}
             return RedirectResponse("/ciclista/alquilar", status_code=302)
 
-    # Exclusividad (punto 4): resueltos UNA vez para todo el lote, no por
-    # bicicleta -- ver el docstring de _crear_viaje() para el hallazgo real
-    # que motivo este cambio (bicicleta_codigos, recibido arriba, ya NO se
-    # usa para ninguna decision de seguridad ni se guarda tal cual --
-    # queda solo para el chequeo de longitudes de arriba). Igual que en
-    # reservar(): tipo_membresia_actual solo se consulta si de verdad hay
-    # alguna bici exclusiva hoy (revision de codigo, ver esa funcion).
+    # Exclusividad (punto 4) + categoría eléctrica exclusiva de suscriptores
+    # (punto 2.1): resueltos UNA vez para todo el lote, no por bicicleta --
+    # ver el docstring de _crear_viaje() para el hallazgo real que motivo
+    # este cambio (bicicleta_codigos, recibido arriba, ya NO se usa para
+    # ninguna decision de seguridad ni se guarda tal cual -- queda solo
+    # para el chequeo de longitudes de arriba). Igual que en reservar():
+    # tipo_membresia_actual ya no se puede saltar cuando exclusivas_nuevas
+    # esta vacio, _crear_viaje() tambien lo usa para el chequeo de
+    # electricas.
     exclusivas_nuevas = _bicicletas_exclusivas_nuevas()
-    tipo_membresia_actual = (
-        membresias_repo.tipo_membresia_real(user.get("email", "")) if exclusivas_nuevas else "member"
-    )
+    tipo_membresia_actual = membresias_repo.tipo_membresia_real(user.get("email", ""))
 
     grupo_reserva_id = uuid.uuid4().hex
     pb = None
@@ -1061,6 +1083,7 @@ async def bicicleta_detalle(request: Request, bici_id: str):
         max_viajes_activos=MAX_VIAJES_ACTIVOS,
         catalogo_bici=catalogo_bici,
         bloqueada_exclusiva=bool(catalogo_bici and catalogo_bici.get("bloqueada_exclusiva")),
+        bloqueada_electrica=bool(catalogo_bici and catalogo_bici.get("bloqueada_electrica")),
         pb_url=settings.pb_url,
     ))
 

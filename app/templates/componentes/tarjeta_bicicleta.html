@@ -58,7 +58,7 @@
 <div class="tarjeta-bicicleta" data-marca="{{ bici.marca }}" data-enfoque="{{ bici.enfoque }}"
      data-codigo="{{ bici.codigo }}">
 
-  {% if bici.estado == "disponible" and not bici.bloqueada_exclusiva %}
+  {% if bici.estado == "disponible" and not bici.bloqueada_exclusiva and not bici.bloqueada_electrica %}
   <label class="tarjeta-bicicleta-seleccion" style="position:absolute;top:44px;right:10px;z-index:2;background:var(--bg);border-radius:6px;padding:4px;display:flex;align-items:center;">
     <input type="checkbox" class="chk-seleccion-grupo" data-codigo="{{ bici.codigo }}" title="Seleccionar para reserva grupal">
   </label>
@@ -167,6 +167,11 @@
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
       Exclusiva para suscriptores hasta el {{ bici.exclusiva_hasta.strftime('%d/%m') }}
     </div>
+    {% elif bici.bloqueada_electrica %}
+    <a href="/ciclista/membresia" class="tarjeta-bicicleta-btn-alquilar" style="display:flex;align-items:center;justify-content:center;gap:6px;padding:11px;border-radius:var(--radius);background:var(--bg);color:var(--primary);font-size:0.85rem;text-align:center;text-decoration:none;font-weight:600;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      Eléctrica — solo para miembros. Activar membresía
+    </a>
     {% else %}
     <a href="{{ bici.detalle_url or '#' }}" class="btn btn-primary tarjeta-bicicleta-btn-alquilar">Alquilar esta bicicleta</a>
     {% endif %}

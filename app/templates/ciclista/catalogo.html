@@ -48,6 +48,13 @@
     </div>
     {% endif %}
 
+    {% if not es_member and c.electricas_member > 0 %}
+    <div style="font-size:0.78rem;color:var(--primary);display:flex;align-items:center;gap:5px;">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      {{ c.electricas_member }} eléctrica{{ "s" if c.electricas_member != 1 else "" }} — exclusiva{{ "s" if c.electricas_member != 1 else "" }} para suscriptores
+    </div>
+    {% endif %}
+
     <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:auto;">
       {% if c.precio_hora_member > 0 %}
       <div style="display:flex;align-items:baseline;gap:6px;">
