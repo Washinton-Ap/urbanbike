@@ -2285,6 +2285,9 @@ def _vig_infracciones_columnas_filas(infracciones: list[dict]) -> tuple[list[Col
         ColumnaReporte("Bicicleta", ancho=14),
         ColumnaReporte("Fecha", ancho=18),
         ColumnaReporte("Estado", ancho=14),
+        ColumnaReporte("Resolución", ancho=34),
+        ColumnaReporte("Resuelta por", ancho=22),
+        ColumnaReporte("Fecha resolución", ancho=20),
     ]
     filas = [
         [
@@ -2294,6 +2297,9 @@ def _vig_infracciones_columnas_filas(infracciones: list[dict]) -> tuple[list[Col
             i.get("bicicleta_codigo") or "—",
             (i.get("fecha") or "—").replace("T", " ").replace("Z", "") if i.get("fecha") else "—",
             "Resuelta" if i.get("resuelta") else "Pendiente",
+            i.get("resolucion") or "—",
+            i.get("resuelta_por") or "—",
+            (i.get("fecha_resolucion") or "—").replace("T", " ").replace("Z", "") if i.get("fecha_resolucion") else "—",
         ]
         for i in infracciones
     ]
@@ -2310,7 +2316,7 @@ def vig_infracciones_excel():
         subtitulo=f"Total: {len(infracciones)} infracciones  |  Pendientes: {pendientes}  |  Resueltas: {len(infracciones) - pendientes}",
         columnas=columnas,
         filas=filas,
-        fila_total=[f"Total: {len(infracciones)} infracciones", None, None, None, None, None],
+        fila_total=[f"Total: {len(infracciones)} infracciones", None, None, None, None, None, None, None, None],
         nombre_hoja="Infracciones",
         nombre_archivo="urbanbike_vigilancia_infracciones.xlsx",
     )
@@ -2326,7 +2332,7 @@ def vig_infracciones_pdf():
         subtitulo=f"Total: {len(infracciones)} infracciones  |  Pendientes: {pendientes}  |  Resueltas: {len(infracciones) - pendientes}",
         columnas=columnas,
         filas=filas,
-        fila_total=[f"Total: {len(infracciones)} infracciones", None, None, None, None, None],
+        fila_total=[f"Total: {len(infracciones)} infracciones", None, None, None, None, None, None, None, None],
         nombre_archivo="urbanbike_vigilancia_infracciones.pdf",
     )
 
