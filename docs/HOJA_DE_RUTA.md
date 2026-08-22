@@ -7460,4 +7460,114 @@ unilateralmente; queda documentado como mejora defensiva opcional, no como bug a
 cifra de negocio ya aprobada -- fácil de ajustar (un solo dict, `PLAZO_DIAS_POR_PRIORIDAD` en
 `ordenes_repo.py`) si Washington define otros valores.
 
+## 89. Punto 2.8 (mitad infracciones) -- trazabilidad de infracciones y alertas (21-ago-2026)
+
+Cubre solo la mitad de "infracciones y alertas" del punto 2.8 del plan de mejoras. La mitad de
+"mantenimiento" (poder confirmar que una reparación reportada se hizo de verdad) ya estaba
+resuelta por el punto 1.8 Parte 1 (sección 83, `vig_mantenimiento_certificar` sobre la fuente
+real de `ordenes_repo`) -- no se duplicó nada de eso aquí.
+
+### Auditoría previa
+
+Confirmado leyendo código real antes de tocar nada: `infracciones` (PocketBase) ya tenía
+`resuelta`/`resolucion`/`resuelta_por`/`fecha_resolucion` escritos por `vig_infracciones_resolver()`
+desde hace tiempo, pero invisibles en las 2 pantallas que los deberían mostrar (Vigilancia y
+Ciclista) y en sus 4 exports Excel/PDF -- pura visibilidad, cero cambio de esquema. `alertas`
+(viajes con `duracion_minutos > 120`) en cambio no tenía ningún dato de quién/cuándo/qué se hizo
+(solo el booleano `alerta_atendida`), `vig_alertas_atender()` no llamaba a `registrar_auditoria`
+(a diferencia de `vig_infracciones_resolver`, que sí), y `_vig_alertas_data()` solo consultaba
+`estado = "activo"` -- una alerta desaparecía para siempre en cuanto el viaje terminaba, sin dejar
+ningún historial consultable.
+
+### Alertas -- gap real corregido
+
+- `etl/22_agregar_trazabilidad_alertas.py`: agrega 3 campos `text` a la colección `viajes`
+  (`alerta_atendida_por`, `alerta_fecha_atencion`, `alerta_nota`). El script ya estaba escrito de
+  una ejecución anterior que se cortó antes de correrlo -- confirmado íntegro contra el plan, se
+  corrió recién en esta sesión: primera corrida agregó los 3 campos (`viajes: agregados
+  ['alerta_atendida_por', 'alerta_fecha_atencion', 'alerta_nota'].`), segunda corrida confirmó
+  idempotencia (`los campos nuevos ya existen, sin cambios.`). Sin backfill intencional (no hay
+  forma real de reconstruir quién atendió una alerta ya marcada `alerta_atendida=true` antes de
+  este cambio -- se deja vacío, mismo criterio que `agente_id` en la sección 85).
+- `_vig_alertas_data()` ampliada: antes solo miraba `estado = "activo"`; ahora
+  `estado = "activo" || duracion_minutos > 120`, para que el historial sobreviva al cierre del
+  viaje. `vig_alertas_atender()` ahora exige `nota` no vacía (rechaza con flash de error si viene
+  vacía, sin escribir nada en PocketBase) y llama a `registrar_auditoria(..., modulo="viajes",
+  accion="editar", ...)`, algo que antes no existía para este flujo.
+- **Prueba E2E real (puerto 8006, cuenta `empleado.vig@urbanbike.com` = Miguel Torres)**: la
+  pantalla ya mostraba 7 alertas reales (3 activas pendientes, 4 finalizadas ya marcadas
+  `atendida` de sesiones anteriores sin atribución -- confirma que el "sin backfill" no rompe
+  nada, se ven como "Atendida" con los campos de atribución en blanco). Se reutilizó un viaje real
+  preexistente y finalizado (`au9bf8weq0uyp1p`, ciclista `Test Ciclista`, `duracion_minutos=995`,
+  `alerta_atendida=false`) para ejercitar el flujo de escritura -- no se fabricó ningún registro
+  nuevo:
+  1. `POST /empleado/vigilancia/alertas/au9bf8weq0uyp1p/atender` sin `nota` -> flash de error real
+     ("Indica qué acción se tomó..."), confirmado vía `UB.toast()` en la respuesta (no un
+     `<div class="flash">` estático -- mismo mecanismo ya documentado en la sección 86). Verificado
+     directo contra PocketBase: `alerta_atendida` seguía `False`.
+  2. `POST` con `nota="Prueba E2E punto 2.8 -- se contacto al ciclista, confirmo devolucion en
+     camino."` -> éxito. Verificado directo contra PocketBase: `alerta_atendida=True`,
+     `alerta_atendida_por="Miguel Torres"`, `alerta_fecha_atencion="2026-08-22T02:18:43Z"`,
+     `alerta_nota` con el texto exacto.
+  3. Entrada real nueva en `auditoria` confirmada (`modulo="viajes"`, `accion="editar"`,
+     `usuario_nombre="Miguel Torres"`, `detalle="Alerta de viaje atendida (id:
+     au9bf8weq0uyp1p): Prueba E2E punto 2.8 -- ..."`, `fecha="2026-08-22T02:18:43Z"`) -- esta
+     llamada no existía antes de este cambio.
+  4. `GET /empleado/vigilancia/alertas` de nuevo: la fila de `au9bf8weq0uyp1p` (viaje
+     `completado`) sigue apareciendo, columna "Viaje" = Finalizado, con la nota y "Miguel Torres —
+     2026-08-22 02:18:43" en vez del botón -- prueba directa de que el historial ya no depende de
+     que el viaje siga activo.
+  5. Export real: `/empleado/vigilancia/alertas/excel` (200, `.xlsx`, 6038 bytes) y `/pdf` (200,
+     `application/pdf`, 25245 bytes) -- abierto el Excel con `openpyxl`: 10 columnas, 7 filas de
+     datos + fila de total, la fila de la prueba con los 3 campos de atribución reales.
+  - **Sin cleanup necesario**: `au9bf8weq0uyp1p` era un viaje real preexistente, no uno fabricado
+    para esta prueba -- su `alerta_atendida=True` queda como evidencia real permanente, no se
+    revierte (mismo criterio ya usado en el resto del proyecto).
+
+### Infracciones -- visibilidad corregida (sin cambio de esquema)
+
+- Columnas nuevas "Resolución"/"Resuelta por"/"Fecha resolución" agregadas a
+  `_vig_infracciones_columnas_filas()` (Vigilancia) y `_mis_infracciones_columnas_filas()`
+  (Ciclista), y a sus 4 exports Excel/PDF (`fila_total` actualizado de 6→9 elementos en
+  Vigilancia, de 5→8 en Ciclista).
+- **Prueba E2E real (puerto 8006)**: ya existían 9 infracciones reales resueltas en el sistema
+  (ninguna pendiente) -- no hizo falta resolver ninguna nueva. Verificado en Vigilancia
+  (`empleado.vig@urbanbike.com`): la columna nueva muestra, p. ej., para la infracción
+  `mgefixubigentog` (ciclista `3r2d6eihy391toz`), el texto real `"Todo de acuerdo."` +
+  `"Empleado Vigilancia — 2026-07-05 14:46:28"`, coincidiendo exacto con lo leído directo de
+  PocketBase antes de mirar el HTML. Export Excel verificado con `openpyxl`: 9 columnas, 9 filas
+  reales + total, con `resolucion`/`resuelta_por`/`fecha_resolucion` reales en todas (ninguna
+  vacía). Del lado Ciclista, login real como `ciclista@urbanbike.com` (dueño real de la
+  infracción `mgefixubigentog`, confirmado por `ciclista_id`): `/ciclista/infracciones` muestra
+  el mismo texto/nombre/fecha exactos vistos desde Vigilancia; exports Excel (200, 6175 bytes) y
+  PDF (200, 25567 bytes) reales.
+
+### Revisión independiente (antes de cerrar)
+
+Repasado con ojo fresco después de terminar la implementación: (a) los 3 nombres de campo
+coinciden exactos entre el ETL y `empleado.py` (`alerta_atendida_por`/`alerta_fecha_atencion`/
+`alerta_nota`); (b) el filtro ampliado de `_vig_alertas_data()` no rompió el flujo de alertas
+activas (las 3 alertas activas reales se siguieron viendo con el badge "Activo" y el botón
+"Marcar atendida" intacto); (c) los 3 `fila_total` tienen el conteo correcto (alertas=10,
+infracciones-Vigilancia=9, infracciones-Ciclista=8), confirmado no solo leyendo el código sino
+abriendo los 3 Excel reales con `openpyxl` y contando columnas; (d) ningún template nuevo usa
+`alert()`/`confirm()` nativo (grep limpio en los 3 archivos tocados); (e) el único dato de prueba
+"tocado" (`au9bf8weq0uyp1p`) era un registro real preexistente, no uno fabricado -- no había nada
+que limpiar. No se encontró ningún hallazgo que corregir.
+
+### Prueba real de punta a punta -- resumen
+
+| Verificación | Esperado | Resultado real |
+|---|---|---|
+| ETL corrido + idempotencia | Campos agregados 1ra vez, "sin cambios" 2da vez | Confirmado, ambas corridas |
+| Rechazo sin nota | Flash de error, sin escritura en PocketBase | Confirmado (`alerta_atendida` siguió `False`) |
+| Atender con nota real | `alerta_atendida_por`/`fecha_atencion`/`nota` reales | Confirmado, valores exactos verificados directo en PocketBase |
+| Entrada de auditoría nueva | `modulo="viajes"`, `accion="editar"` | Confirmado, con el `viaje_id` y la nota en el `detalle` |
+| Historial sobrevive al cierre del viaje | Viaje `completado` sigue en la lista | Confirmado, columna "Viaje" = Finalizado |
+| Exports Alertas (Excel/PDF) | 200, 10 columnas, datos reales | Confirmado con `openpyxl` |
+| Infracciones -- Vigilancia y Ciclista | Mismo texto/nombre/fecha en ambos lados | Confirmado, coincidencia exacta |
+| Exports Infracciones x2 (Excel/PDF) | 200, 9 y 8 columnas respectivamente | Confirmado con `openpyxl` |
+| Sin `alert()`/`confirm()` nativos | Solo `<dialog>` + `UB.toast` | Confirmado |
+| Datos de prueba huérfanos | Ninguno fabricado, nada que limpiar | Confirmado (todo evidencia real reutilizada) |
+
 **Estado del plan: RESUELTO.**

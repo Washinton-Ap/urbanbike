@@ -2325,6 +2325,9 @@ def _vig_infracciones_columnas_filas(infracciones: list[dict]) -> tuple[list[Col
         ColumnaReporte("Bicicleta", ancho=14),
         ColumnaReporte("Fecha", ancho=18),
         ColumnaReporte("Estado", ancho=14),
+        ColumnaReporte("Resolución", ancho=34),
+        ColumnaReporte("Resuelta por", ancho=22),
+        ColumnaReporte("Fecha resolución", ancho=20),
     ]
     filas = [
         [
@@ -2334,6 +2337,9 @@ def _vig_infracciones_columnas_filas(infracciones: list[dict]) -> tuple[list[Col
             i.get("bicicleta_codigo") or "—",
             (i.get("fecha") or "—").replace("T", " ").replace("Z", "") if i.get("fecha") else "—",
             "Resuelta" if i.get("resuelta") else "Pendiente",
+            i.get("resolucion") or "—",
+            i.get("resuelta_por") or "—",
+            (i.get("fecha_resolucion") or "—").replace("T", " ").replace("Z", "") if i.get("fecha_resolucion") else "—",
         ]
         for i in infracciones
     ]
@@ -2350,7 +2356,7 @@ def vig_infracciones_excel():
         subtitulo=f"Total: {len(infracciones)} infracciones  |  Pendientes: {pendientes}  |  Resueltas: {len(infracciones) - pendientes}",
         columnas=columnas,
         filas=filas,
-        fila_total=[f"Total: {len(infracciones)} infracciones", None, None, None, None, None],
+        fila_total=[f"Total: {len(infracciones)} infracciones", None, None, None, None, None, None, None, None],
         nombre_hoja="Infracciones",
         nombre_archivo="urbanbike_vigilancia_infracciones.xlsx",
     )
@@ -2366,7 +2372,7 @@ def vig_infracciones_pdf():
         subtitulo=f"Total: {len(infracciones)} infracciones  |  Pendientes: {pendientes}  |  Resueltas: {len(infracciones) - pendientes}",
         columnas=columnas,
         filas=filas,
-        fila_total=[f"Total: {len(infracciones)} infracciones", None, None, None, None, None],
+        fila_total=[f"Total: {len(infracciones)} infracciones", None, None, None, None, None, None, None, None],
         nombre_archivo="urbanbike_vigilancia_infracciones.pdf",
     )
 
@@ -2483,19 +2489,34 @@ _LIMITE_ALERTA_MIN = 120
 
 
 def _vig_alertas_data() -> list[dict]:
-    """Viajes activos que superan _LIMITE_ALERTA_MIN, con el tiempo
-    excedido ya calculado -- compartida entre la pantalla y el export
-    para no duplicar la logica (ver docs/HOJA_DE_RUTA.md)."""
+    """Viajes -- activos en vivo o ya finalizados -- que superan
+    _LIMITE_ALERTA_MIN, con el tiempo excedido ya calculado -- compartida
+    entre la pantalla y el export para no duplicar la logica (ver
+    docs/HOJA_DE_RUTA.md). Antes del punto 2.8 esta funcion solo miraba
+    viajes con estado="activo": en cuanto un viaje con alerta terminaba
+    (completado/cancelado), la alerta desaparecia de esta pantalla para
+    siempre -- sin historial real de que existio, quien la atendio o
+    cuando. Ahora tambien trae viajes ya finalizados cuya duracion_minutos
+    real supero el limite, para que quede como historial consultable.
+    """
     alertas: list[dict] = []
     pb = _pb()
-    viajes_activos = pb.list_records("viajes", filter='estado = "activo"', sort="-fecha_inicio", per_page=200).get("items", [])
+    viajes = pb.list_records(
+        "viajes",
+        filter=f'estado = "activo" || duracion_minutos > {_LIMITE_ALERTA_MIN}',
+        sort="-fecha_inicio", per_page=300,
+    ).get("items", [])
     ahora = datetime.now(timezone.utc)
-    for v in viajes_activos:
-        try:
-            inicio = datetime.fromisoformat(v.get("fecha_inicio", "").replace("Z", "+00:00"))
-            mins = int((ahora - inicio).total_seconds() / 60)
-        except Exception:
-            continue
+    for v in viajes:
+        activo = v.get("estado") == "activo"
+        if activo:
+            try:
+                inicio = datetime.fromisoformat(v.get("fecha_inicio", "").replace("Z", "+00:00"))
+                mins = int((ahora - inicio).total_seconds() / 60)
+            except Exception:
+                continue
+        else:
+            mins = int(v.get("duracion_minutos") or 0)
         if mins <= _LIMITE_ALERTA_MIN:
             continue
         email = ""
@@ -2506,13 +2527,17 @@ def _vig_alertas_data() -> list[dict]:
             except Exception:
                 pass
         alertas.append({
-            "viaje_id":      v["id"],
-            "ciclista":      v.get("ciclista_nombre") or "—",
-            "email":         email or "—",
-            "bicicleta":     v.get("bicicleta_codigo") or "—",
-            "tiempo_total":  mins,
-            "tiempo_exceso": mins - _LIMITE_ALERTA_MIN,
-            "atendida":      bool(v.get("alerta_atendida")),
+            "viaje_id":       v["id"],
+            "ciclista":       v.get("ciclista_nombre") or "—",
+            "email":          email or "—",
+            "bicicleta":      v.get("bicicleta_codigo") or "—",
+            "tiempo_total":   mins,
+            "tiempo_exceso":  mins - _LIMITE_ALERTA_MIN,
+            "atendida":       bool(v.get("alerta_atendida")),
+            "activo":         activo,
+            "atendida_por":   v.get("alerta_atendida_por") or "",
+            "fecha_atencion": (v.get("alerta_fecha_atencion") or "").replace("T", " ").replace("Z", ""),
+            "nota":           v.get("alerta_nota") or "",
         })
     return alertas
 
@@ -2532,9 +2557,26 @@ async def vig_alertas(request: Request):
 
 
 @router.post("/vigilancia/alertas/{viaje_id}/atender")
-async def vig_alertas_atender(request: Request, viaje_id: str):
+async def vig_alertas_atender(request: Request, viaje_id: str, nota: str = Form("")):
+    user = getattr(request.state, "user", {})
+    nota = nota.strip()
+    if not nota:
+        return _flash(request, "/empleado/vigilancia/alertas", "error",
+                       "Indica qué acción se tomó antes de marcar la alerta como atendida.")
     try:
-        _pb().update_record("viajes", viaje_id, {"alerta_atendida": True})
+        pb = _pb()
+        pb.update_record("viajes", viaje_id, {
+            "alerta_atendida":       True,
+            "alerta_atendida_por":   user.get("name") or user.get("email", ""),
+            "alerta_fecha_atencion": _ahora(),
+            "alerta_nota":           nota,
+        })
+        registrar_auditoria(
+            user.get("pb_token", ""), user.get("id", ""), user.get("name") or user.get("email", ""),
+            user.get("email", ""), "editar", "viajes",
+            f"Alerta de viaje atendida (id: {viaje_id}): {nota}", request,
+            usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""),
+        )
         return _flash(request, "/empleado/vigilancia/alertas", "success", "Alerta marcada como atendida.")
     except Exception as e:
         return _flash(request, "/empleado/vigilancia/alertas", "error", str(e))
@@ -2545,13 +2587,24 @@ def _vig_alertas_columnas_filas(alertas: list[dict]) -> tuple[list[ColumnaReport
         ColumnaReporte("Ciclista", ancho=24),
         ColumnaReporte("Contacto", ancho=28),
         ColumnaReporte("Bicicleta", ancho=14),
+        ColumnaReporte("Viaje", ancho=12),
         ColumnaReporte("Tiempo total (min)", ancho=18, formato="entero"),
         ColumnaReporte("Tiempo excedido (min)", ancho=20, formato="entero"),
-        ColumnaReporte("Acciones tomadas", ancho=18),
+        ColumnaReporte("Estado", ancho=14),
+        ColumnaReporte("Atendida por", ancho=22),
+        ColumnaReporte("Fecha atención", ancho=20),
+        ColumnaReporte("Acción tomada", ancho=34),
     ]
     filas = [
-        [a["ciclista"], a["email"], a["bicicleta"], a["tiempo_total"], a["tiempo_exceso"],
-         "Atendida" if a["atendida"] else "Pendiente"]
+        [
+            a["ciclista"], a["email"], a["bicicleta"],
+            "Activo" if a["activo"] else "Finalizado",
+            a["tiempo_total"], a["tiempo_exceso"],
+            "Atendida" if a["atendida"] else "Pendiente",
+            a["atendida_por"] or "—",
+            a["fecha_atencion"] or "—",
+            a["nota"] or "—",
+        ]
         for a in alertas
     ]
     return columnas, filas
@@ -2567,7 +2620,7 @@ def vig_alertas_excel():
         subtitulo=f"Viajes que superaron {_LIMITE_ALERTA_MIN} min: {len(alertas)}  |  Pendientes: {pendientes}",
         columnas=columnas,
         filas=filas,
-        fila_total=[f"Total: {len(alertas)} alertas", None, None, None, None, None],
+        fila_total=[f"Total: {len(alertas)} alertas", None, None, None, None, None, None, None, None, None],
         nombre_hoja="Alertas",
         nombre_archivo="urbanbike_vigilancia_alertas.xlsx",
     )
@@ -2583,7 +2636,7 @@ def vig_alertas_pdf():
         subtitulo=f"Viajes que superaron {_LIMITE_ALERTA_MIN} min: {len(alertas)}  |  Pendientes: {pendientes}",
         columnas=columnas,
         filas=filas,
-        fila_total=[f"Total: {len(alertas)} alertas", None, None, None, None, None],
+        fila_total=[f"Total: {len(alertas)} alertas", None, None, None, None, None, None, None, None, None],
         nombre_archivo="urbanbike_vigilancia_alertas.pdf",
     )
 

@@ -2676,6 +2676,9 @@ def _mis_infracciones_columnas_filas(items: list[dict]) -> tuple[list[ColumnaRep
         ColumnaReporte("Bicicleta", ancho=14),
         ColumnaReporte("Fecha", ancho=18),
         ColumnaReporte("Estado", ancho=14),
+        ColumnaReporte("Resolución", ancho=34),
+        ColumnaReporte("Resuelta por", ancho=22),
+        ColumnaReporte("Fecha resolución", ancho=20),
     ]
     filas = [
         [
@@ -2684,6 +2687,9 @@ def _mis_infracciones_columnas_filas(items: list[dict]) -> tuple[list[ColumnaRep
             i.get("bicicleta_codigo") or "—",
             (i.get("fecha") or "—").replace("T", " ").replace("Z", "") if i.get("fecha") else "—",
             "Resuelta" if i.get("resuelta") else "Pendiente",
+            i.get("resolucion") or "—",
+            i.get("resuelta_por") or "—",
+            (i.get("fecha_resolucion") or "—").replace("T", " ").replace("Z", "") if i.get("fecha_resolucion") else "—",
         ]
         for i in items
     ]
@@ -2700,7 +2706,7 @@ async def infracciones_excel(request: Request):
         subtitulo=f"Ciclista: {user.get('name') or user.get('email', '')}  |  Total: {len(items)} infracciones",
         columnas=columnas,
         filas=filas,
-        fila_total=[f"Total: {len(items)} infracciones", None, None, None, None],
+        fila_total=[f"Total: {len(items)} infracciones", None, None, None, None, None, None, None],
         nombre_hoja="Mis Infracciones",
         nombre_archivo="urbanbike_mis_infracciones.xlsx",
     )
@@ -2716,7 +2722,7 @@ async def infracciones_pdf(request: Request):
         subtitulo=f"Ciclista: {user.get('name') or user.get('email', '')}  |  Total: {len(items)} infracciones",
         columnas=columnas,
         filas=filas,
-        fila_total=[f"Total: {len(items)} infracciones", None, None, None, None],
+        fila_total=[f"Total: {len(items)} infracciones", None, None, None, None, None, None, None],
         nombre_archivo="urbanbike_mis_infracciones.pdf",
     )
 
