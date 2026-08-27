@@ -111,10 +111,11 @@
       <select class="form-input" name="estacion_fin_id" id="select-estacion-fin" required>
         <option value="" disabled selected>Selecciona una estación...</option>
         {% for est in estaciones %}
-        <option value="{{ est.id }}" data-nombre="{{ est.nombre }}">{{ est.nombre }}</option>
+        <option value="{{ est.id }}" data-nombre="{{ est.nombre }}" data-lat="{{ est.latitud }}" data-lng="{{ est.longitud }}">{{ est.nombre }}</option>
         {% endfor %}
       </select>
     </div>
+    <div id="map-devolucion" style="height:200px;width:100%;border-radius:var(--radius);overflow:hidden;margin-top:10px;display:none;"></div>
     <input type="hidden" name="estacion_fin_nombre" id="input-estacion-fin-nombre">
     <div style="font-size:0.8rem;color:var(--text-muted);margin-top:6px;">
       Esto reporta que dejaste la bicicleta -- el costo se congela con la hora de este reporte. Tienes 1h sin cargo adicional para que Vigilancia confirme la entrega física; pasado ese tiempo se aplica un recargo por demora aparte.
@@ -193,6 +194,39 @@ if (selectFin) {
   selectFin.addEventListener('change', () => {
     const opt = selectFin.options[selectFin.selectedIndex];
     inputFinNombre.value = opt.dataset.nombre || '';
+  });
+}
+
+// Mapa chico de la estación de devolución elegida: reutiliza el mismo
+// Leaflet ya cargado arriba para #map-viaje -- sin librería nueva, sin
+// dato nuevo (estaciones ya trae latitud/longitud real de PocketBase,
+// solo hacía falta exponerla en el <option> via data-lat/data-lng,
+// mismo patrón que ya usa data-estacion-id en alquiler_form.html).
+// Nace oculto porque el select nace en el placeholder deshabilitado sin
+// ninguna estación real elegida; aparece recién con la primera
+// selección real y se reubica en cada cambio posterior.
+let mapDevolucion = null;
+let markerDevolucion = null;
+const divMapDevolucion = document.getElementById('map-devolucion');
+if (selectFin && divMapDevolucion) {
+  selectFin.addEventListener('change', () => {
+    const opt = selectFin.options[selectFin.selectedIndex];
+    const latFin = parseFloat(opt.dataset.lat);
+    const lngFin = parseFloat(opt.dataset.lng);
+    if (!opt.value || isNaN(latFin) || isNaN(lngFin)) return;
+    divMapDevolucion.style.display = '';
+    if (!mapDevolucion) {
+      mapDevolucion = L.map('map-devolucion').setView([latFin, lngFin], 15);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+        maxZoom: 18,
+      }).addTo(mapDevolucion);
+      markerDevolucion = L.marker([latFin, lngFin], { icon: biciIcon }).addTo(mapDevolucion);
+    } else {
+      mapDevolucion.setView([latFin, lngFin], 15);
+      markerDevolucion.setLatLng([latFin, lngFin]);
+    }
+    markerDevolucion.bindPopup(opt.dataset.nombre || '').openPopup();
   });
 }
 
