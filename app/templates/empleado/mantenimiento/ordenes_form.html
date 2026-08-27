@@ -10,10 +10,14 @@
   <div class="card-header">
     <span class="card-title">{{ orden.codigo }}</span>
     <div class="flex gap-2">
+      {% if orden.estado_reparacion != 'cerrada' %}
       <a href="/empleado/mantenimiento/ordenes/{{ orden.id }}?modo=editar" class="btn btn-primary">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
         Actualizar
       </a>
+      {% else %}
+      <span class="badge badge-gray" title="Una orden cerrada no se puede editar">Cerrada -- no editable</span>
+      {% endif %}
       <button type="button" class="btn btn-ghost" style="color:#EF4444;border-color:rgba(239,68,68,0.35);" onclick="document.getElementById('modal-eliminar').showModal()">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
         Eliminar
@@ -146,9 +150,13 @@
       <div class="form-group"><label class="form-label">Estado *</label>
         <select class="form-input" name="estado_reparacion" required>
           {% for e in estados %}
-          <option value="{{ e }}" {% if orden and orden.estado_reparacion == e %}selected{% endif %}>{{ estado_label[e] }}</option>
+          {% set _es_retroceso = orden and estados.index(e) < estados.index(orden.estado_reparacion) %}
+          <option value="{{ e }}" {% if orden and orden.estado_reparacion == e %}selected{% endif %} {% if _es_retroceso %}disabled{% endif %}>
+            {{ estado_label[e] }}{% if _es_retroceso %} (no disponible -- sería retroceder){% endif %}
+          </option>
           {% endfor %}
         </select>
+        <div style="font-size:0.78rem;color:var(--text-muted);margin-top:6px;">Los estados no retroceden -- solo puedes mantener el actual o avanzar.</div>
       </div>
       <div class="form-group"><label class="form-label">Costo repuestos</label>
         <input class="form-input" type="number" step="0.01" min="0" name="costo_repuestos" value="{{ orden.costo_repuestos if orden else '0' }}"></div>

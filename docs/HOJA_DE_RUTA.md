@@ -8274,3 +8274,55 @@ completo al terminar, todo por el camino más real disponible en cada caso:
   PocketBase (`404` real al buscarlos por `id`).
 
 **Estado de los 3 puntos: RESUELTO.**
+
+---
+
+## 103. Plan V3, Prioridad 1 -- Bloque 3: 1.6 y 1.7 (costos de orden + estados que no retroceden)
+
+Auditoría previa confirmó el hueco real: `mnt_ordenes_editar()` (`app/routers/empleado.py`) no
+validaba nada del lado del servidor -- el `min="0"` del `<input type="number">` es solo una
+sugerencia del navegador, saltable con un `POST` directo, y el `<select>` de estado ofrecía los 5
+estados sin ninguna restricción de orden, incluso para una orden ya `cerrada`.
+
+### 1.6 -- costo de repuestos/mano de obra no puede ser negativo
+
+**Decisión documentada, no asumida a ciegas:** el pedido original dice "en cero o negativo", pero
+antes de bloquear también el cero se verificó contra los datos reales -- **15 de 21 órdenes reales
+`cerradas`** tienen `costo_repuestos = 0`, y 16 de 21 tienen `costo_mano_obra = 0` (reparaciones sin
+costo de repuestos o sin mano de obra facturada, un caso legítimo y frecuente hoy). Bloquear el cero
+habría roto la edición de la mayoría de las órdenes reales ya cerradas. Se bloqueó solo lo que nunca
+tiene sentido: un costo **negativo** -- eso sí es un defensa real nueva en `mnt_ordenes_editar()`.
+
+### 1.7 -- orden cerrada no editable; los estados no retroceden
+
+- Una orden con `estado_reparacion == "cerrada"` **no se puede editar en absoluto** -- ni siquiera
+  campos que no son el estado (diagnóstico, costos, técnico). Bloqueado en dos capas: el botón
+  "Actualizar" desaparece de la vista `ver` (reemplazado por un badge "Cerrada -- no editable"), Y
+  `GET ?modo=editar`/`POST .../editar` lo rechazan aunque se fuerce la URL o se haga un `POST`
+  directo.
+- Mientras no está cerrada, el estado **no puede retroceder**: el índice en
+  `ordenes_repo.ESTADOS_VALIDOS` (`abierta` < `diagnostico` < `en_reparacion` < `espera_repuesto` <
+  `cerrada`) define el orden real del flujo. El `<select>` de edición deshabilita las opciones que
+  serían un retroceso (con la etiqueta "no disponible -- sería retroceder"), y el servidor rechaza
+  igual un `POST` directo que las fuerce.
+
+**Prueba real de punta a punta** (servidor real, cuenta real `empleado.mant@urbanbike.com`, sobre
+una orden real ya existente -- `OM-0333`, sin fabricar ninguna orden nueva):
+
+| Caso | Resultado real |
+|---|---|
+| `costo_repuestos = -5` | Rechazado, flash de error, sin escritura |
+| Retroceder de `diagnostico` a `abierta` | Rechazado, flash de error, sin escritura |
+| Avanzar de `diagnostico` a `en_reparacion` con costos reales (`$12.50` / `$8.00`) | Aceptado -- confirmado directo en ClickHouse |
+| Forzar `?modo=editar` sobre una orden real `cerrada` (`OM-0313`) | Rebota a modo `ver` con el badge "no editable", sin formulario |
+| `POST` directo a `.../editar` sobre `OM-0313` (`cerrada`) | Rechazado, `OM-0313` verificada intacta en ClickHouse (`cerrada`, `$0.00`/`$0.00`) |
+
+**Nota real de la prueba:** al intentar restaurar `OM-0333` a su estado original (`diagnostico`,
+`$0.00`/`$0.00`) después de la prueba, la propia regla nueva **bloqueó el camino normal** (ir de
+`en_reparacion` de vuelta a `diagnostico` es, por definición, un retroceso) -- confirmación real
+adicional de que la regla es efectiva incluso contra un intento bien intencionado. Se restauró por
+la única vía que queda en ese caso: `ALTER TABLE ... UPDATE` directo en ClickHouse (igual que otras
+restauraciones de datos de prueba en este documento cuando no existe un camino de aplicación que lo
+permita). Confirmado idéntico al estado antes de la prueba.
+
+**Estado: RESUELTO.**

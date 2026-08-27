@@ -1238,6 +1238,11 @@ async def mnt_ordenes_detalle(request: Request, oid: str, modo: str = Query("ver
     if not orden:
         return _flash(request, "/empleado/mantenimiento/ordenes", "error", "Orden no encontrada.")
     _marcar_vencidas([orden])
+    # Punto 1.7: una orden cerrada nunca entra en modo edicion, ni siquiera
+    # forzando ?modo=editar en la URL a mano.
+    if modo == "editar" and orden["estado_reparacion"] == "cerrada":
+        flash = {"type": "error", "msg": "Esta orden ya está cerrada -- no se puede editar."}
+        modo = "ver"
     n_repuestos = ordenes_repo.contar_repuestos(oid)
     return templates.TemplateResponse(request, "empleado/mantenimiento/ordenes_form.html", _ctx(request,
         title=f"Orden {orden['codigo']}", flash=flash, modo="editar" if modo == "editar" else "ver",
@@ -1261,6 +1266,37 @@ async def mnt_ordenes_editar(
 ):
     user = getattr(request.state, "user", {})
     try:
+        # Punto 1.7 del Plan V3: una orden ya cerrada no se puede volver a
+        # editar (ni siquiera el diagnostico u observaciones) -- cerrar es
+        # un estado terminal real, no solo visual. Se revisa contra el
+        # estado real en ClickHouse, no contra lo que haya llegado del
+        # formulario (que podria estar desactualizado si dos personas
+        # abrieron la misma orden a la vez).
+        orden_actual = ordenes_repo.obtener(oid)
+        if orden_actual and orden_actual["estado_reparacion"] == "cerrada":
+            return _flash(request, f"/empleado/mantenimiento/ordenes/{oid}", "error",
+                          "Esta orden ya está cerrada -- no se puede editar.")
+
+        # Los estados no retroceden (mismo punto 1.7): el indice en
+        # ESTADOS_VALIDOS define el orden real del flujo de reparacion.
+        if (orden_actual
+                and ordenes_repo.ESTADOS_VALIDOS.index(estado_reparacion)
+                < ordenes_repo.ESTADOS_VALIDOS.index(orden_actual["estado_reparacion"])):
+            return _flash(request, f"/empleado/mantenimiento/ordenes/{oid}", "error",
+                          f"No puedes retroceder el estado de "
+                          f"\"{ESTADO_ORDEN_LABEL[orden_actual['estado_reparacion']]}\" a "
+                          f"\"{ESTADO_ORDEN_LABEL[estado_reparacion]}\".")
+
+        # Punto 1.6: costo de repuestos/mano de obra no puede ser negativo
+        # (el cero SI es un valor real y frecuente hoy -- 15 de 21 ordenes
+        # cerradas reales tienen costo_repuestos=0 -- asi que solo se
+        # bloquea lo que nunca tiene sentido: un costo negativo).
+        costo_repuestos_f = float(costo_repuestos or 0)
+        costo_mano_obra_f = float(costo_mano_obra or 0)
+        if costo_repuestos_f < 0 or costo_mano_obra_f < 0:
+            return _flash(request, f"/empleado/mantenimiento/ordenes/{oid}", "error",
+                          "El costo de repuestos y el de mano de obra no pueden ser negativos.")
+
         # fecha_limite se interpreta como fin del dia del plazo (23:59:59) --
         # una orden con fecha_limite = hoy sigue sin estar "vencida" hasta
         # pasada la medianoche.
@@ -1269,7 +1305,7 @@ async def mnt_ordenes_editar(
             oid, id_bicicleta=id_bicicleta, origen=origen, tipo_falla=tipo_falla,
             prioridad=prioridad, estado_reparacion=estado_reparacion, id_tecnico=id_tecnico,
             diagnostico=diagnostico,
-            costo_repuestos=float(costo_repuestos or 0), costo_mano_obra=float(costo_mano_obra or 0),
+            costo_repuestos=costo_repuestos_f, costo_mano_obra=costo_mano_obra_f,
             fecha_limite=fecha_limite_dt,
         )
         registrar_auditoria(
