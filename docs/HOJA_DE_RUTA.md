@@ -8881,3 +8881,71 @@ restaurada) -- no quedó ningún dato de prueba real en ninguna base.
 pasada de `code-review`).
 
 **Estado: RESUELTO.**
+
+---
+
+## 114. Ronda de revisión visual -- factura sin nombre/modelo ni tipo de bicicleta
+
+### Auditoría real (antes de tocar código)
+
+`facturas_repo.py` guarda la línea de detalle (`factura_detalle.concepto`) como texto libre, sin
+ninguna columna estructurada para datos de la bicicleta -- el único dato real que llega hoy es lo
+que el llamador arma en el string `concepto`. El único emisor real de facturas de alquiler
+(`etl/11_backfill_facturas.py`, el backfill de las ~19-24 facturas históricas -- `emitir()` para
+membresías usa un concepto fijo "Membresía mensual", sin bicicleta de por medio) construía
+`concepto=f"Alquiler de bicicleta {a['codigo']}"` con `a` viniendo de `alquileres`, no de
+`bicicletas` -- **`a['codigo']` es el código del ALQUILER (`A-010486`), no el de la bicicleta**.
+Confirmado real contra las 19 facturas de alquiler ya existentes en ClickHouse: las 19 mostraban el
+mismo patrón, un identificador real pero equivocado, mostrado como si fuera el de la bicicleta, y
+sin nombre/modelo ni tipo en ningún caso -- peor que "solo el código", como planteaba la hipótesis
+del pedido. El propio esquema (`db/01_operativa_schema.sql`, comentario de la columna `concepto`) y
+el seed (`db/02_operativa_seed.sql`) ya mostraban el formato real esperado ("Alquiler por dia UB-014
+Trek FX 3 Disc") -- nunca implementado en el backfill real.
+
+### Fix real
+
+`etl/11_backfill_facturas.py`: la consulta ahora trae `id_bicicleta` y `modalidad` del alquiler real;
+`_concepto_real()` resuelve el modelo/marca/categoría reales vía `bicicletas_repo.obtener()` (mismo
+repositorio ya usado por las pantallas de bicicletas -- sin inventar ningún dato ni tabla nueva) y
+arma `"Alquiler {modalidad legible} {código real de la bicicleta} {modelo real} ({categoría
+real})"`. Como el script es idempotente (saltaba cualquier alquiler que ya tuviera factura), se le
+agregó reparación real: si la factura ya existe, hace `ALTER TABLE factura_detalle UPDATE concepto
+... WHERE id_factura = ...` (mismo patrón que `bicicletas_repo.actualizar()` -- `concepto` no es
+parte de `ORDER BY`, mutación in-place segura) en vez de solo saltarla -- corrige el texto real sin
+tocar monto/estado de ninguna factura ya emitida.
+
+### Prueba real de punta a punta
+
+Corrida real del script corregido contra ClickHouse real: `24 alquileres 'facturado' revisados, 5
+facturas creadas, 19 ya existian y se les reparo el concepto real` -- las 5 creadas son,
+adicionalmente, las mismas 5 que la sección 111 encontró sin fila real en `facturas` (el hallazgo de
+"Factura no encontrada"): ahora tienen su factura real completa, con lo que esas 5 pasan de "sin
+enlace de descarga" (fix de la sección 111) a "enlace real y funcional" -- cierre más completo del
+hallazgo original, no solo ocultar el enlace roto.
+
+Confirmado con una consulta real que las 24 facturas de alquiler ya muestran modelo+categoría reales
+(ej. `Alquiler por hora UB-005 Giant Explore E+ (Electrica)`, `Alquiler por hora UB-009 Specialized
+Sirrus X 2.0 (Premium)`). PDF real descargado con sesión HTTP autenticada real (`ciclista@
+urbanbike.com`, login + CSRF real): la factura `001-001-000000032` (viaje real de Adrian Guizado)
+muestra en su línea de detalle "Alquiler por hora UB-005 Giant Explore E+ (Electrica)" en vez de
+solo el monto -- confirma qué bicicleta específica se alquiló, con nombre/modelo y tipo reales.
+Enlaces de descarga reales en `/ciclista/historial` de esa misma cuenta: 21 (antes 16, ver sección
+111) -- ya no hay ninguno roto.
+
+**Revisor independiente:** `code-review` (nivel medium) sobre el diff completo de la sesión
+(`ciclista.py`, `empleado.py`, `seguimiento.html`) confirmó sin hallazgos el guard de
+`cambiar_modalidad()` (sección 113) y el fix del sentinela (sección 111) -- pero esa pasada no
+incluyó `etl/11_backfill_facturas.py`, el archivo real del fix de esta sección. Segunda pasada
+dedicada solo a ese archivo: 1 hallazgo real -- el chequeo `if existente:` mutaba con `ALTER TABLE
+... UPDATE` **cada vez que se corría el script**, incluso sobre facturas ya reparadas sin ningún
+cambio real de texto, contradiciendo la idempotencia real que el docstring del módulo prometía
+("correrlo dos veces no duplica nada" hablaba de duplicar filas, pero ahora sí repetía trabajo real
+de mutación sin necesidad). Corregido: se lee el concepto real ya guardado
+(`facturas_repo.detalle()`) y solo se ejecuta el `ALTER ... UPDATE` si de verdad cambió. Verificado
+real corriendo el script una 2a vez: `24 alquileres 'facturado' revisados, 0 facturas creadas, 0 con
+concepto reparado, 24 ya tenian el concepto real correcto (sin tocar)` -- idempotencia real
+confirmada, no solo asumida. (El otro hallazgo de esa pasada, N+1 de una consulta por bicicleta
+dentro del loop, no se corrigió a propósito: script de un solo uso sobre ~24 filas, el costo real es
+insignificante y agregar un batch-fetch sería complejidad sin beneficio real a este alcance.)
+
+**Estado: RESUELTO.**
