@@ -7979,3 +7979,105 @@ un clic humano.
 
 **Estado: RESUELTO (1.1 y 1.3 con evidencia de servidor/lógica real, sin confirmación visual en
 navegador -- ver nota de cada uno).**
+
+---
+
+## 102. Plan V3, Prioridad 1 -- Bloque 2: 1.4, 1.5 y 1.8 (código ya escrito, cerrado con evidencia real)
+
+Estos tres puntos ya tenían código completo en el árbol de trabajo (sin comitear) desde antes del
+corte de sesión, pero -- a diferencia del Bloque 1 (sección 98) -- nunca se habían probado E2E ni
+documentado. Cerrados hoy con el mismo rigor que el resto del plan.
+
+### 1.4 -- Filtro por nombre de ciclista en Devoluciones (Vigilancia)
+
+Reusa `filtrarTabla()` (`app/static/js/table-search.js`), el mismo mecanismo **cliente puro** (sin
+recarga, sin red) que ya usaban 11 pantallas -- distinto de `live-search.js` (sección 99): no hay
+ningún riesgo de interrupción al escribir porque nunca navega. Se agregó un `<input type="search">`
+con `oninput="filtrarTabla(this, 'tabla-id')"` encima de cada una de las 2 tablas de
+`empleado/vigilancia/devoluciones.html` ("Pendientes de validación" y "Viajes activos") -- el nombre
+del ciclista ya se renderiza como texto plano en una celda (`{{ v.ciclista_nombre }}`), así que cae
+dentro de la búsqueda de texto completo de fila que ya hace `filtrarTabla()`.
+
+**Prueba real** (Playwright, servidor real, cuenta real `empleado.vig@urbanbike.com`, sobre datos
+reales ya existentes en el sistema, sin fabricar nada para esta parte): con 3 filas reales en
+"Pendientes de validación" (2 de "Adrian Guizado", 1 de "Wacho IA" -- esta última generada por la
+prueba del punto 1.5/1.8 de abajo), escribir "Wacho" dejó exactamente **1** fila visible
+(`getComputedStyle(tr).display !== 'none'`), sin que la URL cambiara -- confirma que es 100% cliente,
+sin el problema de la sección 99.
+
+**Estado: RESUELTO.**
+
+### 1.5 -- "Seleccionar todo" (OK / Con daños) en el checklist de inspección
+
+Dos botones nuevos (`#btn-marcar-todo-ok`, `#btn-marcar-todo-danos`) sobre el checklist de
+`empleado/vigilancia/inspeccion.html`, que marcan de una sola vez todos los radios del checklist con
+el mismo valor y disparan `actualizarResumen()` (la misma lógica que ya corre al marcar un radio a
+mano, incluida la del punto 1.8).
+
+**Prueba real de punta a punta** (Playwright, Chromium, servidor real, ClickHouse/PocketBase reales,
+ciclo completo real -- ver también 1.8 más abajo): se alquiló de verdad `UB-006` (cuenta
+`wacho@urbanbike.com`, modalidad `hora`), se reportó la devolución, Vigilancia
+(`empleado.vig@urbanbike.com`) la validó (vía el modal `UB.confirm`, no un `confirm()` nativo) y
+llegó a la pantalla real de inspección de esa bicicleta:
+
+| Caso | Resultado real |
+|---|---|
+| Clic en "Marcar todo OK" | Los 12 radios `value="ok"` del checklist real quedan marcados (12/12) |
+| Clic en "Marcar todo con daños" | Los 12 radios `value="mal"` quedan marcados (12/12) |
+
+**Estado: RESUELTO.**
+
+### 1.8 -- Bloquear el monto por daño si no hay ningún daño registrado
+
+**Cliente**: `#input-cargo-danos` nace `disabled`; `actualizarResumen()` lo habilita solo si al menos
+un componente del checklist quedó en `"mal"`, y lo limpia (`value = ''`) si se vuelve a marcar todo
+OK después de haber escrito algo -- evita que quede un monto viejo colgado.
+
+**Servidor**: `vig_inspeccion_registrar()` (`app/routers/empleado.py`) tiene la línea
+`if not fallas: cargo_danos = 0.0` como defensa explícita contra un `POST` directo con el campo
+habilitado a mano. **Hallazgo menor de auditoría de código** (no es un bug, el comportamiento final
+es correcto): esa línea es en realidad inalcanzable con `fallas` vacío -- `aprobada = len(fallas) == 0`
+y el bloque `if aprobada:` ya hace `return` unas líneas antes (línea ~2163), así que el código nunca
+llega a la sección de `cargo_danos` salvo que `fallas` ya tenga al menos un elemento. La protección
+real contra un `POST` directo con checklist vacío/todo-OK + `cargo_danos` forzado es **estructural**
+(la rama aprobada nunca toca `cargo_danos`), no la línea que dice protegerlo. Sin riesgo real hoy,
+pero vale la pena que Washington sepa que el comentario del código no describe el mecanismo real.
+
+**Prueba real de punta a punta** (mismo ciclo real que 1.5, cuenta real `wacho@urbanbike.com` /
+`empleado.vig@urbanbike.com`, sin mocks):
+
+| Verificación | Resultado real |
+|---|---|
+| `#input-cargo-danos` tras "Marcar todo OK" | `disabled = True` |
+| `#input-cargo-danos` tras "Marcar todo con daños" | `disabled = False` |
+| Enviar con `cargo_danos = 15.50` y las 12 fallas reales | `pagos.cargo_danos = 15.5`, `pagos.monto_total = 15.53` (`subtotal 0.03 + recargo 0 + 15.50 - descuento 0`), verificado directo en PocketBase |
+| `infracciones` (ClickHouse) | `monto_multa = 15.50` exacto, `tipo = 'dano_bicicleta'` |
+| Orden de mantenimiento real | `OM-0334` creada, `origen = 'inspeccion'`, `estado_reparacion = 'abierta'` |
+| Bicicleta `UB-006` | Estado real pasó a `mantenimiento` (ClickHouse y PocketBase) |
+
+**Estado: RESUELTO.**
+
+### Limpieza de datos de prueba (los 3 puntos comparten el mismo ciclo real)
+
+Se alquiló y devolvió de verdad `UB-006` para poder llegar a la pantalla de inspección (no hay forma
+de probar 1.5/1.8 sin pasar por un ciclo real de alquiler -> devolución -> inspección). Borrado
+completo al terminar, todo por el camino más real disponible en cada caso:
+- Orden `OM-0334`: borrada con el endpoint real `POST /mantenimiento/ordenes/{oid}/eliminar` (mismo
+  que usaría un técnico), confirmado `estado_reparacion` seguía `'abierta'` y sin repuestos reales
+  consumidos antes de borrar.
+- Bicicleta `UB-006`: restaurada a `estado='disponible'` con el endpoint real
+  `POST /operacion/inventario/{bid}/editar` (mismo que usaría Operación), preservando intactos el
+  resto de sus campos reales (modelo, estación, fecha de adquisición sentinel). Confirmado
+  `disponible` en ClickHouse y en el espejo de PocketBase.
+- Viaje, pago e infracción (PocketBase): borrados directo (no hay endpoint de borrado de pagos o
+  infracciones en la app). Infracción real en ClickHouse: borrada por `id` exacto vía
+  `ALTER TABLE infracciones DELETE WHERE id = ...` -- no se tocó ninguna otra fila.
+- 6 notificaciones reales generadas por el ciclo (`viaje_iniciado`, `pago_pendiente`,
+  `devolucion_validada`, `falla`, `infraccion`, y el aviso de rol a Mantenimiento) borradas una por
+  una, identificadas por su `id` y hora exacta de creación -- no se tocaron notificaciones de otras
+  sesiones con timestamps anteriores al ciclo de esta prueba.
+- Verificado al final: `UB-006` sin ninguna orden abierta (solo la `OM-0322` real, ya `cerrada`, de
+  antes de esta prueba), 0 registros huérfanos de `viajes`/`pagos`/`infracciones` de este ciclo en
+  PocketBase (`404` real al buscarlos por `id`).
+
+**Estado de los 3 puntos: RESUELTO.**

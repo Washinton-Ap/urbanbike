@@ -12,8 +12,11 @@
   <div style="padding:0 20px 12px;font-size:0.85rem;color:var(--text-muted);">
     El ciclista ya reportó la devolución de estas bicicletas. Hay 1h sin cargo adicional desde el reporte para que confirmes la entrega física; pasado ese tiempo se aplica un recargo por demora aparte.
   </div>
+  <div style="padding:0 20px 14px;">
+    <input type="search" class="form-input" style="max-width:320px;font-size:0.85rem;" placeholder="Buscar por nombre de ciclista..." oninput="filtrarTabla(this, 'tabla-pendientes-validacion')">
+  </div>
   <div class="table-wrap">
-    <table class="table">
+    <table class="table" id="tabla-pendientes-validacion">
       <thead>
         <tr>
           <th></th>
@@ -87,8 +90,11 @@
   </div>
 
   {% if viajes %}
+  <div style="padding:0 20px 14px;">
+    <input type="search" class="form-input" style="max-width:320px;font-size:0.85rem;" placeholder="Buscar por nombre de ciclista..." oninput="filtrarTabla(this, 'tabla-viajes-activos')">
+  </div>
   <div class="table-wrap">
-    <table class="table">
+    <table class="table" id="tabla-viajes-activos">
       <thead>
         <tr>
           <th></th>

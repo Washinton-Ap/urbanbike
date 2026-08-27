@@ -69,7 +69,13 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
 
     <div>
-      <div style="font-size:0.82rem;color:var(--text-muted);margin-bottom:10px;">Marca el estado de cada componente</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
+        <span style="font-size:0.82rem;color:var(--text-muted);">Marca el estado de cada componente</span>
+        <div style="display:flex;gap:8px;">
+          <button type="button" class="btn btn-ghost" id="btn-marcar-todo-ok" style="font-size:0.78rem;padding:5px 12px;">Marcar todo OK</button>
+          <button type="button" class="btn btn-ghost" id="btn-marcar-todo-danos" style="font-size:0.78rem;padding:5px 12px;color:#EF4444;">Marcar todo con daños</button>
+        </div>
+      </div>
       <div style="display:flex;flex-direction:column;gap:10px;">
         {% for clave, etiqueta in checklist %}
         <div class="fila-checklist" data-etiqueta="{{ etiqueta }}" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border:1px solid var(--border);border-radius:10px;">
@@ -91,8 +97,8 @@
 
     <div class="form-group">
       <label class="form-label">Cargo por daños (USD)</label>
-      <input class="form-input" type="number" name="cargo_danos" min="0" step="0.01" placeholder="0.00 — dejar en 0 si no aplica">
-      <div style="font-size:0.8rem;color:var(--text-muted);margin-top:6px;">Si hay daños, ingresa el monto adicional a cobrar al ciclista además del viaje.</div>
+      <input class="form-input" type="number" id="input-cargo-danos" name="cargo_danos" min="0" step="0.01" placeholder="0.00" disabled>
+      <div style="font-size:0.8rem;color:var(--text-muted);margin-top:6px;" id="ayuda-cargo-danos">Marca al menos un componente "Con daños" en el checklist para habilitar este campo.</div>
     </div>
 
     {% if bici.tipo == "electric_bike" %}
@@ -119,6 +125,8 @@
 {% block scripts %}
 <script>
 const resumen = document.getElementById('resumen-fallas');
+const inputCargoDanos = document.getElementById('input-cargo-danos');
+const ayudaCargoDanos = document.getElementById('ayuda-cargo-danos');
 
 function actualizarResumen() {
   const fallas = [];
@@ -129,14 +137,42 @@ function actualizarResumen() {
   if (fallas.length === 0) {
     resumen.style.display = 'none';
     resumen.textContent = '';
-    return;
+  } else {
+    resumen.style.display = 'block';
+    resumen.textContent = 'Fallas detectadas: ' + fallas.join(', ') + '. Se generará una orden de mantenimiento y una infracción al ciclista.';
   }
-  resumen.style.display = 'block';
-  resumen.textContent = 'Fallas detectadas: ' + fallas.join(', ') + '. Se generará una orden de mantenimiento y una infracción al ciclista.';
+
+  // Punto 1.8 (Plan V3): el monto por daño solo tiene sentido si el
+  // checklist de verdad registró al menos un "Con daños" -- bloqueado
+  // (disabled, así ni siquiera se envía en el POST) mientras no haya
+  // ninguno, y se limpia el valor para no dejar un monto viejo colgado
+  // si el vigilante escribió algo y después volvió a marcar todo OK.
+  if (fallas.length === 0) {
+    inputCargoDanos.disabled = true;
+    inputCargoDanos.value = '';
+    ayudaCargoDanos.textContent = 'Marca al menos un componente "Con daños" en el checklist para habilitar este campo.';
+  } else {
+    inputCargoDanos.disabled = false;
+    ayudaCargoDanos.textContent = 'Ingresa el monto adicional a cobrar al ciclista además del viaje (0 si solo quieres dejarlo registrado sin cobrar).';
+  }
 }
 
 document.querySelectorAll('.input-checklist').forEach(input => {
   input.addEventListener('change', actualizarResumen);
 });
+
+// Punto 1.5 (Plan V3): "Seleccionar todo" OK / Con daños -- marca de una
+// sola vez todos los radios del checklist con el mismo valor y dispara el
+// mismo actualizarResumen() de siempre (reusa toda la lógica de arriba,
+// incluido el bloqueo del campo de cargo por daños).
+function marcarTodo(valor) {
+  document.querySelectorAll('.fila-checklist').forEach(fila => {
+    const input = fila.querySelector(`input.input-checklist[value="${valor}"]`);
+    if (input) input.checked = true;
+  });
+  actualizarResumen();
+}
+document.getElementById('btn-marcar-todo-ok').addEventListener('click', () => marcarTodo('ok'));
+document.getElementById('btn-marcar-todo-danos').addEventListener('click', () => marcarTodo('mal'));
 </script>
 {% endblock %}

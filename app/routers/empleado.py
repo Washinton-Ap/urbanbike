@@ -2206,6 +2206,13 @@ async def vig_inspeccion_registrar(request: Request, bici_id: str):
             cargo_danos = float(cargo_danos_raw)
         except (TypeError, ValueError):
             cargo_danos = 0.0
+        # Punto 1.8 del Plan V3: no se puede cobrar por daños si el
+        # checklist no registró ningún ítem con "Con daños" -- se ignora
+        # cualquier monto que haya llegado en el campo (bloqueado también
+        # en el cliente, pero esto es lo que de verdad protege contra un
+        # POST directo con el campo habilitado a mano).
+        if not fallas:
+            cargo_danos = 0.0
 
         if cargo_danos > 0 and viaje:
             pagos_viaje = pb.list_records(
