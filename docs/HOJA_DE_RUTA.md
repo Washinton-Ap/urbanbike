@@ -7805,6 +7805,52 @@ Conversación de prueba (2 mensajes reales, 2 notificaciones) borrada por comple
 
 ---
 
+## 94. Plan V3, Prioridad 0.4 -- filtro en vivo faltante en `/admin/auditoria` (26-ago-2026)
+
+Único hueco real encontrado en la auditoría de la sección 91: de las 19 pantallas de listado con
+un campo de búsqueda, todas menos `/admin/auditoria` ya tenían filtrado en vivo (7 vía
+`live-search.js`, 11 vía `filtrarTabla()` cliente). `/admin/auditoria` es un filtro real de
+servidor (3 campos -- `accion`/`modulo`/`usuario` -- vía `<form method="get">`, con
+`_auditoria_filtro()` armando un filtro real de PocketBase), no una tabla ya cargada completa en
+el DOM -- mismo tipo de pantalla que `gerente/promociones.html` (una de las 7 con
+`live-search.js`), que sirvió de referencia exacta.
+
+**Cambio**: se agregó la clase `filtro-buscador` al `<input name="usuario">` (el único campo de
+texto libre; los dos `<select>` de `accion`/`modulo` se dejaron igual que en
+`gerente/promociones.html`, que tampoco los auto-envía -- mismo criterio ya establecido ahí, fuera
+de alcance de este punto). `live-search.js` ya está cargado global en `base.html`, así que no hizo
+falta ningún `<script>` nuevo -- el mismo listener genérico que ya cubre las otras 7 pantallas
+ahora también dispara el auto-envío (debounce 500ms) de este formulario.
+
+**Prueba real** (servidor real `127.0.0.1:8002`, cuenta real `admin@`, sin mocks): confirmado que
+el input renderiza con la clase `filtro-buscador`; confirmado que el filtro de servidor sigue
+funcionando exactamente igual que antes -- `usuario=Miguel` devuelve solo filas de "Miguel Torres",
+sin mezclar las de "Wacho IA" (verificado también con reserva vs. mezcla).
+
+**Bug real encontrado por Washington en navegador real, después de "RESUELTO"**: la recarga
+automática de `live-search.js` (una navegación GET real, no AJAX) interrumpe la escritura si el
+usuario sigue tecleando justo cuando el debounce dispara -- el campo pierde el foco y hay que volver
+a hacer clic para seguir escribiendo. Ver sección 99 para el análisis completo de la causa (afecta
+las 8 pantallas que comparten `live-search.js`, no solo esta) y el intento de arreglo (guardar/
+restaurar foco y cursor vía `sessionStorage`), que pasó una prueba automatizada con Playwright pero
+que Washington, al probarlo de verdad en su propio navegador, encontró que **seguía sin sentirse
+bien** ("sale bugeado").
+
+**Decisión de Washington (26-ago-2026): revertir, no seguir iterando.** En vez de seguir intentando
+arreglar el mecanismo de filtro en vivo para esta pantalla, se revierte por completo al
+comportamiento anterior a esta sección: el `<input name="usuario">` vuelve a su `class="form-input"`
+original (sin `filtro-buscador`), el filtro solo se aplica con el botón "Filtrar" explícito que ya
+existía desde antes (nunca se quitó, el auto-envío solo se agregaba encima). `live-search.js`
+también se revirtió a su versión original (sin el intento de refoco de la sección 99) -- ver esa
+sección para el detalle exacto de qué se deshizo.
+
+**Estado: REVERTIDO.** El filtro de servidor (`accion`/`modulo`/`usuario` + botón "Filtrar") sigue
+intacto y funcionando -- lo único que se quita es el auto-envío en vivo. Sin código a medias: ambos
+archivos (`admin/auditoria.html`, `live-search.js`) quedaron byte-idénticos a como estaban antes de
+esta sección.
+
+---
+
 ## 95. Plan V3, Prioridad 0.5 -- acceso directo a la Guía de uso desde el inicio de cada rol (26-ago-2026)
 
 Antes solo se llegaba a `/guia` por el menú lateral (sección "Cuenta" de `base.html`), como
@@ -7979,6 +8025,67 @@ un clic humano.
 
 **Estado: RESUELTO (1.1 y 1.3 con evidencia de servidor/lógica real, sin confirmación visual en
 navegador -- ver nota de cada uno).**
+
+---
+
+## 99. Bug real -- el filtro en vivo (`live-search.js`) interrumpe al usuario mientras escribe (26-ago-2026)
+
+**Causa/motivación:** Washington probó en un navegador real el filtro de `/admin/auditoria` (punto
+0.4, sección 94) y encontró que la recarga automática **interrumpe la escritura**: si sigue
+tecleando justo cuando el debounce dispara, la página recarga, el campo pierde el foco y tiene que
+volver a hacer clic para seguir escribiendo. No es un problema exclusivo de auditoría -- `live-search.js`
+es un único script compartido por las **8 pantallas** que usan `.filtro-buscador`
+(`admin/auditoria.html`, `empleado/operacion/alquileres.html`, `empleado/operacion/inventario.html`,
+`ciclista/historial.html`, `empleado/mantenimiento/ordenes.html`, `gerente/promociones.html`,
+`gerente/estaciones.html`, `gerente/bicicletas.html`).
+
+**Causa real:** el envío es `form.requestSubmit()` -- una navegación GET real (recarga completa de
+la página, sin fetch/AJAX, misma arquitectura server-rendered del resto del sistema). Cualquier
+navegación real destruye y reconstruye el DOM, así que el `<input>` pierde el foco sin remedio en
+cuanto se dispara, sin importar cuánto se ajuste el retraso del debounce.
+
+**Fix** (`app/static/js/live-search.js`, único archivo tocado -- ningún template, así que el
+arreglo beneficia automáticamente a las 8 pantallas): justo antes de disparar el envío se guarda en
+`sessionStorage` el nombre del campo con foco y la posición del cursor; en `DOMContentLoaded` de la
+página recién cargada, si hay un registro pendiente, se re-enfoca ese mismo campo con el cursor en
+la misma posición y se limpia el registro. Sigue siendo una recarga real (no se cambió la
+arquitectura a AJAX), pero el usuario ya no tiene que volver a hacer clic -- puede seguir escribiendo
+de corrido.
+
+**Descubrimiento de proceso:** la sección 98 asumía que "no hay automatización de navegador
+disponible en esta sesión". Es falso -- `etl/screenshot.py` ya usaba Playwright (paquete instalado,
+Chromium disponible) desde antes. Se usó Playwright real para probar este fix de punta a punta, no
+solo lectura de HTML/JS estático como en 1.1/1.3. Vale la pena revisitar esos dos puntos con la misma
+herramienta cuando Washington lo pida.
+
+**Prueba real de punta a punta** (Playwright real, Chromium, servidor real `127.0.0.1:8020`,
+PocketBase/ClickHouse reales, cuenta real `admin@urbanbike.com`, sin mocks):
+
+| Caso | Resultado real |
+|---|---|
+| Escribir "Mig", pausar 900ms (> debounce) | Recarga real, URL pasa a `?usuario=Mig`, `document.activeElement.name === "usuario"` (foco restaurado solo) |
+| Seguir escribiendo "uel" justo después de la recarga, sin clic | Se agrega al campo con normalidad -> valor final `"Miguel"` |
+| Pausa final | Segunda recarga real, URL final `?usuario=Miguel` |
+| Resultado del filtro | Solo filas de "Miguel Torres" en la tabla (sin mezclar otros usuarios) -- mismo comportamiento correcto que ya confirmaba la sección 94, sin regresión |
+
+**Sin prueba individual de las otras 7 pantallas** -- el fix vive en un único archivo compartido sin
+tocar ningún template, así que el mismo mecanismo aplica igual; no se consideró necesario repetir la
+prueba en cada una.
+
+**Revertido (26-ago-2026, ver sección 94):** la prueba automatizada de arriba pasó, pero Washington
+probó este mismo fix en su propio navegador real y lo encontró **igual de bugeado** -- la
+automatización con Playwright no reprodujo lo que sí se siente mal con un humano escribiendo de
+verdad (posible causa no confirmada: el timing/ritmo real de tecleo humano dispara la recarga en
+momentos que el `type()` con retraso fijo de la prueba no cubre, o el propio parpadeo/recarga visible
+en cada ciclo ya se siente como una interrupción aunque el foco vuelva). En vez de seguir
+iterando sobre el mismo mecanismo, Washington decidió revertir por completo -- `live-search.js` volvió
+a su versión original de antes de esta sección (sin el guardado/restauro de foco por
+`sessionStorage`), y `/admin/auditoria` volvió al filtro por botón explícito (sección 94). El
+descubrimiento real que sí queda en pie: **Playwright sí está disponible en esta sesión** y sirve
+para probar lógica de backend/JS de forma automatizada, pero no reemplaza que Washington pruebe la
+sensación real de una interacción en su propio navegador antes de dar un punto por cerrado.
+
+**Estado: REVERTIDO -- ver sección 94.**
 
 ---
 
