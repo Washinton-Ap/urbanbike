@@ -1101,6 +1101,62 @@ def permisos_toggle(request: Request, id_rol: str = Form(...), id_permiso: str =
         return _flash(request, "/admin/permisos", "error", str(e))
 
 
+@router.post("/permisos/aplicar-seleccionados", dependencies=[Depends(requiere_permiso("permisos:actualizar"))])
+def permisos_aplicar_seleccionados(request: Request, cambios: str = Form(...)):
+    """Aplica en un solo POST el lote de casillas marcadas/desmarcadas
+    sin auto-submit que el cliente acumuló en admin/permisos.html --
+    distinto de "Aplicar todo"/"Restablecer" (que operan sobre UN rol
+    completo): acá puede venir cualquier mezcla de roles y permisos.
+    `cambios` es un JSON armado por el propio JS de la plantilla, nunca
+    tecleado a mano -- igual se valida cada (id_rol, id_permiso) contra
+    el catálogo real antes de aplicar nada, mismo criterio de "nunca
+    confiar en el cliente" que ya usa permisos_toggle()."""
+    user = getattr(request.state, "user", {})
+    try:
+        lote = json.loads(cambios)
+        if not isinstance(lote, list):
+            raise ValueError("formato inválido")
+    except Exception:
+        return _flash(request, "/admin/permisos", "error", "Solicitud inválida.")
+    if not lote:
+        return _flash(request, "/admin/permisos", "error", "No marcaste ningún cambio para aplicar.")
+
+    roles_vistos: dict[str, dict | None] = {}
+    permisos_vistos: dict[str, dict | None] = {}
+    cambios_validos: list[tuple[str, str, bool]] = []
+    for item in lote:
+        if not isinstance(item, dict):
+            continue
+        id_rol = str(item.get("id_rol", ""))
+        id_permiso = str(item.get("id_permiso", ""))
+        if id_rol not in roles_vistos:
+            try:
+                roles_vistos[id_rol] = permisos_repo.obtener_rol(id_rol)
+            except Exception:
+                # id_rol no es un UUID real -- ClickHouse rechaza el parseo
+                # con una excepción propia, no un simple "sin filas" (a
+                # diferencia de un UUID válido que no existe). Mismo
+                # resultado real: este par no es válido, se descarta.
+                roles_vistos[id_rol] = None
+        if id_permiso not in permisos_vistos:
+            try:
+                permisos_vistos[id_permiso] = permisos_repo.obtener_permiso(id_permiso)
+            except Exception:
+                permisos_vistos[id_permiso] = None
+        if roles_vistos[id_rol] and permisos_vistos[id_permiso]:
+            cambios_validos.append((id_rol, id_permiso, bool(item.get("otorgar"))))
+
+    if not cambios_validos:
+        return _flash(request, "/admin/permisos", "error", "Ningún cambio válido para aplicar.")
+
+    otorgado_por = permisos_repo.resolver_usuario_por_email(user.get("email", ""))
+    n = permisos_repo.aplicar_seleccionados(cambios_validos, otorgado_por)
+    _log(request, "Editar permiso", f"Aplicar seleccionados: {n} cambio(s) de {len(cambios_validos)} marcado(s)")
+    if n:
+        return _flash(request, "/admin/permisos", "success", f"Se aplicaron {n} cambio(s).")
+    return _flash(request, "/admin/permisos", "success", "Los cambios seleccionados ya coincidían con el estado actual.")
+
+
 @router.post("/permisos/aplicar-todo", dependencies=[Depends(requiere_permiso("permisos:actualizar"))])
 def permisos_aplicar_todo(request: Request, id_rol: str = Form(...)):
     user = getattr(request.state, "user", {})

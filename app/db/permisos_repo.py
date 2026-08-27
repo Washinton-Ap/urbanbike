@@ -135,6 +135,37 @@ def revocar(id_rol: str, id_permiso: str) -> None:
     )
 
 
+def aplicar_seleccionados(cambios: list[tuple[str, str, bool]], otorgado_por: str) -> int:
+    """Aplica un lote real de cambios en una sola operación (punto de la
+    ronda de revisión visual, "aplicar seleccionados"): cada
+    (id_rol, id_permiso, desea_otorgado) puede pertenecer a un rol y un
+    permiso distintos, mezclados entre sí -- a diferencia de
+    aplicar_todos_rol()/restablecer_rol_predeterminado(), que operan
+    sobre UN rol completo, este lote lo arma el cliente marcando/
+    desmarcando casillas sueltas sin auto-submit (ver admin/permisos.html).
+    Una sola consulta trae el estado real actual de TODO rol_permisos
+    (evita N+1 contra ClickHouse); cada par solo se escribe si de verdad
+    cambia ese estado -- idempotente, mismo criterio que
+    restablecer_rol_predeterminado(). Devuelve cuántos se tocaron de
+    verdad (0 si el lote entero ya coincidía con el estado actual)."""
+    if not cambios:
+        return 0
+    grants_actuales = {
+        (str(g["id_rol"]), str(g["id_permiso"]))
+        for g in ch.query("SELECT id_rol, id_permiso FROM urbanbike_operativa.rol_permisos")
+    }
+    tocados = 0
+    for id_rol, id_permiso, desea_otorgado in cambios:
+        actual = (id_rol, id_permiso) in grants_actuales
+        if desea_otorgado and not actual:
+            otorgar(id_rol, id_permiso, otorgado_por)
+            tocados += 1
+        elif not desea_otorgado and actual:
+            revocar(id_rol, id_permiso)
+            tocados += 1
+    return tocados
+
+
 def toggle(id_rol: str, id_permiso: str, otorgado_por: str) -> bool:
     """Otorga si no existe, revoca si existe (INSERT/DELETE reales sobre
     rol_permisos). Devuelve el estado nuevo: True = otorgado, False =

@@ -6,9 +6,25 @@
 
 <div style="font-size:0.85rem;color:var(--text-muted);margin-bottom:16px;">
   Cada casilla es real: se lee y se escribe directo contra <code>rol_permisos</code>.
-  Marcar otorga el permiso al rol de esa columna; desmarcar lo revoca. El cambio
-  aplica de inmediato en todo el sistema (ver <code>docs/HOJA_DE_RUTA.md</code>
-  secciones 29, 30, 38-41).
+  Marcar o desmarcar queda pendiente hasta que uses <strong>Aplicar seleccionados</strong>
+  (podés marcar varias casillas sueltas, de distintos roles y permisos, antes de
+  confirmar) -- el cambio aplica de inmediato en todo el sistema recién ahí (ver
+  <code>docs/HOJA_DE_RUTA.md</code> secciones 29, 30, 38-41).
+</div>
+
+<form id="form-aplicar-seleccionados" method="post" action="/admin/permisos/aplicar-seleccionados" style="display:none;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <input type="hidden" name="cambios" id="input-cambios-seleccionados">
+</form>
+
+<div id="barra-seleccionados" style="display:none;position:sticky;top:8px;z-index:5;margin-bottom:16px;padding:10px 16px;background:var(--bg-card);border:1px solid var(--primary);border-radius:var(--radius);box-shadow:0 2px 8px rgba(0,0,0,0.08);align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+  <span style="font-size:0.85rem;color:var(--text);font-weight:600;">
+    <span id="contador-seleccionados">0</span> cambio(s) marcado(s), sin aplicar todavía.
+  </span>
+  <div style="display:flex;gap:8px;">
+    <button type="button" class="btn btn-ghost" style="font-size:0.82rem;" id="btn-descartar-seleccionados">Descartar</button>
+    <button type="button" class="btn btn-primary" style="font-size:0.82rem;" id="btn-aplicar-seleccionados">Aplicar seleccionados</button>
+  </div>
 </div>
 
 <div class="card">
@@ -58,18 +74,15 @@
           </td>
           {% for rol in roles %}
           <td style="text-align:center;">
-            <form method="post" action="/admin/permisos/toggle" style="display:inline-block;">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-              <input type="hidden" name="id_rol" value="{{ rol.id }}">
-              <input type="hidden" name="id_permiso" value="{{ permiso.id }}">
-              <input
-                type="checkbox"
-                onchange="this.form.submit()"
-                {% if (rol.id, permiso.id) in grant_set %}checked{% endif %}
-                style="width:18px;height:18px;cursor:pointer;accent-color:#1E86BD;"
-                aria-label="{{ permiso.codigo }} para {{ rol.nombre }}"
-              >
-            </form>
+            <input
+              type="checkbox"
+              class="chk-permiso-matriz"
+              data-id-rol="{{ rol.id }}"
+              data-id-permiso="{{ permiso.id }}"
+              {% if (rol.id, permiso.id) in grant_set %}checked{% endif %}
+              style="width:18px;height:18px;cursor:pointer;accent-color:#1E86BD;"
+              aria-label="{{ permiso.codigo }} para {{ rol.nombre }}"
+            >
           </td>
           {% endfor %}
         </tr>
@@ -99,4 +112,64 @@
 </dialog>
 {% endfor %}
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Dirty-tracking real de la matriz de permisos: marcar/desmarcar una
+// casilla YA NO dispara su propio POST (antes: onchange="this.form.submit()").
+// Los cambios se acumulan acá, en memoria, mezclados entre roles y permisos
+// distintos, hasta que el admin confirma con "Aplicar seleccionados" -- un
+// solo POST real a /admin/permisos/aplicar-seleccionados con el lote
+// completo. "Aplicar todo"/"Restablecer" (por rol completo) siguen siendo
+// forms normales aparte, sin tocar.
+(function () {
+  var cambios = new Map(); // clave "id_rol|id_permiso" -> boolean deseado
+  var barra = document.getElementById('barra-seleccionados');
+  var contador = document.getElementById('contador-seleccionados');
+  var checkboxes = Array.prototype.slice.call(document.querySelectorAll('.chk-permiso-matriz'));
+
+  function clave(cb) { return cb.dataset.idRol + '|' + cb.dataset.idPermiso; }
+
+  function actualizarBarra() {
+    contador.textContent = cambios.size;
+    barra.style.display = cambios.size > 0 ? 'flex' : 'none';
+  }
+
+  checkboxes.forEach(function (cb) {
+    cb.addEventListener('change', function () {
+      if (cb.checked === cb.defaultChecked) {
+        cambios.delete(clave(cb));
+      } else {
+        cambios.set(clave(cb), cb.checked);
+      }
+      actualizarBarra();
+    });
+  });
+
+  document.getElementById('btn-descartar-seleccionados').addEventListener('click', function () {
+    checkboxes.forEach(function (cb) {
+      if (cambios.has(clave(cb))) cb.checked = cb.defaultChecked;
+    });
+    cambios.clear();
+    actualizarBarra();
+  });
+
+  document.getElementById('btn-aplicar-seleccionados').addEventListener('click', function () {
+    var lote = [];
+    cambios.forEach(function (otorgar, clave) {
+      var partes = clave.split('|');
+      lote.push({ id_rol: partes[0], id_permiso: partes[1], otorgar: otorgar });
+    });
+    document.getElementById('input-cambios-seleccionados').value = JSON.stringify(lote);
+    document.getElementById('form-aplicar-seleccionados').submit();
+  });
+
+  window.addEventListener('beforeunload', function (e) {
+    if (cambios.size === 0) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
+})();
+</script>
 {% endblock %}
