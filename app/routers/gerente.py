@@ -617,6 +617,34 @@ def _pagos_pb() -> list[dict]:
     return get_admin_client().list_records("pagos", sort="-fecha_pago", per_page=2000).get("items", [])
 
 
+def _ultimo_mes_cerrado() -> tuple[int, int]:
+    """Ultimo mes calendario ya terminado (punto 2.6, propuesta b para
+    /gerente/informe) -- mismo criterio real que ya usa
+    etl/09_calcular_estrategica.py:mes_completo() (un mes cuenta como
+    cerrado recien cuando su ultimo dia ya paso), pero calculado aqui en
+    vivo con aritmetica de fechas simple: el mes actual nunca esta
+    cerrado, asi que el ultimo cerrado es siempre el mes calendario
+    anterior a hoy."""
+    hoy = date.today()
+    anio, mes = hoy.year, hoy.month - 1
+    if mes == 0:
+        mes, anio = 12, anio - 1
+    return anio, mes
+
+
+def _ingresos_reales_mes(pagos: list[dict], anio: int, mes: int) -> float:
+    """Ingresos reales (pagos.monto_total, solo estado='pagado') de un mes
+    puntual -- misma formula real que ya usaba reportes_pagos() para el
+    mes actual, ahora parametrizada por (anio, mes) para poder
+    reutilizarla tambien desde informe() con el ultimo mes cerrado, sin
+    duplicar el calculo."""
+    mes_str = f"{anio:04d}-{mes:02d}"
+    return sum(
+        float(p.get("monto_total") or 0) for p in pagos
+        if p.get("estado") == "pagado" and (p.get("fecha_pago") or "").startswith(mes_str)
+    )
+
+
 def _filtrar_pagos(pagos: list[dict], estado: str, metodo: str, fecha_inicio: str, fecha_fin: str) -> list[dict]:
     out = []
     for p in pagos:
@@ -661,7 +689,7 @@ def reportes_pagos(
 
     ingresos_dia = sum(float(p.get("monto_total") or 0) for p in pagados if (p.get("fecha_pago") or "").startswith(hoy_str))
     pagados_mes = [p for p in pagados if (p.get("fecha_pago") or "").startswith(mes_str)]
-    ingresos_mes = sum(float(p.get("monto_total") or 0) for p in pagados_mes)
+    ingresos_mes = _ingresos_reales_mes(pagos, ahora.year, ahora.month)
     ticket_promedio = (sum(float(p.get("monto_total") or 0) for p in pagados) / len(pagados)) if pagados else 0.0
 
     # Ingresos por día del mes actual
@@ -1499,12 +1527,22 @@ def tarifas_eliminar(request: Request, tid: str):
 
 @router.get("/informe", response_class=HTMLResponse)
 def informe(request: Request):
+    """Punto 2.6 del Plan V2, propuesta (b) (docs/superpowers/plans/
+    2026-08-21-punto-2.6-auditoria-diseno.md): antes agregaba "toda la
+    vida" sin ningun periodo, sin poder compararse con nada, y mostraba
+    "ingresos estimados" (viajes x tarifa promedio general) en vez de un
+    ingreso real. Ahora acota todo al ultimo mes ya cerrado (mismo
+    criterio real que etl/09_calcular_estrategica.py:mes_completo(), ver
+    _ultimo_mes_cerrado()) y reemplaza el ingreso estimado por el ingreso
+    real que ya calcula reportes_pagos() para ese mismo mes
+    (_ingresos_reales_mes(), reutilizada, no duplicada)."""
     flash = request.session.pop("flash", None)
     ch_ok = True
+    anio, mes = _ultimo_mes_cerrado()
+    periodo_yyyymm = anio * 100 + mes
 
     total_viajes = 0
     precio_promedio = 0.0
-    ingresos_estimados = 0.0
     top5: list[dict] = []
     tipo_labels: list = []
     tipo_values: list = []
@@ -1515,35 +1553,40 @@ def informe(request: Request):
 
     try:
         # Lee resumen_viajes_diario (precalculado por el ETL cada hora),
-        # no fact_viajes en vivo -- ver docs/HOJA_DE_RUTA.md. Sin WHERE de
-        # fecha: este informe agrega todo el historico, sin filtros.
+        # no fact_viajes en vivo -- ver docs/HOJA_DE_RUTA.md. Acotado al
+        # ultimo mes cerrado (antes agregaba todo el historico sin
+        # ningun periodo, sin poder compararse con nada -- punto 2.6).
         total_row = ch.query_one(f"""
             SELECT sum(viajes) AS total FROM {DB_TACTICA}.resumen_viajes_diario
-        """)
+            WHERE toYYYYMM(fecha) = %(periodo)s
+        """, {"periodo": periodo_yyyymm})
         total_viajes = total_row.get("total", 0) if total_row else 0
 
         top5 = ch.query(f"""
             SELECT e.nombre_estacion AS nombre, sum(r.viajes) AS viajes
             FROM {DB_TACTICA}.resumen_viajes_diario r
             LEFT JOIN {DB_TACTICA}.dim_estaciones e ON r.id_estacion_inicio = e.id_estacion
+            WHERE toYYYYMM(r.fecha) = %(periodo)s
             GROUP BY e.nombre_estacion ORDER BY viajes DESC LIMIT 5
-        """)
+        """, {"periodo": periodo_yyyymm})
         top5_labels = [str(r.get("nombre") or "N/A") for r in top5]
         top5_values = [r["viajes"] for r in top5]
 
         tipo_rows = ch.query(f"""
             SELECT multiIf(r.es_electrica = 1, 'Eléctrica', 'Clásica') AS nombre, sum(r.viajes) AS viajes
             FROM {DB_TACTICA}.resumen_viajes_diario r
+            WHERE toYYYYMM(r.fecha) = %(periodo)s
             GROUP BY r.es_electrica ORDER BY r.es_electrica
-        """)
+        """, {"periodo": periodo_yyyymm})
         tipo_labels = [str(r.get("nombre") or "N/A") for r in tipo_rows]
         tipo_values = [r["viajes"] for r in tipo_rows]
 
         membresia_rows = ch.query(f"""
             SELECT r.tipo_membresia AS nombre, sum(r.viajes) AS viajes
             FROM {DB_TACTICA}.resumen_viajes_diario r
+            WHERE toYYYYMM(r.fecha) = %(periodo)s
             GROUP BY r.tipo_membresia
-        """)
+        """, {"periodo": periodo_yyyymm})
         membresia_labels = [str(r.get("nombre") or "N/A") for r in membresia_rows]
         membresia_values = [r["viajes"] for r in membresia_rows]
     except Exception:
@@ -1561,14 +1604,20 @@ def informe(request: Request):
     except Exception:
         pass
 
-    ingresos_estimados = total_viajes * precio_promedio
+    try:
+        ingresos_reales = _ingresos_reales_mes(_pagos_pb(), anio, mes)
+    except Exception:
+        ingresos_reales = 0.0
+
+    periodo_label = f"{NOMBRES_MES_CORTO[mes]} {anio}"
 
     return templates.TemplateResponse(request, "gerente/informe.html", _ctx(request,
         title="Informe General — Gerente", flash=flash, ch_ok=ch_ok,
-        titulo="Informe General", subtitulo="Reporte de indicadores clave de la empresa",
+        titulo="Informe General", subtitulo=f"Reporte de indicadores clave — {periodo_label} (último mes cerrado)",
+        periodo_label=periodo_label,
         total_viajes=total_viajes,
         precio_promedio=precio_promedio,
-        ingresos_estimados=ingresos_estimados,
+        ingresos_reales=ingresos_reales,
         top5=top5,
         tipo_labels=json.dumps(tipo_labels),
         tipo_values=json.dumps(tipo_values),

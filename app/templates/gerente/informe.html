@@ -36,21 +36,22 @@
   <div class="card" style="padding:20px;">
     <div style="font-size:0.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">Total de viajes</div>
     <div style="font-family:'Sora',sans-serif;font-size:1.8rem;font-weight:800;color:var(--text);margin-top:6px;">{{ total_viajes | num }}</div>
+    <div style="font-size:0.8rem;color:var(--text-muted);margin-top:4px;">{{ periodo_label }}</div>
   </div>
   <div class="card" style="padding:20px;">
     <div style="font-size:0.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">Tarifa promedio / hora</div>
     <div style="font-family:'Sora',sans-serif;font-size:1.8rem;font-weight:800;color:var(--text);margin-top:6px;">${{ "%.2f" | format(precio_promedio) }}</div>
   </div>
   <div class="card" style="padding:20px;">
-    <div style="font-size:0.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">Ingresos estimados</div>
-    <div style="font-family:'Sora',sans-serif;font-size:1.8rem;font-weight:800;color:#1E86BD;margin-top:6px;">${{ ingresos_estimados | num }}</div>
-    <div style="font-size:0.8rem;color:var(--text-muted);margin-top:4px;">viajes × tarifa promedio</div>
+    <div style="font-size:0.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.05em;">Ingresos reales</div>
+    <div style="font-family:'Sora',sans-serif;font-size:1.8rem;font-weight:800;color:#1E86BD;margin-top:6px;">${{ "%.2f" | format(ingresos_reales) }}</div>
+    <div style="font-size:0.8rem;color:var(--text-muted);margin-top:4px;">pagos reales de {{ periodo_label }}</div>
   </div>
 </div>
 
 <!-- Top 5 estaciones -->
 <div class="card" style="margin-bottom:20px;">
-  <div class="card-header"><span class="card-title">Top 5 estaciones más activas</span></div>
+  <div class="card-header"><span class="card-title">Top 5 estaciones más activas — {{ periodo_label }}</span></div>
   {% if top5 %}
   <div class="table-wrap">
     <table>
@@ -74,15 +75,15 @@
 <!-- Gráficos -->
 <div class="dashboard-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;">
   <div class="card" style="padding:20px;">
-    <div class="card-title" style="margin-bottom:14px;">Distribución por tipo de bicicleta</div>
+    <div class="card-title" style="margin-bottom:14px;">Distribución por tipo de bicicleta — {{ periodo_label }}</div>
     <div style="height:260px;"><canvas id="chartTipo"></canvas></div>
   </div>
   <div class="card" style="padding:20px;">
-    <div class="card-title" style="margin-bottom:14px;">Distribución por membresía</div>
+    <div class="card-title" style="margin-bottom:14px;">Distribución por membresía — {{ periodo_label }}</div>
     <div style="height:260px;"><canvas id="chartMembresia"></canvas></div>
   </div>
   <div class="card" style="padding:20px;grid-column:1/-1;">
-    <div class="card-title" style="margin-bottom:14px;">Top 5 estaciones — viajes</div>
+    <div class="card-title" style="margin-bottom:14px;">Top 5 estaciones — viajes ({{ periodo_label }})</div>
     <div style="height:280px;"><canvas id="chartTop5"></canvas></div>
   </div>
 </div>
