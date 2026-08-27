@@ -766,6 +766,15 @@ async def op_pagos_cobrar_confirmar(
                 monto = float(monto_recibido)
             except ValueError:
                 return _flash(request, volver, "error", "Monto recibido no válido.")
+            # Punto 1.9 del Plan V3: el monto a pagar (registro.monto_total)
+            # es fijo -- lo unico que se ingresa es lo recibido, y el
+            # sistema rechaza si no alcanza (defensa real, no solo la
+            # calculadora de vuelto del lado del cliente).
+            monto_total_real = float(registro.get("monto_total") or 0)
+            if monto < monto_total_real:
+                return _flash(request, volver, "error",
+                              f"El monto recibido (${monto:.2f}) es menor al total a cobrar (${monto_total_real:.2f}).")
+            vuelto = round(monto - monto_total_real, 2)
             pb.update_record("pagos", pago_id, {
                 "estado":                       "pagado",
                 "metodo_pago":                  "efectivo",
@@ -774,7 +783,7 @@ async def op_pagos_cobrar_confirmar(
                 "comprobante_numero":           comprobante,
                 "confirmado_por_empleado_id":   user.get("id", ""),
                 "confirmado_por_empleado_nombre": user.get("name") or user.get("email", ""),
-                "observaciones_pago":           f"Monto recibido: ${monto:.2f}",
+                "observaciones_pago":           f"Monto recibido: ${monto:.2f} -- vuelto: ${vuelto:.2f}",
                 "es_presencial":                True,
                 "empleado_id":                  user.get("id", ""),
             })
@@ -975,6 +984,14 @@ async def op_pagos_confirmar_efectivo(
             monto = float(monto_recibido)
         except ValueError:
             return _flash(request, "/empleado/operacion/pagos", "error", "Monto recibido no válido.")
+        # Punto 1.9 del Plan V3: el monto a cobrar (registro.monto_total)
+        # es fijo -- se rechaza un monto recibido insuficiente en vez de
+        # confiar en la calculadora de vuelto del lado del cliente.
+        monto_total_real = float(registro.get("monto_total") or 0)
+        if monto < monto_total_real:
+            return _flash(request, "/empleado/operacion/pagos", "error",
+                          f"El monto recibido (${monto:.2f}) es menor al total a cobrar (${monto_total_real:.2f}).")
+        vuelto = round(monto - monto_total_real, 2)
         ahora = datetime.now(timezone.utc)
         comprobante = registro.get("comprobante_numero") or f"UB-{ahora.strftime('%Y%m%d')}-{pago_id[-4:].upper()}"
         pb.update_record("pagos", pago_id, {
@@ -985,7 +1002,7 @@ async def op_pagos_confirmar_efectivo(
             "comprobante_numero":           comprobante,
             "confirmado_por_empleado_id":   user.get("id", ""),
             "confirmado_por_empleado_nombre": user.get("name") or user.get("email", ""),
-            "observaciones_pago":           f"Monto recibido: ${monto:.2f}",
+            "observaciones_pago":           f"Monto recibido: ${monto:.2f} -- vuelto: ${vuelto:.2f}",
         })
         registrar_auditoria(
             user.get("pb_token", ""), user.get("id", ""), user.get("name") or user.get("email", ""),

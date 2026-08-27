@@ -8326,3 +8326,30 @@ restauraciones de datos de prueba en este documento cuando no existe un camino d
 permita). Confirmado idéntico al estado antes de la prueba.
 
 **Estado: RESUELTO.**
+
+---
+
+## 104. Plan V3, Prioridad 1 -- 1.9: pago en efectivo con monto fijo y vuelto calculado
+
+**Antes:** en las 2 pantallas reales donde Operación cobra en efectivo (`pagos.html`, cola de
+`pendiente_efectivo`; `cobrar_presencial.html`, cobro presencial de un alquiler manual), el campo
+"Monto recibido" venía **pre-llenado con el total exacto pero totalmente editable**, sin ningún
+campo de vuelto ni comparación contra el monto real adeudado -- un empleado podía escribir cualquier
+cosa y el servidor lo aceptaba tal cual.
+
+**Cambio (ambas pantallas, mismo patrón):** el monto a cobrar se muestra como texto fijo (no un
+`<input>`); "Monto recibido" es el único campo editable, vacío por defecto; un "Vuelto" se calcula
+en vivo con JS (`recibido - total`). Defensa real del lado del servidor en las dos rutas
+(`op_pagos_confirmar_efectivo`, `op_pagos_cobrar_confirmar`): si `monto_recibido < monto_total`, se
+rechaza con un mensaje explícito -- no basta con la calculadora del cliente.
+
+**Prueba real de punta a punta** (servidor real, ciclo real completo -- alquilar, devolver, pagar --
+cuenta real `wacho@urbanbike.com` para el pago, `empleado@urbanbike.com` para confirmar; sin mocks;
+usado también como parte del diagnóstico de la sección 109):
+
+| Caso | Resultado real |
+|---|---|
+| Pago real de `$0.03`, `monto_recibido = $1.00` | Aceptado -- `pagos.observaciones_pago` real: `"Monto recibido: $1.00 -- vuelto: $0.97"`, verificado directo en PocketBase en 3 pagos reales distintos |
+| `pagos.monto_total` tras la confirmación | Sigue en `$0.03` exacto -- el monto a cobrar nunca se pudo editar |
+
+**Estado: RESUELTO.**

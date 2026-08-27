@@ -61,11 +61,14 @@
     <div id="panel-efectivo" class="metodo-panel" style="display:none;margin-bottom:18px;">
       <div class="form-group">
         <label class="form-label">Monto recibido (USD)</label>
-        <input class="form-input" type="number" name="monto_recibido" min="0" step="0.01"
-          placeholder="{{ '%.2f' | format(pago.monto_total | float) }}"
-          value="{{ '%.2f' | format(pago.monto_total | float) }}">
+        <input class="form-input" type="number" id="efectivo-recibido" name="monto_recibido" min="0" step="0.01"
+          placeholder="0.00" autocomplete="off">
       </div>
-      <div style="font-size:0.8rem;color:var(--text-muted);">Confirma el monto en efectivo entregado por el ciclista.</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-radius:8px;background:var(--bg-soft);border:1px solid var(--border);">
+        <span class="text-muted text-sm">Vuelto</span>
+        <span id="efectivo-vuelto" style="font-family:'Sora',sans-serif;font-weight:700;color:var(--text);">$0.00</span>
+      </div>
+      <div style="font-size:0.8rem;color:var(--text-muted);margin-top:8px;">Ingresa el monto en efectivo entregado por el ciclista -- el vuelto se calcula solo. El total a cobrar (arriba) no se puede editar.</div>
     </div>
 
     <div id="panel-tarjeta" class="metodo-panel" style="display:none;margin-bottom:18px;">
@@ -134,5 +137,19 @@ function mostrarMetodo(m) {
   const opt = document.querySelector(`.metodo-opt[data-metodo="${m}"]`);
   if (opt) opt.style.borderColor = 'var(--primary)';
 }
+
+// Punto 1.9 (Plan V3): el monto a cobrar es fijo (tarjeta de arriba, sin
+// input) -- solo "lo recibido" es editable, y el vuelto se calcula solo.
+const MONTO_TOTAL_EFECTIVO = {{ pago.monto_total | float }};
+const inputRecibido = document.getElementById('efectivo-recibido');
+const elVuelto = document.getElementById('efectivo-vuelto');
+function actualizarVuelto() {
+  const recibido = parseFloat(inputRecibido.value) || 0;
+  const vuelto = recibido - MONTO_TOTAL_EFECTIVO;
+  elVuelto.textContent = '$' + Math.max(0, vuelto).toFixed(2);
+  elVuelto.style.color = vuelto < 0 ? '#EF4444' : 'var(--text)';
+}
+inputRecibido.addEventListener('input', actualizarVuelto);
+actualizarVuelto();
 </script>
 {% endblock %}
