@@ -8717,3 +8717,110 @@ mismo criterio de "cambio acotado y ya probado con evidencia real" que otros pun
 documento no pasan por una segunda revisión.
 
 **Estado: RESUELTO.**
+
+---
+
+## 112. Ronda de revisión visual -- Mapa de "Seguimiento de Viajes Activos" (Vigilancia)
+
+Pedido explícito: auditar primero si el mapa realmente filtraba solo viajes con alerta activa, o si
+eso era simplemente el dato real del momento -- confirmarlo contra la base antes de tocar código.
+
+### Auditoría real (antes de tocar código)
+
+- La ruta (`vig_seguimiento()`) ya traía **todos** los viajes `estado = "activo"` sin ningún filtro
+  de alerta -- confirmado leyendo el código real antes de asumir un bug de filtro.
+- El JS del mapa (versión anterior) tampoco filtraba por alerta -- dibujaba un marcador para
+  cualquier viaje con `latitud_actual`/`latitud_inicio` truthy, sin condición de alerta.
+- **Dato real consultado directo en PocketBase, al momento de la auditoría: solo había 2 viajes
+  activos reales**, ambos con más de 5 días de antigüedad (7 526 y 7 382 minutos) -- muy por encima
+  del límite de alerta (120 min). Uno de los dos (`UB-010`) tiene `latitud_actual`/`latitud_inicio`
+  reales en **cero** (y `estacion_inicio_id = "x"`, un valor real inválido) -- un registro de prueba
+  viejo, huérfano, de antes de esta sesión, nunca limpiado.
+
+**Conclusión real de la auditoría:** no había ningún bug de filtro por alerta -- el mapa ya
+mostraba todo lo que la base tenía. Lo que sí era real: (a) con solo 2 viajes reales, ambos viejos y
+ambos ya en alerta, no había forma de distinguir a simple vista "filtra por alerta" de "son los
+únicos viajes activos reales ahora", y (b) uno de los 2 quedaba invisible en el mapa (aunque SÍ
+aparecía en la tabla) por tener coordenadas reales en cero -- un problema real de calidad de dato en
+un registro viejo, no del código que arma la pantalla hoy (confirmado que el flujo real de reserva
+de esta sesión, probado decenas de veces, siempre guarda coordenadas reales).
+
+Con la causa real confirmada, se implementaron los 4 puntos pedidos:
+
+### 1. Un marcador por cada viaje activo real, sin excepción
+
+`ESTACION_POR_NOMBRE` (construido de `estaciones_json`, que ya llegaba al template pero nunca se
+usaba) sirve de respaldo real de coordenadas: si el viaje no trae `latitud`/`longitud` propia
+utilizable, se usa la posición real de su estación de inicio (por nombre, no por id -- el registro
+viejo real tiene `estacion_inicio_id = "x"`, inválido, pero `estacion_inicio_nombre` real). Solo se
+omite un viaje si ni él ni su estación tienen coordenadas reales.
+
+### 2. Coloreado por tiempo real transcurrido (3 tramos)
+
+Celeste (`#38BDF8`, 0-109 min) / Amarillo (`#F59E0B`, 110-119 min) / Rojo (`#EF4444`, ≥120 min) --
+mismo límite real de alerta (120 min, `_LIMITE_ALERTA_MIN`) que usa el resto del sistema. Los
+marcadores recolorean solos cada 30s (mismo intervalo que ya refrescaba los tiempos de la tabla) si
+un viaje cruza de tramo mientras la pantalla sigue abierta. La tabla también se actualizó a los
+mismos 3 tramos (antes solo tenía "Normal"/"Supera 120 min"), igual que el export Excel/PDF
+(`_vig_seguimiento_estado()`, compartida para no tener 2 fuentes de verdad sobre dónde cae cada
+corte).
+
+### 3. Filtro/leyenda visible
+
+3 checkboxes con su color real (mismo que el marcador) sobre el mapa -- desmarcar un estado oculta
+sus marcadores del mapa Y sus filas de la tabla al mismo tiempo (un solo filtro para toda la
+pantalla, no dos mecanismos separados).
+
+### 4. Marcadores superpuestos (viajes que comparten estación)
+
+**Confirmado real, no hipotético:** `UB-001` y `UB-010` (ambos reales, ambos en "Parque La
+Carolina") caían en la **misma coordenada exacta en pantalla** (`x=770, y=295` a zoom país, y
+también a zoom de barrio) -- el segundo marcador quedaba 100% tapado por el primero, sin poder
+verse ni hacer clic en él, confirmado con Playwright real (captura de pantalla + lectura de
+posición real de cada ícono en el DOM). Washington confirmó la severidad y pidió arreglarlo ahora
+mismo, no dejarlo para después.
+
+**Fix real:** antes de dibujar, los viajes se agrupan por coordenada exacta (5 decimales); a cada
+uno de un grupo con más de un viaje se le aplica un desplazamiento real chico (~18-20 metros) en
+círculo alrededor del punto real, y su popup avisa explícitamente "Otra bicicleta activa comparte
+esta misma estación". Sigue representando "la misma estación" a simple vista (los puntos quedan
+pegados entre sí) pero cada uno es visible y clicable por separado.
+
+### Prueba real de punta a punta
+
+Playwright real, Chromium, cuenta real `empleado.vig@urbanbike.com`, sobre datos reales -- 2 viajes
+de prueba creados a propósito (uno recién alquilado para celeste, otro con `fecha_inicio` real
+adelantada 115 min para amarillo) más los reales ya existentes (incluido un viaje real de 7 minutos
+de "Adrian Guizado" que apareció durante la prueba -- no se tocó, es actividad real de otra sesión,
+no dato de prueba propio):
+
+| Verificación | Resultado real |
+|---|---|
+| Viajes activos reales / marcadores dibujados | 5 / 5 -- ninguno omitido, incluido el de coordenadas en cero (resuelto vía estación) |
+| Colores reales de los 5 marcadores | 2 celeste, 1 amarillo, 2 rojo -- exactos a los minutos reales transcurridos de cada uno |
+| Filtro: desmarcar "Rojo" | 3 filas de tabla visibles (las 2 rojas se ocultan) -- confirmado real, no solo el mapa |
+| `UB-001`/`UB-010` antes del fix de solapamiento | Misma posición en pantalla exacta (`770,295`) -- solo 1 clicable |
+| `UB-001`/`UB-010` después del fix | Posiciones reales distintas (`751,333` y `751,366`, ~33px de separación a zoom de barrio) -- ambos popups reales confirmados por separado, cada uno con el aviso de estación compartida |
+
+**Limpieza:** los 2 viajes de prueba (`UB-006`, `UB-002`) se borraron junto con sus notificaciones
+reales de `viaje_iniciado`; ambas bicicletas restauradas a `disponible` en ClickHouse y PocketBase.
+No se tocaron los 2 viajes reales viejos (`UB-001`/`UB-010`, datos huérfanos de antes de esta
+sesión, fuera de alcance de este punto) ni el viaje real de `UB-004` (actividad real de otra
+sesión). **Hallazgo aparte, no corregido a propósito:** el viaje real de `UB-010` tiene
+`estacion_inicio_id = "x"` (un valor inválido real) y coordenadas reales en cero -- dato huérfano
+de una prueba vieja, ajeno a este punto; queda documentado por si Washington quiere limpiarlo
+después.
+
+**Revisor independiente:** sí, `code-review` (nivel medium) sobre el diff completo -- 1 hallazgo
+real: el docstring de `_vig_seguimiento_estado()` afirmaba usar "el mismo límite real de alerta"
+que `_vig_alertas_data()`, pero esta última dispara alerta con `mins > 120` (estrictamente mayor)
+mientras que el punto pedía explícitamente "Rojo: 120 minutos o más" (`mins >= 120`) -- a los 120
+min exactos, esta pantalla ya marca Rojo pero "Alertas de Viajes" todavía no marca alerta. **No es
+un bug de este punto** (el corte `>=120` es exactamente lo pedido) sino una afirmación imprecisa en
+el comentario, que sí podía inducir a "corregir" el corte real más adelante creyendo que debía
+coincidir exacto con el otro punto. Corregido: docstring reescrito para dejar explícita la
+diferencia de 1 minuto y por qué no se armoniza sin pedirlo; las 2 etiquetas de texto que decían
+"Supera 120 min" (Python y JS) se cambiaron a "120 min o más" para que el texto visible coincida
+con el corte real (`>=`), no con "supera" (`>`).
+
+**Estado: RESUELTO.**

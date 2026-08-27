@@ -1587,6 +1587,27 @@ def _vig_tiempo_transcurrido_min(fecha_inicio: str) -> int:
         return 0
 
 
+def _vig_seguimiento_estado(mins: int) -> str:
+    """3 tramos reales del mapa de seguimiento (Plan V3, punto de revisión
+    visual): usa la misma constante `_LIMITE_ALERTA_MIN` (120 min) que
+    `_vig_alertas_data()`, pero el corte de "Rojo" es en `mins >= 120`
+    (pedido explícito del punto: "120 minutos o más"), mientras que
+    `_vig_alertas_data()` marca alerta en `mins > 120` (estrictamente mayor)
+    -- a los 120 min exactos esta pantalla ya muestra Rojo pero la de
+    "Alertas de Viajes" todavía no marca alerta. Diferencia real de 1 minuto
+    en el límite, no un bug de esta función: no armonizar sin pedirlo, ya
+    que "120 minutos o más" fue el requisito explícito para este punto.
+    Con un tramo intermedio "próximo a vencer" (110-119) que esos otros 2
+    puntos no necesitan. Compartida entre la pantalla (vía JS, misma lógica)
+    y este export para no tener 2 fuentes de verdad sobre dónde cae cada
+    corte."""
+    if mins >= _LIMITE_ALERTA_MIN:
+        return f"Rojo -- {_LIMITE_ALERTA_MIN} min o más"
+    if mins >= _LIMITE_ALERTA_MIN - 10:
+        return "Amarillo -- próximo a vencer"
+    return "Celeste -- normal"
+
+
 def _vig_seguimiento_columnas_filas(viajes: list[dict]) -> tuple[list[ColumnaReporte], list[list]]:
     columnas = [
         ColumnaReporte("Bicicleta", ancho=14),
@@ -1594,7 +1615,7 @@ def _vig_seguimiento_columnas_filas(viajes: list[dict]) -> tuple[list[ColumnaRep
         ColumnaReporte("Estación de inicio", ancho=26),
         ColumnaReporte("Inicio", ancho=18),
         ColumnaReporte("Tiempo transcurrido (min)", ancho=22, formato="entero"),
-        ColumnaReporte("Alerta", ancho=14),
+        ColumnaReporte("Estado", ancho=24),
     ]
     filas = []
     for v in viajes:
@@ -1605,7 +1626,7 @@ def _vig_seguimiento_columnas_filas(viajes: list[dict]) -> tuple[list[ColumnaRep
             v.get("estacion_inicio_nombre") or "—",
             (v.get("fecha_inicio") or "—").replace("T", " ").replace("Z", ""),
             mins,
-            f"Supera {_LIMITE_ALERTA_MIN} min" if mins > _LIMITE_ALERTA_MIN else "Normal",
+            _vig_seguimiento_estado(mins),
         ])
     return columnas, filas
 

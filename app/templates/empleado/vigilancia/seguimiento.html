@@ -13,6 +13,24 @@
     <span class="card-title">Mapa de viajes activos</span>
     <span style="font-size:0.8rem;color:var(--text-muted);">{{ viajes | length }} en curso</span>
   </div>
+  <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;padding:10px 20px;border-bottom:1px solid var(--border);font-size:0.82rem;">
+    <span style="color:var(--text-muted);">Filtrar por estado:</span>
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+      <input type="checkbox" class="filtro-estado-viaje" value="celeste" checked>
+      <span style="width:12px;height:12px;border-radius:50%;background:#38BDF8;display:inline-block;"></span>
+      Celeste -- 0 a 109 min
+    </label>
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+      <input type="checkbox" class="filtro-estado-viaje" value="amarillo" checked>
+      <span style="width:12px;height:12px;border-radius:50%;background:#F59E0B;display:inline-block;"></span>
+      Amarillo -- 110 a 119 min
+    </label>
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+      <input type="checkbox" class="filtro-estado-viaje" value="rojo" checked>
+      <span style="width:12px;height:12px;border-radius:50%;background:#EF4444;display:inline-block;"></span>
+      Rojo -- 120 min o más
+    </label>
+  </div>
   <div id="map-seguimiento" style="height:380px;width:100%;"></div>
 </div>
 
@@ -46,7 +64,7 @@
       </thead>
       <tbody>
         {% for v in viajes %}
-        <tr>
+        <tr class="fila-viaje-seguimiento" data-inicio="{{ v.fecha_inicio }}">
           <td style="font-weight:600;color:var(--text);font-family:monospace;">{{ v.bicicleta_codigo }}</td>
           <td>{{ v.ciclista_nombre or "—" }}</td>
           <td>{{ v.estacion_inicio_nombre or "—" }}</td>
@@ -74,6 +92,33 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 const VIAJES = {{ viajes_json | jsonseguro }};
+const ESTACIONES = {{ estaciones_json | jsonseguro }};
+
+// Punto de la sección 111 (Plan V3): antes de este cambio, `estaciones_json`
+// se pasaba al template pero nunca se usaba -- ahora es el respaldo real de
+// coordenadas para un viaje que llegó sin GPS propio (ver mas abajo).
+const ESTACION_POR_NOMBRE = {};
+ESTACIONES.forEach(e => {
+  if (e.nombre) ESTACION_POR_NOMBRE[e.nombre] = e;
+});
+
+// Mismo limite real que usa el servidor para la alerta de 120 min
+// (empleado.py:_LIMITE_ALERTA_MIN) -- 3 tramos en vez del "normal/alerta"
+// de 2 que tenia esta pantalla antes.
+const LIMITE_ALERTA_MIN = 120;
+const LIMITE_PROXIMO_MIN = 110;
+const COLOR_POR_ESTADO = { celeste: '#38BDF8', amarillo: '#F59E0B', rojo: '#EF4444' };
+
+function estadoPorMinutos(mins) {
+  if (mins >= LIMITE_ALERTA_MIN) return 'rojo';
+  if (mins >= LIMITE_PROXIMO_MIN) return 'amarillo';
+  return 'celeste';
+}
+
+function minutosTranscurridos(fechaInicioISO) {
+  const inicio = new Date(fechaInicioISO);
+  return Math.max(0, Math.floor((Date.now() - inicio) / 60000));
+}
 
 const map = L.map('map-seguimiento').setView([-1.5, -78.5], 6.4);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -90,33 +135,112 @@ function icono(color) {
   });
 }
 
+// Punto 2.5/seguimiento (Plan V3): un marcador por CADA viaje activo real,
+// sin excepcion -- antes se descartaba en silencio cualquier viaje sin
+// latitud_actual/latitud_inicio real (ej. un viaje viejo con coordenadas en
+// 0), dejandolo invisible en el mapa aunque siguiera activo de verdad. Ahora,
+// si el viaje no trae coordenadas propias utilizables, se usa la posicion
+// real de su estacion de inicio (ESTACION_POR_NOMBRE) como respaldo -- solo
+// se omite si ni el viaje ni su estacion tienen coordenadas reales.
+// Punto de la ronda de revisión visual: 2 viajes reales que arrancan en la
+// misma estación (mismas coordenadas exactas) quedaban con un marcador
+// tapando al otro por completo -- confirmado real con UB-001/UB-010, ambos
+// en "Parque La Carolina". Antes de dibujar, se agrupan los viajes por
+// coordenada exacta; a cada uno de un grupo con más de 1 se le aplica un
+// desplazamiento chico (~15-20m reales) en círculo alrededor del punto real,
+// para que los dos sigan siendo visibles y clicables por separado sin dejar
+// de representar "la misma estación" a simple vista.
+const puntos = [];
 VIAJES.forEach(v => {
-  const lat = v.latitud_actual || v.latitud_inicio;
-  const lng = v.longitud_actual || v.longitud_inicio;
+  let lat = v.latitud_actual || v.latitud_inicio;
+  let lng = v.longitud_actual || v.longitud_inicio;
+  let esRespaldoEstacion = false;
+  if (!lat || !lng) {
+    const est = ESTACION_POR_NOMBRE[v.estacion_inicio_nombre];
+    if (est && est.latitud && est.longitud) {
+      lat = est.latitud;
+      lng = est.longitud;
+      esRespaldoEstacion = true;
+    }
+  }
   if (!lat || !lng) return;
-  const mins = Math.max(0, Math.floor((Date.now() - new Date(v.fecha_inicio)) / 60000));
-  const color = mins > 120 ? '#EF4444' : '#1E86BD';
-  L.marker([lat, lng], { icon: icono(color) })
-    .addTo(map)
-    .bindPopup(`<strong>${v.bicicleta_codigo}</strong><br>${v.ciclista_nombre || '—'}<br>Desde: ${v.estacion_inicio_nombre || '—'}<br>Tiempo: ${mins} min`);
+  puntos.push({ v, lat, lng, esRespaldoEstacion });
 });
+
+const gruposPorCoordenada = {};
+puntos.forEach(p => {
+  const clave = `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`;
+  (gruposPorCoordenada[clave] = gruposPorCoordenada[clave] || []).push(p);
+});
+
+const RADIO_OFFSET_GRADOS = 0.00018; // ~18-20m reales -- separa sin alejarse de la estación real
+Object.values(gruposPorCoordenada).forEach(grupo => {
+  if (grupo.length < 2) return;
+  grupo.forEach((p, i) => {
+    const angulo = (2 * Math.PI * i) / grupo.length;
+    p.lat += RADIO_OFFSET_GRADOS * Math.cos(angulo);
+    p.lng += RADIO_OFFSET_GRADOS * Math.sin(angulo);
+    p.compartida = true;
+  });
+});
+
+const marcadores = [];
+puntos.forEach(({ v, lat, lng, esRespaldoEstacion, compartida }) => {
+  const mins = minutosTranscurridos(v.fecha_inicio);
+  const estado = estadoPorMinutos(mins);
+  const marker = L.marker([lat, lng], { icon: icono(COLOR_POR_ESTADO[estado]) }).addTo(map)
+    .bindPopup(`<strong>${v.bicicleta_codigo}</strong><br>${v.ciclista_nombre || '—'}<br>Desde: ${v.estacion_inicio_nombre || '—'}<br>Tiempo: ${mins} min` +
+      (esRespaldoEstacion ? '<br><em>Posición aproximada (sin GPS propio, se usó la estación de inicio)</em>' : '') +
+      (compartida ? '<br><em>Otra bicicleta activa comparte esta misma estación -- posición separada levemente para que ambas se vean.</em>' : ''));
+  marcadores.push({ marker, fechaInicio: v.fecha_inicio, estado });
+});
+
+function aplicarFiltro() {
+  const activos = new Set(
+    Array.from(document.querySelectorAll('.filtro-estado-viaje:checked')).map(cb => cb.value)
+  );
+  marcadores.forEach(m => {
+    const visible = activos.has(m.estado);
+    if (visible && !map.hasLayer(m.marker)) m.marker.addTo(map);
+    if (!visible && map.hasLayer(m.marker)) map.removeLayer(m.marker);
+  });
+  document.querySelectorAll('.fila-viaje-seguimiento').forEach(fila => {
+    const mins = minutosTranscurridos(fila.dataset.inicio);
+    fila.style.display = activos.has(estadoPorMinutos(mins)) ? '' : 'none';
+  });
+}
+document.querySelectorAll('.filtro-estado-viaje').forEach(cb => cb.addEventListener('change', aplicarFiltro));
+
+const ETIQUETA_ALERTA = {
+  celeste: '<span class="badge badge-blue">Normal</span>',
+  amarillo: '<span class="badge badge-yellow">Próximo a vencer</span>',
+  rojo: '<span class="badge badge-red">120 min o más</span>',
+};
 
 function actualizarTiempos() {
   document.querySelectorAll('.tiempo-transcurrido').forEach(el => {
-    const inicio = new Date(el.dataset.inicio);
-    let mins = Math.max(0, Math.floor((Date.now() - inicio) / 60000));
+    const mins = minutosTranscurridos(el.dataset.inicio);
     const horas = Math.floor(mins / 60);
     const resto = mins % 60;
     el.textContent = horas > 0 ? `${horas} h ${resto} min` : `${mins} min`;
-    el.style.color = mins > 120 ? '#EF4444' : 'var(--text)';
+    el.style.color = mins >= LIMITE_ALERTA_MIN ? '#EF4444' : mins >= LIMITE_PROXIMO_MIN ? '#F59E0B' : 'var(--text)';
   });
   document.querySelectorAll('.celda-alerta').forEach(el => {
-    const inicio = new Date(el.dataset.inicio);
-    const mins = Math.max(0, Math.floor((Date.now() - inicio) / 60000));
-    el.innerHTML = mins > 120
-      ? '<span class="badge badge-red">Supera 120 min</span>'
-      : '<span class="badge badge-gray">Normal</span>';
+    const mins = minutosTranscurridos(el.dataset.inicio);
+    el.innerHTML = ETIQUETA_ALERTA[estadoPorMinutos(mins)];
   });
+  // Los marcadores tambien recolorean con el tiempo real -- un viaje que
+  // sigue abierto puede cruzar de celeste a amarillo a rojo mientras
+  // Vigilancia sigue con la pantalla abierta, sin necesidad de recargar.
+  marcadores.forEach(m => {
+    const mins = minutosTranscurridos(m.fechaInicio);
+    const estado = estadoPorMinutos(mins);
+    if (estado !== m.estado) {
+      m.estado = estado;
+      m.marker.setIcon(icono(COLOR_POR_ESTADO[estado]));
+    }
+  });
+  aplicarFiltro();
 }
 actualizarTiempos();
 setInterval(actualizarTiempos, 30000);
