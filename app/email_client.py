@@ -225,6 +225,12 @@ def _enviar_correo(destinatario: str, asunto: str, texto_plano: str, html_body: 
             server.starttls()
             server.login(settings.smtp_user, settings.smtp_app_password)
             server.send_message(msg)
+        # Log de exito real, no solo de fallo (ver docs/HOJA_DE_RUTA.md,
+        # seccion 109): desde que enviar_notificacion() se dispara en un
+        # hilo en segundo plano (notificaciones_repo.notificar_usuario), el
+        # handler que la llamo ya termino y no puede saber si el correo de
+        # verdad salio -- este log es la unica traza real que queda.
+        logger.info("Correo enviado a %s: %s", destinatario, asunto)
         return True
     except Exception as e:
         # Un True acá solo significa que el relay ACEPTÓ el mensaje (250 OK),

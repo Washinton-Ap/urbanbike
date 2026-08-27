@@ -12,6 +12,7 @@ se asigna una orden nueva) -- nunca los dos a la vez.
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timezone
 
 from app.db.pocketbase import filter_literal, get_admin_client
@@ -163,7 +164,22 @@ def notificar_usuario(pb, usuario_id: str, *, tipo: str, titulo: str, mensaje: s
     nombre/email desde PocketBase `users` -- así ciclista.py/empleado.py
     no repiten esa resolución en cada disparador. Best-effort de punta a
     punta: ni la campana ni el correo deben poder tumbar el flujo real
-    (pago, inspección, devolución) que los dispara."""
+    (pago, inspección, devolución) que los dispara.
+
+    El envío del correo (punto 1.14 del Plan V3, ver docs/HOJA_DE_RUTA.md
+    sección 109/110) se dispara en un hilo aparte, sin esperarlo: medido
+    en real, el handshake SMTP contra Brevo tarda 7-9s de punta a punta
+    (mayormente esperando el saludo inicial del servidor, no la conexión
+    TCP en sí, que es instantánea) -- bloqueaba el único event loop de
+    FastAPI entero ese tiempo, para CUALQUIER usuario de la app, cada vez
+    que se disparaba un correo en cualquier parte del sistema (viaje
+    iniciado, devolución validada, pago aprobado -- no solo transferencia).
+    El correo real sigue llegando igual, solo que unos segundos después de
+    que el ciclista/empleado ya recibió su respuesta -- ver
+    email_client.py:_enviar_correo(), que ahora deja un log real de éxito
+    (antes solo lo hacía en caso de fallo) como única traza de que sí
+    salió, ya que quien llamó a esta función ya terminó para cuando el
+    envío real se resuelve."""
     if not usuario_id:
         return
     try:
@@ -177,7 +193,10 @@ def notificar_usuario(pb, usuario_id: str, *, tipo: str, titulo: str, mensaje: s
         nombre = usuario.get("name") or email
         if email:
             from app.email_client import enviar_notificacion
-            enviar_notificacion(email, nombre, titulo, mensaje)
+            threading.Thread(
+                target=enviar_notificacion, args=(email, nombre, titulo, mensaje),
+                daemon=True,
+            ).start()
     except Exception:
         pass
 

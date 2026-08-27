@@ -8483,3 +8483,176 @@ mocks):
 terminar (no hay endpoint de auto-borrado de cuenta en la app).
 
 **Estado: RESUELTO.**
+
+---
+
+## 109. Plan V3, Prioridad 1 -- 1.14: diagnóstico de la lentitud real en confirmación de pagos
+
+**Encargo explícito de Washington: diagnosticar con evidencia real, no "hacerlo más rápido" a
+ciegas.** Se instrumentó temporalmente el código real con medición de tiempos (`time.perf_counter()`
+alrededor de cada llamada bloqueante), se corrieron ciclos reales completos de pago (alquilar,
+devolver, pagar, confirmar) contra el servidor real, se leyeron los tiempos reales, y **toda la
+instrumentación se quitó** antes de cerrar el punto -- no queda código de diagnóstico en el árbol.
+
+### Hallazgo real: no es un problema de "transferencia" -- es un problema de correo síncrono, en toda la app
+
+Medido con Playwright/HTTP reales sobre el servidor real, ciclos completos con cuentas reales
+(`wacho@urbanbike.com`, `empleado@urbanbike.com`):
+
+| Acción medida | Tiempo real total |
+|---|---|
+| `aprobar-transferencia` (transferencia) | **7 543 ms** |
+| `confirmar-efectivo` (efectivo) | **7 708 -- 8 908 ms** (4 corridas reales distintas) |
+
+**La transferencia NO es más lenta que el efectivo** -- ambas rutas comparten exactamente el mismo
+cuello de botella. Desglose real por llamada dentro de `aprobar-transferencia`:
+
+| Paso | Tiempo real |
+|---|---|
+| `pb.get_record()` (leer el pago) | 3.8 ms |
+| `pb.update_record()` (marcar pagado) | 8.3 ms |
+| `registrar_auditoria()` | 13.0 ms |
+| **`_notificar_pago_aprobado()`** | **7 542.9 ms** |
+
+Bajando un nivel más dentro de `_notificar_pago_aprobado()` -> `notificaciones_repo.notificar_usuario()`:
+
+| Sub-paso | Tiempo real (4 corridas) |
+|---|---|
+| Crear la notificación de campana (`create_record`) | 2.2 -- 3.6 ms |
+| Leer el usuario destinatario (`get_record`) | 2.0 -- 3.7 ms |
+| **`enviar_notificacion()` (correo real por SMTP)** | **7 514.9 -- 8 666.7 ms** |
+
+### Causa real, confirmada con medición directa del handshake SMTP
+
+`app/email_client.py` abre una conexión real `smtplib.SMTP(...)` a `smtp-relay.brevo.com:587`,
+hace `STARTTLS` + `login` + `send_message`, **de forma síncrona, dentro del propio handler `async
+def` de la ruta** -- sin `run_in_threadpool` ni tarea en segundo plano. Se midió cada fase del
+protocolo SMTP real por separado:
+
+| Fase SMTP | Tiempo real |
+|---|---|
+| Conexión TCP cruda (`socket.create_connection`, sin smtplib) | **9 -- 10 ms** (rápida) |
+| `smtplib.SMTP()` (conectar + leer el saludo "220") | **4 217 ms** |
+| `EHLO` (antes de TLS) | 235 ms |
+| `STARTTLS` | 406 ms |
+| `EHLO` (después de TLS) | 247 ms |
+| `LOGIN` | 782 ms |
+| `QUIT` | 189 ms |
+
+La conexión TCP en sí es instantánea (10ms) -- la resolución DNS de `smtp-relay.brevo.com` solo
+devuelve una IP real (IPv4), así que se descartó la teoría de un fallback IPv6 roto. El tiempo real
+se pierde específicamente esperando el saludo SMTP inicial del servidor (4.2s) y, en menor medida,
+en cada comando posterior (~200-800ms cada uno) -- compatible con inspección de tráfico saliente por
+software de seguridad local (firewall/antivirus) en esta máquina, o con latencia real hacia el relay
+de Brevo desde esta red. No se pudo aislar la causa exacta sin acceso a esa capa de red/seguridad.
+
+### Por qué se siente específicamente en "transferencia" (según el compañero) sin serlo en el código
+
+`enviar_notificacion()` se dispara desde **múltiples puntos** del flujo (viaje iniciado, devolución
+validada, pago aprobado -- cualquier método), no solo transferencia -- las 18 notificaciones reales
+generadas durante las 4 pruebas de este punto lo confirman. La hipótesis más probable: la
+verificación de una transferencia es el único de los 3 métodos de pago que Operación revisa como un
+paso deliberado y separado ("entro a ver los comprobantes pendientes, reviso, apruebo") -- el
+retraso de ~7-8s ahí interrumpe un flujo de atención activa, mientras que en efectivo/tarjeta (pago
+inmediato, cara a cara con el ciclista) la misma demora puede pasar más desapercibida o confundirse
+con "el sistema está pensando". El problema real, sin embargo, es **exactamente el mismo en los 3
+métodos** -- y además **bloquea el único hilo del event loop de FastAPI** mientras dura: cualquier
+otro usuario de la app (ciclistas, otros empleados) queda esperando esos mismos 7-9 segundos por
+cada correo que se envía en cualquier parte del sistema.
+
+**Limpieza:** las 4 instrumentaciones temporales (`empleado.py` x2, `ciclista.py`,
+`notificaciones_repo.py`) se revirtieron por completo -- confirmado con `git diff` vacío en los 3
+archivos antes de continuar. Los 4 ciclos reales de prueba (viajes, pagos, notificaciones) se
+borraron; las 4 bicicletas usadas (`UB-004`, `UB-006`, `UB-007`, `UB-008`) quedaron con
+`estado="mantenimiento"` en el espejo de PocketBase tras `vig_devolver()` (diseño real: esperan
+inspección física) -- se completó la inspección real de las 4 (sin daños, mismo criterio que las
+devoluciones voluntarias que de verdad fueron) en vez de dejarlas a medias o parchear el espejo a
+mano; confirmado `disponible` en ClickHouse y PocketBase para las 4 al terminar.
+
+**Estado: DIAGNOSTICADO Y RESUELTO -- ver sección 110 para el fix real aplicado (envío de correo
+movido a segundo plano) y su evidencia antes/después.**
+
+---
+
+## 110. Plan V3, Prioridad 1 -- 1.14 (fix real): envío de correo movido a segundo plano
+
+Decisión de Washington tras leer el diagnóstico de la sección 109: **aplicar el fix ahora**, no
+dejarlo solo diagnosticado.
+
+**Cambio real** (dos archivos):
+- `app/db/notificaciones_repo.py` -- `notificar_usuario()` ya no llama a `enviar_notificacion()`
+  directo (bloqueante, dentro del propio handler `async def` de la ruta). Ahora la dispara en un
+  `threading.Thread(daemon=True)` y sigue de largo sin esperarla -- fire-and-forget real, no
+  `run_in_threadpool` (que sí se espera con `await`, solo libera el event loop para otras requests
+  pero seguiría bloqueando la respuesta de ESTA request) ni `BackgroundTasks` de FastAPI (habría
+  exigido enhebrar el objeto `BackgroundTasks` a través de docenas de call sites en
+  `ciclista.py`/`empleado.py`, mucho más invasivo para el mismo resultado). La creación de la
+  notificación de campana (`crear()`, ~2-4ms) se queda síncrona -- solo el correo, que es lo que de
+  verdad tarda segundos, se mueve a segundo plano.
+- `app/email_client.py` -- `_enviar_correo()` ahora deja un `logger.info` real en éxito (antes solo
+  registraba el fallo). Necesario porque, al ser fire-and-forget, quien llamó a la función ya
+  terminó (y respondió al usuario) para cuando el envío real se resuelve -- sin este log no quedaría
+  ninguna traza real de que el correo sí salió.
+
+**Alcance deliberadamente acotado a lo que Washington pidió** (`enviar_notificacion()`): no se tocó
+`enviar_codigo_verificacion()` ni `enviar_codigo_restablecimiento()` (registro/restablecer
+contraseña) -- corren por otro camino del `email_client.py`, con otra consideración de UX (ahí sí
+puede tener sentido que el usuario espere confirmación de que el código se envió). Quedan fuera de
+este punto a propósito, no por descuido.
+
+### Prueba real de punta a punta -- antes y después, mismo servidor, mismo tipo de ciclo real
+
+Medido con el código real revertido temporalmente al estado ANTES del fix (`git checkout` de los 2
+archivos), servidor real reiniciado, un ciclo real completo (alquilar, devolver, pagar en efectivo,
+confirmar) -- y después reaplicado el fix, servidor real reiniciado de nuevo, mismo ciclo repetido
+tres veces más para confirmar que no fue un dato suelto:
+
+| Corrida | Tiempo real de `confirmar-efectivo` |
+|---|---|
+| **ANTES** del fix | **8 433 ms** |
+| **DESPUÉS** del fix (corrida 1) | **84 ms** |
+| **DESPUÉS** del fix (corrida 2) | **91 ms** |
+| **DESPUÉS** del fix (corrida 3) | **93 ms** |
+
+**~100x más rápido** (de 8.4 segundos a ~90 milisegundos) -- la respuesta ya no espera nada de SMTP,
+solo las llamadas reales a PocketBase (lectura/escritura del pago, auditoría), que ya eran rápidas
+desde el principio (sección 109: 3-13ms cada una).
+
+**El correo real sigue llegando, confirmado con evidencia real (no asumido):** se agregó
+temporalmente un `print(..., flush=True)` justo después del `logger.info` de éxito (removido antes
+de cerrar el punto -- no queda en el árbol), se corrió un ciclo real completo con las 4
+notificaciones que dispara (`viaje_iniciado`, `pago_pendiente`, `devolucion_validada`,
+`pago_aprobado`), y se esperó con el servidor real corriendo. Resultado real en el log del servidor,
+varios segundos después de que la respuesta HTTP ya había vuelto (`confirmar-efectivo` en 93ms):
+
+```
+DIAG_TEMP correo real ENVIADO a wacho@urbanbike.com asunto: Viaje iniciado — UrbanBike
+DIAG_TEMP correo real ENVIADO a wacho@urbanbike.com asunto: Tienes un pago pendiente — UrbanBike
+DIAG_TEMP correo real ENVIADO a wacho@urbanbike.com asunto: Devolución confirmada — UrbanBike
+DIAG_TEMP correo real ENVIADO a wacho@urbanbike.com asunto: Pago aprobado — UrbanBike
+```
+
+Los 4 correos reales de ese ciclo llegaron a través del relay real de Brevo (250 OK real, no
+simulado) -- el usuario ya tenía su respuesta hacía varios segundos cuando el último terminó de
+enviarse.
+
+**Nota de proceso real:** la primera vez que se intentó verificar esto, el log no mostró nada -- ni
+éxito ni error -- durante más de 10s de espera real. Causa real encontrada: `print()` sin
+`flush=True` queda en el buffer de bloque de Python cuando `stdout` no es una terminal (redirigido a
+archivo, como en estos servidores de prueba) -- no es que el correo no se enviara, es que la
+evidencia no se estaba escribiendo a disco todavía. Corregido agregando `flush=True` al `print()` de
+diagnóstico (nunca al `logger.info` real, que sí se queda en el código -- los `Handler` de
+`logging` sí hacen flush por su cuenta en cada `emit()`).
+
+**Limpieza:** los 4 ciclos reales de prueba (1 antes + 3 después) se borraron igual que en la
+sección 109 -- viajes, pagos y notificaciones reales eliminados, las 4 bicicletas usadas
+(`UB-004`, `UB-006`, `UB-007`, `UB-008`) llevadas a través de una inspección real (sin daños) para
+que ClickHouse y el espejo de PocketBase quedaran consistentes en `disponible`, confirmado en ambas
+bases al terminar. **Aviso honesto:** al filtrar notificaciones de prueba por fecha para borrarlas,
+2 notificaciones sueltas de `wacho@urbanbike.com` de más temprano en esta misma sesión (no de este
+ciclo específico) quedaron incluidas en el filtro y se borraron también -- mismo tipo de dato de
+prueba de la cuenta de pruebas de siempre, sin impacto real, pero se documenta con honestidad en vez
+de omitirlo.
+
+**Estado: RESUELTO.** Fix real aplicado y verificado con evidencia real de punta a punta -- tiempo
+de respuesta y entrega de correo, no solo uno de los dos.
