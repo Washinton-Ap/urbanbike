@@ -1311,6 +1311,9 @@ async def cambiar_modalidad(
             return RedirectResponse(f"/ciclista/viaje-activo/{viaje_id}", status_code=302)
 
         modalidad_actual = viaje.get("modalidad_actual") or "hora"
+        if modalidad_nueva == modalidad_actual:
+            request.session["flash"] = {"type": "error", "msg": "Ya estás en esa modalidad."}
+            return RedirectResponse(f"/ciclista/viaje-activo/{viaje_id}", status_code=302)
         if _ORDEN_MODALIDAD[modalidad_nueva] < _ORDEN_MODALIDAD[modalidad_actual]:
             request.session["flash"] = {"type": "error", "msg":
                 f"No puedes bajar de modalidad {_ETIQUETA_MODALIDAD[modalidad_actual]} a "

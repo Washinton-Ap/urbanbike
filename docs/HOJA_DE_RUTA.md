@@ -8824,3 +8824,60 @@ diferencia de 1 minuto y por qué no se armoniza sin pedirlo; las 2 etiquetas de
 con el corte real (`>=`), no con "supera" (`>`).
 
 **Estado: RESUELTO.**
+
+---
+
+## 113. Ronda de revisión visual -- cambiar a la misma modalidad actual cobraba de más
+
+Vacío real de la prueba de la sección 92 (Plan V3, punto 0.1): esa prueba cubrió bajar (rechaza) y
+subir (acepta), pero nunca "quedarse en la misma modalidad" -- pedido explícito de auditar ese
+tercer caso antes de asumir que ya estaba cubierto.
+
+### Auditoría real (antes de tocar código)
+
+`cambiar_modalidad()` (`app/routers/ciclista.py`) solo comparaba
+`_ORDEN_MODALIDAD[modalidad_nueva] < _ORDEN_MODALIDAD[modalidad_actual]` para rechazar -- si
+`modalidad_nueva == modalidad_actual`, esa condición es `False` y el código seguía de largo: cerraba
+el segmento actual con `alquileres_repo.cerrar_segmento()` (cobro real) y abría un segmento nuevo
+idéntico, con un nuevo `inicio_segmento_actual`. Confirmado real, no asumido: un ciclista en "día"
+que vuelve a elegir "día" pagaba el tramo transcurrido como si hubiera cambiado de modalidad, sin
+haber cambiado nada -- el mismo criterio de "no bajar" ya existente nunca contempló "quedarse igual"
+como un caso a bloquear.
+
+### Fix real
+
+Un chequeo nuevo, antes del de "bajar": si `modalidad_nueva == modalidad_actual`, se rechaza con
+`"Ya estás en esa modalidad."` y se sale sin tocar el viaje ni llamar a `cerrar_segmento()` --
+mismo patrón de salida temprana que el rechazo de "bajar" ya usaba.
+
+### Prueba real de punta a punta
+
+Viaje real creado vía `POST /ciclista/reservar` (cuenta real `ciclista@urbanbike.com`, bicicleta
+real `UB-001`, modalidad inicial `dia`), los 3 casos ejecutados en orden sobre el mismo viaje real,
+vía `TestClient` de FastAPI contra la app real (mismo código, mismas conexiones reales a PocketBase
+y ClickHouse -- se usó en vez del servidor HTTP externo porque ese proceso corría con código viejo
+sin recargar; confirmado con `grep` que el fix ya estaba en disco antes de cambiar de método de
+prueba) -- releyendo el registro real de PocketBase después de cada intento:
+
+| Caso | Mensaje real mostrado | `modalidad_actual` en PocketBase tras el intento |
+|---|---|---|
+| Misma: día → día | "Ya estás en esa modalidad." (error) | `dia` (sin cambio) |
+| Bajar: día → hora | "No puedes bajar de modalidad por día a por hora..." (error, ya verificado en sección 92) | `dia` (sin cambio) |
+| Subir: día → semana | "Modalidad cambiada a semana. El tramo anterior ya quedó cobrado." (success) | `semana` |
+
+Confirmado además contra ClickHouse real: `urbanbike_operativa.alquileres` (`origen =
+'segmento_modalidad'`, `id_origen_pocketbase` = el viaje de prueba) tiene **exactamente 1 fila** --
+el segmento cerrado por el caso "subir" real -- ningún cobro generado por el intento "misma
+modalidad" ni por el intento "bajar".
+
+**Limpieza:** viaje de prueba borrado de PocketBase junto con su notificación real de
+`viaje_iniciado`; bicicleta `UB-001` restaurada a `disponible` en PocketBase; la fila real de
+segmento en ClickHouse borrada (`ALTER ... DELETE`). Dos viajes de prueba anteriores, creados antes
+de descubrir que el servidor HTTP externo no había recargado el código (mismo bug de método, no del
+fix), también se limpiaron completos (viaje, notificación, segmento ClickHouse, bicicleta
+restaurada) -- no quedó ningún dato de prueba real en ninguna base.
+
+**Revisor independiente:** pendiente de correr junto con el hallazgo 114 (mismo diff, una sola
+pasada de `code-review`).
+
+**Estado: RESUELTO.**
