@@ -1963,7 +1963,7 @@ async def comprobante_pago_pdf(request: Request, pago_id: str):
 
 # ── Historial ─────────────────────────────────────────────────────────────────
 
-def _historial_data(ciclista_id: str, q: str = "", estado: str = "") -> dict:
+def _historial_data(ciclista_id: str, q: str = "", estado: str = "", ciclista_email: str = "") -> dict:
     """Datos del historial de UN ciclista -- ciclista_id siempre debe venir
     de request.state.user (la sesión autenticada), nunca de un parámetro
     de la URL/form, para no exponer el historial de otro ciclista (dato
@@ -2019,9 +2019,24 @@ def _historial_data(ciclista_id: str, q: str = "", estado: str = "") -> dict:
     # que el enlace de la plantilla resuelva contra la factura real, no
     # solo contra el monto/código sueltos de siempre.
     try:
+        # Dueño real en ClickHouse (punto 2.11-bis, hallazgo real de la
+        # ronda de revisión visual): antes esta consulta unía el alquiler
+        # SOLO por id_origen_pocketbase (mapa_ids), sin verificar que su
+        # id_usuario perteneciera de verdad a este ciclista. Con datos de
+        # prueba contaminados (un alquiler 'migracion_historica' cuyo
+        # id_usuario apuntaba a otro ciclista real, encontrado el
+        # 27-ago-2026 en la cuenta de ejemplo ciclista01@urbanbike.com) el
+        # historial mostraba igual el enlace "Descargar factura", que
+        # luego fallaba con "Factura no encontrada" en factura_pdf()
+        # (que SÍ exige la propiedad real) -- o peor, si el id_usuario
+        # resuelto hubiera coincidido por accidente, habría mostrado la
+        # factura real de OTRO ciclista. id_usuario acá es la misma
+        # resolución real que usa factura_pdf(), para que "aparece el
+        # enlace" y "el enlace funciona" sean siempre la misma condición.
+        id_usuario = membresias_repo.resolver_id_usuario_por_email(ciclista_email) if ciclista_email else None
         mapa_ids = ch.mapa_alquiler_por_viaje_pocketbase()
         ids_alquiler = [mapa_ids[v["id"]] for v in viajes if v["id"] in mapa_ids]
-        if ids_alquiler:
+        if ids_alquiler and id_usuario:
             filas = ch.query("""
                 SELECT a.id AS id, a.codigo AS codigo, a.total AS total,
                        e.fecha AS fecha_facturacion, f.id AS id_factura
@@ -2030,8 +2045,8 @@ def _historial_data(ciclista_id: str, q: str = "", estado: str = "") -> dict:
                     ON e.id_alquiler = a.id AND e.estado_destino = 'facturado'
                 LEFT JOIN urbanbike_operativa.facturas f FINAL
                     ON f.id_alquiler = a.id
-                WHERE a.estado = 'facturado' AND a.id IN %(ids)s
-            """, {"ids": ids_alquiler})
+                WHERE a.estado = 'facturado' AND a.id IN %(ids)s AND a.id_usuario = %(id_usuario)s
+            """, {"ids": ids_alquiler, "id_usuario": id_usuario})
             # Bug real encontrado (ver docs/HOJA_DE_RUTA.md): un LEFT JOIN sin
             # match en ClickHouse no devuelve NULL/None para una columna UUID
             # no-Nullable -- devuelve el UUID por defecto (todo ceros), que en
@@ -2116,7 +2131,7 @@ def _viaje_detalle_data(viaje_id: str, user_id: str) -> dict | None:
 async def historial(request: Request, q: str = "", estado: str = ""):
     user = getattr(request.state, "user", {})
     flash = request.session.pop("flash", None)
-    d = _historial_data(user.get("id", ""), q, estado)
+    d = _historial_data(user.get("id", ""), q, estado, user.get("email", ""))
     return templates.TemplateResponse(request, "ciclista/historial.html", _ctx(request,
         title="Mis Viajes", flash=flash, viajes=d["viajes"],
         estaciones_nombres=d["estaciones_nombres"],
@@ -2184,7 +2199,7 @@ def _historial_columnas_filas(d: dict) -> tuple[list[ColumnaReporte], list[list]
 @router.get("/historial/excel")
 async def historial_excel(request: Request, q: str = "", estado: str = ""):
     user = getattr(request.state, "user", {})
-    d = _historial_data(user.get("id", ""), q, estado)
+    d = _historial_data(user.get("id", ""), q, estado, user.get("email", ""))
     columnas, filas = _historial_columnas_filas(d)
     fila_total = [f"Total: {len(d['viajes'])} viajes"] + [None] * 6 + [sum(f[7] for f in filas), None, None]
     return generar_excel_reporte(
@@ -2201,7 +2216,7 @@ async def historial_excel(request: Request, q: str = "", estado: str = ""):
 @router.get("/historial/pdf")
 async def historial_pdf(request: Request, q: str = "", estado: str = ""):
     user = getattr(request.state, "user", {})
-    d = _historial_data(user.get("id", ""), q, estado)
+    d = _historial_data(user.get("id", ""), q, estado, user.get("email", ""))
     columnas, filas = _historial_columnas_filas(d)
     fila_total = [f"Total: {len(d['viajes'])} viajes"] + [None] * 6 + [sum(f[7] for f in filas), None, None]
     return generar_pdf_reporte(
