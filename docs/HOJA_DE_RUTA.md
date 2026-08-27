@@ -8434,3 +8434,22 @@ sentido, ni siquiera para una bicicleta ya existente.
 en ClickHouse después.
 
 **Estado: RESUELTO.**
+
+---
+
+## 107. Plan V3, Prioridad 1 -- 1.12: ícono de accesibilidad
+
+**Antes:** el botón que abre el panel de usabilidad (`#a11y-toggle`, `base.html`) usaba el ícono
+clásico de "engranaje/configuración" -- el mismo símbolo que cualquier ajuste genérico del sistema,
+sin relación visual con accesibilidad.
+
+**Cambio:** reemplazado por una silueta de persona (círculo + hombros, mismo estilo Feather ya usado
+en el resto del sistema -- trazo, `currentColor`, sin relleno) -- el símbolo que de verdad se asocia
+a "usuario/persona/usabilidad" en vez de "configuración general". Sin cambios de comportamiento, solo
+el `<svg>` del botón.
+
+**Prueba real:** confirmado en el HTML real servido por la app (cuenta real `gerente@urbanbike.com`,
+`GET /gerente/dashboard`) que el botón `#a11y-toggle` renderiza el nuevo path (persona), no el
+engranaje anterior.
+
+**Estado: RESUELTO.**
