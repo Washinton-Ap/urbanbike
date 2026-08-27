@@ -14,6 +14,13 @@ class Settings:
     clickhouse_db:        str = os.getenv("CLICKHOUSE_DB",        "urbanbike")
 
     pb_url:               str = os.getenv("PB_URL",               "http://localhost:8090")
+    # Solo para pruebas manuales con tunel (ej. cloudflared): cuando el
+    # tunel expone unicamente el puerto de FastAPI (8002) y no el de
+    # PocketBase (8090), no hay forma de derivar una URL publica valida
+    # para archivos de PocketBase a partir del Host de la request. Si se
+    # define, pb_public_base() (app/templating.py) la usa tal cual en vez
+    # de derivar del Host; si queda vacia (caso normal), no cambia nada.
+    pb_public_url:        str = os.getenv("PB_PUBLIC_URL",        "")
     pb_superuser_email:   str = os.getenv("PB_SUPERUSER_EMAIL",   "")
     pb_superuser_password:str = os.getenv("PB_SUPERUSER_PASSWORD","")
 

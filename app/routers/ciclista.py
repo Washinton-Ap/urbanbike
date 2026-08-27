@@ -20,7 +20,7 @@ from app.reportes.comun import ColumnaReporte
 from app.reportes.excel import generar_excel_reporte
 from app.reportes.factura import DatosFactura, LineaFactura, generar_factura_pdf
 from app.reportes.pdf import generar_pdf_reporte
-from app.templating import file_url, templates
+from app.templating import file_url, pb_public_base, templates
 
 router = APIRouter(prefix="/ciclista", tags=["ciclista"])
 
@@ -135,7 +135,7 @@ def _bicicletas_exclusivas_nuevas() -> dict[str, date]:
 # ahora -- requiere decidir si se espeja también en sentido inverso o se
 # migra el flujo de reserva del ciclista a ClickHouse (la migración ya
 # estaba pendiente de antes, ver bicicletas_repo.py).
-def _catalogo_agrupado(tipo_membresia: str = "casual", bicicletas_pb: list[dict] | None = None) -> list[dict]:
+def _catalogo_agrupado(tipo_membresia: str = "casual", bicicletas_pb: list[dict] | None = None, request=None) -> list[dict]:
     """Catálogo visible al ciclista (punto 7, "el producto del sistema"):
     bicicletas agrupadas por categoría con disponibilidad EN VIVO (cuántas
     hay disponibles ahora mismo, dato real de ClickHouse) y la tarifa por
@@ -192,7 +192,7 @@ def _catalogo_agrupado(tipo_membresia: str = "casual", bicicletas_pb: list[dict]
         foto_codigo = f["foto_codigo_disponible"] or f["foto_codigo_cualquiera"]
         pb_bici = pb_por_codigo.get(foto_codigo) or {}
         pb_id = pb_bici.get("id")
-        foto_url = file_url("bicicletas", pb_id, pb_bici.get("foto", ""), "400x300") if pb_id else ""
+        foto_url = file_url("bicicletas", pb_id, pb_bici.get("foto", ""), "400x300", request=request) if pb_id else ""
         catalogo.append({
             "nombre": f["nombre"], "descripcion": f["descripcion"],
             "es_premium": bool(f["es_premium"]),
@@ -206,7 +206,7 @@ def _catalogo_agrupado(tipo_membresia: str = "casual", bicicletas_pb: list[dict]
     return catalogo
 
 
-def _catalogo_bicicletas(pb, bicicletas_pb: list[dict], tipo_membresia: str = "casual") -> list[dict]:
+def _catalogo_bicicletas(pb, bicicletas_pb: list[dict], tipo_membresia: str = "casual", request=None) -> list[dict]:
     """Catalogo real para tarjeta_bicicleta.html: bicicletas + modelo + marca +
     categoria de urbanbike_operativa, con el precio por dia de `tarifas`.
 
@@ -269,7 +269,7 @@ def _catalogo_bicicletas(pb, bicicletas_pb: list[dict], tipo_membresia: str = "c
         codigo = f["codigo"]
         pb_bici = pb_por_codigo.get(codigo) or {}
         pb_id = pb_bici.get("id")
-        foto_url = file_url("bicicletas", pb_id, pb_bici.get("foto", ""), "400x300") if pb_id else ""
+        foto_url = file_url("bicicletas", pb_id, pb_bici.get("foto", ""), "400x300", request=request) if pb_id else ""
         # modelos_bicicleta.nombre ya incluye la marca ("Trek FX 3 Disc");
         # tarjeta_bicicleta.html arma "{{ marca }} {{ modelo }}", así que aquí
         # se pasa el modelo sin el prefijo de marca para no duplicarla.
@@ -511,7 +511,7 @@ async def catalogo(request: Request):
         bicicletas_pb = []
     return templates.TemplateResponse(request, "ciclista/catalogo.html", _ctx(request,
         title="Catálogo de Bicicletas", flash=flash,
-        categorias=_catalogo_agrupado(tipo_membresia, bicicletas_pb),
+        categorias=_catalogo_agrupado(tipo_membresia, bicicletas_pb, request=request),
         es_member=(tipo_membresia == "member"),
     ))
 
@@ -557,7 +557,7 @@ async def alquilar(request: Request):
 
     try:
         tipo_membresia = membresias_repo.tipo_membresia_real(user.get("email", ""))
-        catalogo_bicicletas = _catalogo_bicicletas(pb, todas_bicicletas_pb, tipo_membresia)
+        catalogo_bicicletas = _catalogo_bicicletas(pb, todas_bicicletas_pb, tipo_membresia, request=request)
         # El catalogo (esta pantalla) solo debe ofrecer lo que de verdad se
         # puede alquilar ahora mismo -- la ficha de detalle (bicicleta_detalle
         # mas abajo) sigue sin filtrar, sigue accesible por enlace directo.
@@ -584,7 +584,7 @@ async def alquilar(request: Request):
         bicicletas=bicicletas, estaciones=estaciones,
         bicicletas_json=json.dumps(bicicletas),
         estaciones_json=json.dumps(estaciones),
-        pb_url=settings.pb_url,
+        pb_url=pb_public_base(request),
         catalogo_bicicletas=catalogo_bicicletas,
     ))
 
@@ -1092,7 +1092,7 @@ async def bicicleta_detalle(request: Request, bici_id: str):
     # asociado (no se fabrica nada en ese caso).
     catalogo_bici = None
     try:
-        catalogo = _catalogo_bicicletas(pb, [bici], tipo_membresia)
+        catalogo = _catalogo_bicicletas(pb, [bici], tipo_membresia, request=request)
         catalogo_bici = next((c for c in catalogo if c["codigo"] == bici.get("codigo")), None)
     except Exception:
         catalogo_bici = None
@@ -1105,7 +1105,7 @@ async def bicicleta_detalle(request: Request, bici_id: str):
         catalogo_bici=catalogo_bici,
         bloqueada_exclusiva=bool(catalogo_bici and catalogo_bici.get("bloqueada_exclusiva")),
         bloqueada_electrica=bool(catalogo_bici and catalogo_bici.get("bloqueada_electrica")),
-        pb_url=settings.pb_url,
+        pb_url=pb_public_base(request),
     ))
 
 

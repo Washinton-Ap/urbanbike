@@ -125,6 +125,15 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         request.state.user = user
 
+        # Declaración de uso del sistema: se re-exige en cada login (no solo
+        # la primera vez), así que vive en la sesión, no en el registro del
+        # usuario. Único punto de gate para los 6 roles -- evita repetir esta
+        # lógica en cada router. /auth/* y /static/* ya salieron por el
+        # return de PUBLIC_PREFIXES arriba, así que este redirect nunca
+        # atrapa /auth/logout, /auth/terminos ni los assets estáticos.
+        if request.session.get("terminos_pendientes"):
+            return RedirectResponse(f"/auth/terminos?next={path}", status_code=302)
+
         rol = user.get("rol_slug", "")
 
         if path.startswith(INVENTARIO_PREFIX):

@@ -125,6 +125,11 @@ async def login(
     }
     limpiar_revocacion(user["id"])
     request.session["user"] = user
+    # Declaracion de uso del sistema: se re-exige en CADA login (no solo la
+    # primera vez), asi que vive en la sesion -- AuthMiddleware redirige a
+    # /auth/terminos en la siguiente request mientras esta bandera siga
+    # activa, sin importar a donde apunte `safe_next` mas abajo.
+    request.session["terminos_pendientes"] = True
 
     registrar_auditoria(token, user["id"], user["name"], user["email"],
                         "login", "sistema", "Inicio de sesión", request,
@@ -132,6 +137,59 @@ async def login(
 
     # Seguridad: solo redirigir a rutas internas
     safe_next = next if next.startswith("/") else "/dashboard"
+    return RedirectResponse(safe_next, status_code=302)
+
+
+@router.get("/terminos", response_class=HTMLResponse)
+async def terminos_page(request: Request, next: str = "/dashboard"):
+    # No usa PUBLIC_PREFIXES para saltarse esto: /auth/terminos SI necesita
+    # sesion iniciada (a diferencia de /auth/login o /auth/registro), solo
+    # que AuthMiddleware no la exige aca porque todo "/auth/" queda fuera de
+    # su chequeo -- se valida a mano, igual que hace registro_page() arriba.
+    if not request.session.get("user"):
+        return RedirectResponse(f"/auth/login?next={next}", status_code=302)
+    safe_next = next if next.startswith("/") else "/dashboard"
+    return templates.TemplateResponse(request, "auth/terminos.html", {"next": safe_next})
+
+
+@router.post("/terminos")
+async def terminos_post(
+    request: Request,
+    terminos_aceptados: str = Form(""),
+    next: str = Form("/dashboard"),
+):
+    user = request.session.get("user")
+    if not user:
+        return RedirectResponse("/auth/login", status_code=302)
+
+    safe_next = next if next.startswith("/") else "/dashboard"
+
+    if not terminos_aceptados:
+        # Defensa real, no solo del boton deshabilitado del lado del cliente
+        # (ver auth/terminos.html): un POST directo sin el checkbox no limpia
+        # la bandera, asi que AuthMiddleware lo vuelve a mandar aca.
+        return templates.TemplateResponse(request, "auth/terminos.html", {
+            "next": safe_next,
+            "error": "Debes marcar la casilla para continuar.",
+        }, status_code=422)
+
+    ahora = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        pb = get_admin_client()
+        await run_in_threadpool(pb.update_record, "users", user["id"], {
+            "terminos_aceptados_en": ahora,
+        })
+    except Exception:
+        # Best-effort, igual que registrar_auditoria(): la bandera de sesion
+        # (mas abajo) es el gate real -- si PocketBase esta caido un
+        # instante, no tiene sentido atrapar al usuario sin poder avanzar
+        # por no poder escribir un campo informativo.
+        pass
+
+    request.session.pop("terminos_pendientes", None)
+    registrar_auditoria(user.get("pb_token", ""), user["id"], user.get("name", ""), user.get("email", ""),
+                        "actualizar", "usuarios", "Aceptó la declaración de uso del sistema", request,
+                        usuario_rol=user.get("rol_nombre") or user.get("rol_slug", ""))
     return RedirectResponse(safe_next, status_code=302)
 
 
@@ -188,6 +246,7 @@ async def registro_post(
     telefono:      str = Form(...),
     password:      str = Form(...),
     password_conf: str = Form(...),
+    terminos_aceptados: str = Form(""),
 ):
     def error(msg: str, status_code: int = 422):
         return templates.TemplateResponse(request, "auth/registro.html", {
@@ -211,6 +270,11 @@ async def registro_post(
         return error("Las contraseñas no coinciden.")
     if len(password) < 8:
         return error("La contraseña debe tener al menos 8 caracteres.")
+    if not terminos_aceptados:
+        # Defensa real, no solo del lado del cliente (ver auth/registro.html,
+        # que ya deshabilita el submit hasta marcar el checkbox): un POST
+        # directo a esta ruta sin pasar por el modal no puede crear la cuenta.
+        return error("Debes aceptar la declaración de uso del sistema para continuar.")
 
     try:
         pb = get_admin_client()
@@ -237,6 +301,9 @@ async def registro_post(
             "rol":             rol_id,
             "activo":          True,
             "verified":        False,
+            # Hora del servidor, no del cliente (evita desfaces/manipulacion
+            # de reloj) -- momento real en que se marco y confirmo el checkbox.
+            "terminos_aceptados_en": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         })
     except PocketBaseError as e:
         # Bug real encontrado y corregido (ver docs/HOJA_DE_RUTA.md): el

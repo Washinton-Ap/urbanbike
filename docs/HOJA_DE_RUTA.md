@@ -7982,6 +7982,92 @@ navegador -- ver nota de cada uno).**
 
 ---
 
+## 100. Declaración de uso del sistema (aceptación de términos re-exigida en cada login)
+
+Esta pieza existía completa en el árbol de trabajo desde antes del corte de sesión mencionado en la
+sección 91 (que ya la nombraba de pasada como "ajena a ese cambio, en curso"), pero nunca tuvo su
+propia entrada en esta hoja de ruta -- quedó documentada recién ahora, no porque se haya construido
+hoy.
+
+**Qué hace:** exige que cada usuario (los 6 roles) lea y acepte una declaración de uso del sistema
+en **cada inicio de sesión** (no solo la primera vez) antes de poder usar cualquier pantalla, y
+también al registrarse.
+
+**Diseño:**
+- La aceptación vive en la **sesión** (`request.session["terminos_pendientes"] = True`, seteado en
+  `login()`), no en un campo permanente del usuario -- por eso se re-exige en cada login.
+  `AuthMiddleware` la revisa en cada request después del chequeo de `PUBLIC_PREFIXES`
+  (`/auth/*`, `/static/*`), así que `/auth/logout`, `/auth/terminos` y los assets estáticos nunca
+  quedan atrapados por el gate.
+- `GET/POST /auth/terminos` (`app/routers/auth.py`): la página muestra un `<dialog>` no-descartable
+  (sin botón de cerrar, sin click fuera, `cancel` interceptado para bloquear Esc) con el texto de
+  `componentes/terminos_texto.html`. Aceptar hace `POST` con `terminos_aceptados=1`, limpia la
+  bandera de sesión, guarda `terminos_aceptados_en` (informativo, best-effort, hora del servidor) en
+  PocketBase vía `etl/23_agregar_terminos_aceptados.py`, registra auditoría, y redirige a `next`
+  (la pantalla que el usuario intentaba ver antes de que el gate lo interceptara, no siempre
+  `/dashboard`).
+- El registro (`registro.html`) tiene el mismo modal, pero bloqueando el envío del formulario de
+  alta hasta marcar el checkbox -- doble defensa (cliente + servidor, `auth.py:registro_post`
+  rechaza un `POST` directo sin `terminos_aceptados`).
+
+**Evidencia de Washington (23-ago-2026, según su propio resumen):** probado E2E completo -- login y
+registro con el modal no-descartable en los 6 roles, logout confirmado sin quedar bloqueado, y los
+estáticos sirviendo con normalidad mientras el gate está activo.
+
+**Verificación adicional (26-ago-2026, Playwright real, Chromium, servidor `127.0.0.1:8020`, cuenta
+real `admin@urbanbike.com`, re-confirmando el mecanismo hoy sobre el estado actual del código, sin
+repetir los 6 roles que Washington ya cubrió):**
+
+| Caso | Resultado real |
+|---|---|
+| Login | Redirige a `/auth/terminos?next=/dashboard`, modal abierto |
+| `GET /static/css/main.css` con el gate activo (términos pendientes) | 200 -- confirma que `PUBLIC_PREFIXES` exime los estáticos antes de llegar al gate |
+| Tecla `Escape` con el modal abierto | El `<dialog>` sigue `open=True` -- no se puede saltar |
+| Navegar directo a `/admin/auditoria` sin aceptar (bypass) | Rebota a `/auth/terminos?next=/admin/auditoria` -- preserva el destino real, no solo `/dashboard` |
+| Aceptar (`terminos_aceptados=1`) | Redirige exactamente a `/admin/auditoria`, el destino real que se intentaba ver |
+| `GET /auth/logout` | Termina en `/auth/login`, sin quedar atrapado |
+| Login de nuevo, mismo usuario | Vuelve a `/auth/terminos?next=/dashboard` -- confirma que la aceptación no queda guardada de forma permanente, se re-exige cada vez tal como está diseñado |
+
+**Estado: RESUELTO.** Construido y probado E2E por Washington en los 6 roles (23-ago), mecanismo
+reverificado hoy sobre el código actual (26-ago).
+
+---
+
+## 101. `PB_PUBLIC_URL` -- soporte de túnel (cloudflared) para pruebas externas
+
+Mismo caso que la sección 100: pieza completa desde antes del corte, mencionada solo de pasada en
+otras secciones, sin entrada propia hasta ahora.
+
+**Qué hace:** cuando la app se expone a través de un túnel público (ej. `cloudflared`) que solo
+publica el puerto de FastAPI y no el de PocketBase, las URLs de imágenes/archivos servidas por
+PocketBase (`avatar_url()`, `file_url()`) dejaban de funcionar para cualquiera que no fuera la propia
+máquina de desarrollo, porque se armaban con `settings.pb_url` (`127.0.0.1:8090` en dev, o el nombre
+del contenedor Docker), un host que solo tiene sentido para llamadas servidor-a-servidor.
+
+**Diseño:** `pb_public_base(request=None)` (`app/templating.py`) deriva la URL pública de
+PocketBase del **Host real de la request** (`request.url.hostname`) en vez de `settings.pb_url`,
+manteniendo el puerto real de PocketBase (`settings.pb_url` solo aporta el puerto). Si `PB_PUBLIC_URL`
+está definida en `.env` (necesario cuando el túnel expone únicamente el puerto de FastAPI y no existe
+ningún host derivable de la request que sirva para PocketBase), se usa tal cual e ignora todo lo
+demás. `avatar_url()`/`file_url()` ganaron un parámetro `request` opcional (con un wrapper
+`@jinja2.pass_context` para inyectarlo automáticamente desde las plantillas); los call sites directos
+desde routers/repos que no tienen contexto de plantilla (`bicicletas_repo.fotos_por_codigo`,
+`gerente.py`, `empleado.py`, `ciclista.py`) ahora pasan `request` explícitamente.
+
+**Evidencia de Washington (23-ago-2026, según su propio resumen):** probado E2E.
+
+**Verificación adicional (26-ago-2026):** request HTTP real contra el servidor `127.0.0.1:8020` con
+el header `Host` falsificado a un dominio de túnel de prueba
+(`mi-tunel-de-prueba.trycloudflare.com`), sesión real autenticada (`empleado@urbanbike.com`). Las
+URLs de fotos de bicicleta en `/empleado/operacion/inventario` cambiaron de
+`http://127.0.0.1:8090/api/files/...` a `http://mi-tunel-de-prueba.trycloudflare.com:8090/api/files/...`
+-- confirma que el mecanismo deriva el host de la request y conserva el puerto real de PocketBase,
+tal como está diseñado.
+
+**Estado: RESUELTO.**
+
+---
+
 ## 102. Plan V3, Prioridad 1 -- Bloque 2: 1.4, 1.5 y 1.8 (código ya escrito, cerrado con evidencia real)
 
 Estos tres puntos ya tenían código completo en el árbol de trabajo (sin comitear) desde antes del

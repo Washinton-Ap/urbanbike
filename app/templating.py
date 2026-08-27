@@ -2,6 +2,9 @@
 
 import json
 from pathlib import Path
+from urllib.parse import urlsplit
+
+import jinja2
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
 
@@ -11,15 +14,50 @@ from app.middleware.csrf import get_csrf_token
 _BASE = Path(__file__).parent / "templates"
 
 
-def avatar_url(user) -> str:
-    """URL del archivo de avatar del usuario en PocketBase, o cadena vacía si no tiene."""
+def pb_public_base(request=None) -> str:
+    """Base URL de PocketBase tal como debe verla el navegador: usa el
+    host por el que llegó la petición (Host header, vía request.url), no
+    el host interno de PB_URL (127.0.0.1 en dev, o el nombre del
+    contenedor Docker en compose) -- ese host solo tiene sentido para
+    llamadas servidor-a-servidor (ver app/db/pocketbase.py), y rompe las
+    imágenes/archivos cuando se accede desde fuera de la máquina (ej. vía
+    túnel cloudflared), porque 127.0.0.1 en el navegador del visitante
+    apunta a su propio equipo. Mantiene el puerto real de PocketBase
+    (settings.pb_url).
+
+    Si PB_PUBLIC_URL está definida (ver app/config.py), se usa tal cual y
+    se ignora todo lo demás -- necesario cuando el túnel de pruebas solo
+    expone el puerto de FastAPI y no el de PocketBase, caso en el que no
+    existe ningún host derivable de la request que sirva."""
+    if settings.pb_public_url:
+        return settings.pb_public_url.rstrip("/")
+    pb = urlsplit(settings.pb_url)
+    if request is None:
+        return f"{pb.scheme}://{pb.netloc}"
+    host = request.url.hostname or pb.hostname
+    netloc = f"{host}:{pb.port}" if pb.port else host
+    return f"{request.url.scheme}://{netloc}"
+
+
+def avatar_url(user, request=None) -> str:
+    """URL del archivo de avatar del usuario en PocketBase, o cadena vacía si no tiene.
+    `request` es opcional a propósito: además de llamarse desde las plantillas
+    (donde `_avatar_url_jinja` lo inyecta solo desde el contexto de render),
+    se llama directo desde routers/repos sin acceso a la request -- ahí cae
+    al fallback de pb_public_base() (PB_PUBLIC_URL o settings.pb_url)."""
     if not user:
         return ""
     nombre = user.get("avatar", "") if isinstance(user, dict) else ""
     if not nombre:
         return ""
     uid = user.get("id", "") if isinstance(user, dict) else ""
-    return f"{settings.pb_url}/api/files/users/{uid}/{nombre}"
+    base = pb_public_base(request)
+    return f"{base}/api/files/users/{uid}/{nombre}"
+
+
+@jinja2.pass_context
+def _avatar_url_jinja(context, user) -> str:
+    return avatar_url(user, context.get("request"))
 
 
 _DASHBOARD_POR_ROL = {
@@ -39,14 +77,23 @@ def dashboard_url(user) -> str:
     return _DASHBOARD_POR_ROL.get(user.get("rol_slug", ""), "/dashboard")
 
 
-def file_url(collection: str, record_id: str, filename: str, thumb: str = "") -> str:
-    """URL de un archivo subido a una colección de PocketBase, o cadena vacía si no hay nombre."""
+def file_url(collection: str, record_id: str, filename: str, thumb: str = "", request=None) -> str:
+    """URL de un archivo subido a una colección de PocketBase, o cadena vacía si no hay nombre.
+    `request` opcional -- mismo motivo que en avatar_url(): se llama tanto
+    desde plantillas (contexto inyectado por `_file_url_jinja`) como directo
+    desde routers/bicicletas_repo.py sin request a mano."""
     if not filename or not record_id:
         return ""
-    url = f"{settings.pb_url}/api/files/{collection}/{record_id}/{filename}"
+    base = pb_public_base(request)
+    url = f"{base}/api/files/{collection}/{record_id}/{filename}"
     if thumb:
         url += f"?thumb={thumb}"
     return url
+
+
+@jinja2.pass_context
+def _file_url_jinja(context, collection: str, record_id: str, filename: str, thumb: str = "") -> str:
+    return file_url(collection, record_id, filename, thumb, context.get("request"))
 
 
 def jsonseguro(valor) -> Markup:
@@ -105,7 +152,7 @@ templates.env.filters["num"] = _fmt_num
 templates.env.filters["moneda"] = _fmt_moneda
 templates.env.filters["jsonseguro"] = jsonseguro
 templates.env.filters["tojson"] = _tojson
-templates.env.globals["avatar_url"] = avatar_url
-templates.env.globals["file_url"] = file_url
+templates.env.globals["avatar_url"] = _avatar_url_jinja
+templates.env.globals["file_url"] = _file_url_jinja
 templates.env.globals["dashboard_url"] = dashboard_url
 templates.env.globals["csrf_token"] = get_csrf_token

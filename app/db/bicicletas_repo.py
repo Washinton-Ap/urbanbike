@@ -101,12 +101,18 @@ def listar_marcas() -> list[str]:
     """)]
 
 
-def fotos_por_codigo(codigos: list[str]) -> dict[str, str]:
+def fotos_por_codigo(codigos: list[str], request=None) -> dict[str, str]:
     """{codigo: foto_url} para un conjunto de bicicletas: ClickHouse
     (bicicleta_fotos) primero, espejo de PocketBase (bicicletas.foto) como
     respaldo -- mismo patron ya usado en ciclista.py/admin.py/gerente.py.
     Reutilizable en cualquier pantalla que solo tenga el codigo (inventario,
-    ordenes de mantenimiento, devoluciones)."""
+    ordenes de mantenimiento, devoluciones).
+
+    `request` opcional, se reenvia a file_url() para que la URL derive del
+    host publico real (tunel) en vez del host interno de PocketBase --
+    mismo motivo que en avatar_url()/file_url() (app/templating.py). Sin
+    request, cae al fallback de pb_public_base() (PB_PUBLIC_URL o
+    settings.pb_url)."""
     codigos = list({c for c in codigos if c})
     if not codigos:
         return {}
@@ -127,7 +133,7 @@ def fotos_por_codigo(codigos: list[str]) -> dict[str, str]:
             for c in faltantes:
                 pb_bici = pb_por_codigo.get(c)
                 if pb_bici and pb_bici.get("foto"):
-                    resultado[c] = file_url("bicicletas", pb_bici["id"], pb_bici["foto"])
+                    resultado[c] = file_url("bicicletas", pb_bici["id"], pb_bici["foto"], request=request)
         except Exception:
             pass
     return resultado

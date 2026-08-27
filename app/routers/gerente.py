@@ -1022,7 +1022,7 @@ def bicicletas_list(
     filas, total = bicicletas_repo.listar(
         q=q, marca=marca, categoria=categoria, estado=estado, page=page, per_page=per_page,
     )
-    fotos = bicicletas_repo.fotos_por_codigo([b["codigo"] for b in filas])
+    fotos = bicicletas_repo.fotos_por_codigo([b["codigo"] for b in filas], request=request)
     for b in filas:
         if not b.get("foto_url"):
             b["foto_url"] = fotos.get(b["codigo"], "")
@@ -1138,7 +1138,7 @@ def bicicletas_detalle(request: Request, bid: str, modo: str = Query("ver")):
     if not bici:
         return _flash(request, "/gerente/bicicletas", "error", "Bicicleta no encontrada.")
     if not bici.get("foto_url"):
-        fotos = bicicletas_repo.fotos_por_codigo([bici["codigo"]])
+        fotos = bicicletas_repo.fotos_por_codigo([bici["codigo"]], request=request)
         bici["foto_url"] = fotos.get(bici["codigo"], "")
     n_alquileres = bicicletas_repo.contar_alquileres(bid)
     return templates.TemplateResponse(request, "gerente/bicicletas_form.html", _ctx(request,

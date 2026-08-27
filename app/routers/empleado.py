@@ -17,7 +17,7 @@ from app.db.pocketbase import filter_literal, get_admin_client, registrar_audito
 from app.middleware.permisos import requiere_permiso
 from app.reportes.excel import ColumnaReporte, generar_excel_reporte
 from app.reportes.pdf import generar_pdf_reporte
-from app.templating import file_url, templates
+from app.templating import file_url, pb_public_base, templates
 
 router = APIRouter(prefix="/empleado", tags=["empleado"])
 
@@ -149,7 +149,7 @@ async def op_inventario(
     filas, total = bicicletas_repo.listar(
         q=q, marca=marca, categoria=categoria, estado=estado, page=page, per_page=per_page,
     )
-    fotos = bicicletas_repo.fotos_por_codigo([b["codigo"] for b in filas])
+    fotos = bicicletas_repo.fotos_por_codigo([b["codigo"] for b in filas], request=request)
     for b in filas:
         if not b.get("foto_url"):
             b["foto_url"] = fotos.get(b["codigo"], "")
@@ -619,7 +619,7 @@ async def op_pagos(request: Request):
         title="Pagos del Día", flash=flash, pagos=pagos,
         transferencias=transferencias, efectivo_pendiente=efectivo_pendiente,
         total_pagado=total_pagado, total_pendiente=total_pendiente,
-        pb_url=settings.pb_url,
+        pb_url=pb_public_base(request),
     ))
 
 
@@ -1091,7 +1091,7 @@ async def mnt_ordenes(
         q=q, estado=estado, tecnico=tecnico, prioridad=prioridad, vencida=vencida,
         page=page, per_page=per_page,
     )
-    fotos_bici = bicicletas_repo.fotos_por_codigo([o["bicicleta_codigo"] for o in filas])
+    fotos_bici = bicicletas_repo.fotos_por_codigo([o["bicicleta_codigo"] for o in filas], request=request)
     for o in filas:
         o["foto_url"] = fotos_bici.get(o["bicicleta_codigo"], "")
     _marcar_vencidas(filas)
@@ -1601,7 +1601,7 @@ async def vig_devoluciones(request: Request):
         pb = None
 
     fotos_bici = bicicletas_repo.fotos_por_codigo(
-        [v.get("bicicleta_codigo", "") for v in viajes_activos + viajes_pendientes]
+        [v.get("bicicleta_codigo", "") for v in viajes_activos + viajes_pendientes], request=request,
     )
     for v in viajes_activos:
         v["foto_url"] = fotos_bici.get(v.get("bicicleta_codigo", ""), "")

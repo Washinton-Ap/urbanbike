@@ -52,8 +52,9 @@
     </div>
 
     <!-- Formulario -->
-    <form method="post" action="/auth/registro">
+    <form method="post" action="/auth/registro" id="registro-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <input type="hidden" name="terminos_aceptados" id="terminos-aceptados-input" value="">
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
         <div class="form-group">
@@ -153,6 +154,67 @@
 
   </div>
 </div>
+
+<!-- Modal de la declaracion de uso: bloquea la creacion de la cuenta
+     hasta marcar el checkbox y confirmar. El submit del form de arriba
+     se intercepta -- si "terminos_aceptados" aun no tiene valor, abre
+     este modal en vez de enviar el registro (ver script abajo). Sin
+     boton de cerrar, sin click fuera, Esc interceptado: el servidor
+     ademas rechaza el registro si el campo llega vacio (defensa real,
+     no solo del lado del cliente, ver auth.py:registro_post). -->
+<dialog id="modal-terminos">
+  <div class="modal-card">
+    <div class="modal-header">
+      <span style="font-family:'Sora',sans-serif;font-weight:700;font-size:1rem;color:var(--text);">
+        Declaración de uso del sistema
+      </span>
+    </div>
+
+    <div style="max-height:45vh;overflow-y:auto;padding-right:4px;font-size:0.9rem;line-height:1.6;color:var(--text);">
+      {% include "componentes/terminos_texto.html" %}
+    </div>
+
+    <label style="display:flex;align-items:flex-start;gap:8px;margin-top:18px;padding-top:14px;border-top:1px solid var(--border);cursor:pointer;font-size:0.88rem;color:var(--text);">
+      <input type="checkbox" id="terminos-check" style="margin-top:2px;">
+      He leído y acepto la declaración de uso del sistema.
+    </label>
+
+    <button type="button" id="terminos-aceptar-btn" class="btn btn-primary w-full mt-4" style="justify-content:center;padding:11px;" disabled>
+      Aceptar y continuar
+    </button>
+  </div>
+</dialog>
+
+<script>
+(function () {
+  var dialog = document.getElementById('modal-terminos');
+  var check  = document.getElementById('terminos-check');
+  var btn    = document.getElementById('terminos-aceptar-btn');
+  var form   = document.getElementById('registro-form');
+  var input  = document.getElementById('terminos-aceptados-input');
+
+  check.addEventListener('change', function () {
+    btn.disabled = !check.checked;
+  });
+
+  dialog.addEventListener('cancel', function (e) {
+    e.preventDefault();
+  });
+
+  form.addEventListener('submit', function (e) {
+    if (!input.value) {
+      e.preventDefault();
+      dialog.showModal();
+    }
+  });
+
+  btn.addEventListener('click', function () {
+    input.value = '1';
+    dialog.close();
+    form.requestSubmit();
+  });
+})();
+</script>
 
 </body>
 </html>

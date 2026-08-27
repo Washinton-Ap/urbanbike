@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="light" data-font-size="grande">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Declaración de uso del sistema — UrbanBike</title>
+  <link rel="icon" type="image/png" href="/static/img/logo-urbanbike.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" media="print" onload="this.media='all'">
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap"></noscript>
+  <link rel="stylesheet" href="/static/css/main.css">
+  <script src="/static/js/theme.js"></script>
+</head>
+<body>
+
+<!-- Theme toggle flotante -->
+<button id="theme-toggle" class="theme-toggle"
+        style="position:fixed; top:16px; right:16px; z-index:200;"
+        title="Cambiar tema" aria-label="Cambiar tema"></button>
+
+<div class="login-page">
+  <div class="login-logo">
+    <div style="display:inline-flex; align-items:center; gap:10px; margin-bottom:6px;">
+      <img src="/static/img/logo-urbanbike.png" alt="" width="36" height="27">
+      <span class="login-logo-name">Urban<span>Bike</span></span>
+    </div>
+  </div>
+</div>
+
+<!-- Modal no-descartable: sin boton de cerrar, sin click fuera, Esc
+     interceptado. Ademas del gate del lado del cliente, AuthMiddleware
+     (session["terminos_pendientes"]) vuelve a redirigir aqui en CUALQUIER
+     otra request mientras no se confirme -- el gate real vive en el
+     servidor, esto es solo la UI. -->
+<dialog id="modal-terminos">
+  <div class="modal-card">
+    <div class="modal-header">
+      <span style="font-family:'Sora',sans-serif;font-weight:700;font-size:1rem;color:var(--text);">
+        Declaración de uso del sistema
+      </span>
+    </div>
+
+    {% if error %}
+    <div class="flash error" style="margin-bottom:16px;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+      </svg>
+      {{ error }}
+    </div>
+    {% endif %}
+
+    <form method="post" action="/auth/terminos">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+      <input type="hidden" name="next" value="{{ next }}">
+
+      <div style="max-height:45vh;overflow-y:auto;padding-right:4px;font-size:0.9rem;line-height:1.6;color:var(--text);">
+        {% include "componentes/terminos_texto.html" %}
+      </div>
+
+      <label style="display:flex;align-items:flex-start;gap:8px;margin-top:18px;padding-top:14px;border-top:1px solid var(--border);cursor:pointer;font-size:0.88rem;color:var(--text);">
+        <input type="checkbox" name="terminos_aceptados" id="terminos-check" value="1" style="margin-top:2px;">
+        He leído y acepto la declaración de uso del sistema.
+      </label>
+
+      <button type="submit" id="terminos-aceptar-btn" class="btn btn-primary w-full mt-4" style="justify-content:center;padding:11px;" disabled>
+        Aceptar y continuar
+      </button>
+    </form>
+  </div>
+</dialog>
+
+<script>
+(function () {
+  var dialog = document.getElementById('modal-terminos');
+  var check  = document.getElementById('terminos-check');
+  var btn    = document.getElementById('terminos-aceptar-btn');
+
+  check.addEventListener('change', function () {
+    btn.disabled = !check.checked;
+  });
+
+  // Requisito real, no solo UX: Esc no puede saltarse la aceptacion
+  // mientras siga pendiente (ver AuthMiddleware).
+  dialog.addEventListener('cancel', function (e) {
+    e.preventDefault();
+  });
+
+  dialog.showModal();
+})();
+</script>
+
+</body>
+</html>
