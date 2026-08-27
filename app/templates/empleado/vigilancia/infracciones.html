@@ -73,7 +73,10 @@
       <tbody>
         {% for i in infracciones %}
         <tr>
-          <td style="font-weight:600;color:var(--text);">{{ i.ciclista_id or "—" }}</td>
+          <td>
+            <div style="font-weight:600;color:var(--text);">{{ i.ciclista_nombre or "—" }}</div>
+            <div class="text-muted" style="font-size:0.76rem;margin-top:2px;">{{ i.ciclista_email or "—" }}</div>
+          </td>
           <td class="text-sm">{{ i.tipo or "—" }}</td>
           <td class="text-sm" style="max-width:280px;">{{ i.descripcion or "—" }}</td>
           <td style="font-family:monospace;">{{ i.bicicleta_codigo or "—" }}</td>

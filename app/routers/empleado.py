@@ -2387,12 +2387,43 @@ async def vig_inspeccion_registrar(request: Request, bici_id: str):
         return _flash(request, f"/empleado/vigilancia/inspeccion/{bici_id}", "error", str(e))
 
 
+def _con_nombre_ciclista(infracciones: list[dict]) -> list[dict]:
+    """Resuelve ciclista_id -> nombre/correo reales de PocketBase antes de
+    mostrar o exportar (punto 2.8, mitad "nombre del ciclista" -- la mitad
+    de aviso/resolucion ya se resolvio en la seccion 89). Antes se
+    mostraba el id crudo de PocketBase tal cual, tanto en pantalla como en
+    los 2 exports. No muta las filas originales -- agrega
+    ciclista_nombre/ciclista_email a una copia de cada una. Fetch por id
+    individual (no batch): mismo patron ya usado en el resto de este
+    archivo (ej. linea 1701/1798) para resolver un ciclista puntual, y el
+    volumen real (decenas de infracciones) no justifica una consulta
+    "IN" nueva."""
+    pb = _pb()
+    cache: dict[str, dict] = {}
+    resultado = []
+    for i in infracciones:
+        cid = i.get("ciclista_id") or ""
+        if cid and cid not in cache:
+            try:
+                u = pb.get_record("users", cid)
+                cache[cid] = {"nombre": u.get("name") or u.get("email", ""), "email": u.get("email", "")}
+            except Exception:
+                cache[cid] = {"nombre": "", "email": ""}
+        datos = cache.get(cid, {"nombre": "", "email": ""})
+        i2 = dict(i)
+        i2["ciclista_nombre"] = datos["nombre"] or cid or "—"
+        i2["ciclista_email"] = datos["email"]
+        resultado.append(i2)
+    return resultado
+
+
 @router.get("/vigilancia/infracciones", response_class=HTMLResponse)
 async def vig_infracciones(request: Request):
     flash = request.session.pop("flash", None)
     infracciones: list[dict] = []
     try:
         infracciones = _pb().list_records("infracciones", sort="-fecha", per_page=500).get("items", [])
+        infracciones = _con_nombre_ciclista(infracciones)
     except Exception:
         pass
     total = len(infracciones)
@@ -2440,12 +2471,14 @@ async def vig_infracciones_resolver(
 
 
 def _vig_infracciones_data() -> list[dict]:
-    return _pb().list_records("infracciones", sort="-fecha", per_page=500).get("items", [])
+    infracciones = _pb().list_records("infracciones", sort="-fecha", per_page=500).get("items", [])
+    return _con_nombre_ciclista(infracciones)
 
 
 def _vig_infracciones_columnas_filas(infracciones: list[dict]) -> tuple[list[ColumnaReporte], list[list]]:
     columnas = [
         ColumnaReporte("Ciclista", ancho=24),
+        ColumnaReporte("Correo", ancho=26),
         ColumnaReporte("Tipo", ancho=18),
         ColumnaReporte("Descripción", ancho=34),
         ColumnaReporte("Bicicleta", ancho=14),
@@ -2457,7 +2490,8 @@ def _vig_infracciones_columnas_filas(infracciones: list[dict]) -> tuple[list[Col
     ]
     filas = [
         [
-            i.get("ciclista_id") or "—",
+            i.get("ciclista_nombre") or i.get("ciclista_id") or "—",
+            i.get("ciclista_email") or "—",
             i.get("tipo") or "—",
             i.get("descripcion") or "—",
             i.get("bicicleta_codigo") or "—",
@@ -2482,7 +2516,7 @@ def vig_infracciones_excel():
         subtitulo=f"Total: {len(infracciones)} infracciones  |  Pendientes: {pendientes}  |  Resueltas: {len(infracciones) - pendientes}",
         columnas=columnas,
         filas=filas,
-        fila_total=[f"Total: {len(infracciones)} infracciones", None, None, None, None, None, None, None, None],
+        fila_total=[f"Total: {len(infracciones)} infracciones", None, None, None, None, None, None, None, None, None],
         nombre_hoja="Infracciones",
         nombre_archivo="urbanbike_vigilancia_infracciones.xlsx",
     )
@@ -2498,7 +2532,7 @@ def vig_infracciones_pdf():
         subtitulo=f"Total: {len(infracciones)} infracciones  |  Pendientes: {pendientes}  |  Resueltas: {len(infracciones) - pendientes}",
         columnas=columnas,
         filas=filas,
-        fila_total=[f"Total: {len(infracciones)} infracciones", None, None, None, None, None, None, None, None],
+        fila_total=[f"Total: {len(infracciones)} infracciones", None, None, None, None, None, None, None, None, None],
         nombre_archivo="urbanbike_vigilancia_infracciones.pdf",
     )
 
