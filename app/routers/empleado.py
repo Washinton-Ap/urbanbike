@@ -704,7 +704,16 @@ def _notificar_pago_aprobado(pb, registro: dict) -> None:
     También es el punto único real que CIERRA lo que quedó pendiente por
     este pago (aviso de "pago pendiente" del ciclista y "cobro pendiente"
     de Operación, ver notificaciones_repo.TIPOS_PROTEGIDOS) -- ya no basta
-    con un clic en la campana, solo esto (la aprobación real) las resuelve."""
+    con un clic en la campana, solo esto (la aprobación real) las resuelve.
+
+    Punto 2.11 (Plan V3, propuesta aprobada): este es tambien el unico
+    punto real donde "Vigilancia ya certifico la devolucion Y el pago
+    quedo resuelto" se cumplen las dos cosas a la vez, sin importar el
+    metodo (efectivo/tarjeta/transferencia) -- por eso la invitacion a la
+    encuesta de satisfaccion se dispara aca, no en un lugar nuevo. Segunda
+    notificacion real, separada de "pago aprobado" (mismo criterio que ya
+    usa el resto del sistema: un tipo de notificacion por concepto, nunca
+    mezclados)."""
     notificaciones_repo.notificar_usuario(
         pb, registro.get("ciclista_id", ""), tipo="pago_aprobado",
         titulo="Pago aprobado",
@@ -712,6 +721,14 @@ def _notificar_pago_aprobado(pb, registro: dict) -> None:
         enlace="/ciclista/pagos",
     )
     notificaciones_repo.resolver_pago(registro.get("id", ""), registro.get("ciclista_id", ""))
+    viaje_id = registro.get("viaje_id", "")
+    if viaje_id:
+        notificaciones_repo.notificar_usuario(
+            pb, registro.get("ciclista_id", ""), tipo="encuesta_satisfaccion",
+            titulo="¿Cómo estuvo tu viaje?",
+            mensaje="Tu pago ya quedó aprobado -- cuéntanos qué tal te fue, toma menos de 1 minuto.",
+            enlace=f"/ciclista/encuesta/{viaje_id}",
+        )
 
 
 @router.get("/operacion/pagos/cobrar/{pago_id}", response_class=HTMLResponse)

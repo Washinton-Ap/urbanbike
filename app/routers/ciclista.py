@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from app.config import settings
 from app.db import (
-    alquileres_repo, codigos_descuento_repo, facturas_repo, infracciones_repo,
+    alquileres_repo, codigos_descuento_repo, encuestas_repo, facturas_repo, infracciones_repo,
     membresias_repo, mensajes_soporte_repo, notificaciones_repo, promociones_repo,
     tarifas_repo, clickhouse as ch,
 )
@@ -1766,11 +1766,98 @@ async def comprobante(request: Request, pago_id: str):
     except Exception:
         pass
 
+    # Punto 2.11: banner de la encuesta opcional, solo si el viaje real
+    # todavia no tiene una respuesta real -- mismo criterio de "no
+    # insistir" que ya usa el resto del sistema con avisos opcionales.
+    encuesta_pendiente = False
+    if viaje.get("id"):
+        try:
+            encuesta_pendiente = not encuestas_repo.ya_respondida(viaje["id"])
+        except Exception:
+            encuesta_pendiente = False
+
     return templates.TemplateResponse(request, "ciclista/comprobante.html", _ctx(request,
         title="Comprobante de Pago", pago=registro, viaje=viaje,
         factura=_construir_factura_pago(registro, viaje, user),
         soporte_email=settings.support_email,
+        encuesta_pendiente=encuesta_pendiente,
     ))
+
+
+# ── Encuesta de satisfacción (punto 2.11) ─────────────────────────────────────
+
+_ENCUESTA_PREGUNTAS = [
+    ("calificacion_bicicleta", "¿Cómo calificarías el estado de la bicicleta?"),
+    ("calificacion_proceso", "¿Qué tan fácil fue alquilar y devolver la bicicleta?"),
+    ("calificacion_general", "En general, ¿qué tan satisfecho quedaste con el servicio?"),
+]
+
+
+@router.get("/encuesta/{viaje_id}", response_class=HTMLResponse)
+async def encuesta(request: Request, viaje_id: str):
+    """Formulario corto opcional (punto 2.11, propuesta aprobada por
+    Washington): solo alcanzable desde el enlace real de la notificación
+    "encuesta_satisfaccion" o el banner del comprobante -- ambos solo se
+    generan/muestran despues de que _notificar_pago_aprobado() confirma
+    que el pago real de este viaje ya quedó resuelto."""
+    user = getattr(request.state, "user", {})
+    flash = request.session.pop("flash", None)
+    try:
+        viaje = _pb().get_record("viajes", viaje_id)
+    except Exception:
+        viaje = None
+    if not viaje or viaje.get("ciclista_id") != user.get("id", ""):
+        request.session["flash"] = {"type": "error", "msg": "Viaje no encontrado."}
+        return RedirectResponse("/ciclista/historial", status_code=302)
+    if encuestas_repo.ya_respondida(viaje_id):
+        request.session["flash"] = {"type": "info", "msg": "Ya respondiste la encuesta de este viaje -- ¡gracias!"}
+        return RedirectResponse("/ciclista/historial", status_code=302)
+
+    return templates.TemplateResponse(request, "ciclista/encuesta.html", _ctx(request,
+        title="Encuesta de satisfacción", flash=flash, viaje=viaje,
+        preguntas=_ENCUESTA_PREGUNTAS,
+    ))
+
+
+@router.post("/encuesta/{viaje_id}")
+async def encuesta_enviar(
+    request: Request, viaje_id: str,
+    calificacion_bicicleta: int = Form(...),
+    calificacion_proceso: int = Form(...),
+    calificacion_general: int = Form(...),
+    observaciones: str = Form(""),
+):
+    user = getattr(request.state, "user", {})
+    try:
+        viaje = _pb().get_record("viajes", viaje_id)
+    except Exception:
+        viaje = None
+    if not viaje or viaje.get("ciclista_id") != user.get("id", ""):
+        request.session["flash"] = {"type": "error", "msg": "Viaje no encontrado."}
+        return RedirectResponse("/ciclista/historial", status_code=302)
+
+    for valor in (calificacion_bicicleta, calificacion_proceso, calificacion_general):
+        if valor < 1 or valor > 5:
+            request.session["flash"] = {"type": "error", "msg": "Las calificaciones deben estar entre 1 y 5."}
+            return RedirectResponse(f"/ciclista/encuesta/{viaje_id}", status_code=302)
+
+    try:
+        encuestas_repo.crear(
+            viaje_id=viaje_id, ciclista_id=user.get("id", ""),
+            calificacion_bicicleta=calificacion_bicicleta,
+            calificacion_proceso=calificacion_proceso,
+            calificacion_general=calificacion_general,
+            observaciones=observaciones,
+        )
+    except Exception:
+        # Indice unico real de PocketBase (ya_respondida() ya deberia
+        # haber evitado esto, ver docstring de encuestas_repo.crear()) --
+        # el resultado real para el ciclista es el mismo: gracias, ya
+        # quedó registrada.
+        pass
+
+    request.session["flash"] = {"type": "success", "msg": "¡Gracias por tu opinión!"}
+    return RedirectResponse("/ciclista/historial", status_code=302)
 
 
 def _grupo_reserva_facturable(pb, grupo_reserva_id: str, user_id: str) -> tuple[list[dict] | None, dict | None, dict | None]:

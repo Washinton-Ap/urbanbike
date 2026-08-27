@@ -459,6 +459,9 @@ img[data-lightbox] { cursor: zoom-in; }
 .campana-item.membresia_por_vencer { border-left-color: #F59E0B; }
 .campana-item.membresia_por_vencer .campana-item-icono { color: #F59E0B; }
 
+.campana-item.encuesta_satisfaccion { border-left-color: var(--primary); }
+.campana-item.encuesta_satisfaccion .campana-item-icono { color: var(--primary); }
+
 .campana-item-titulo {
   font-size: 0.85rem;
   font-weight: 600;

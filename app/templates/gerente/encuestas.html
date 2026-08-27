@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Encuestas de satisfacción{% endblock %}
+{% block page_title %}Encuestas de satisfacción{% endblock %}
+
+{% block content %}
+
+<div class="kpi-grid">
+  <div class="kpi-card">
+    <div class="kpi-label">Respuestas totales</div>
+    <div class="kpi-value">{{ resumen.total_respuestas }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Tasa de respuesta</div>
+    <div class="kpi-value" style="color:#1E86BD;">{{ tasa_respuesta }}%</div>
+    <div class="text-muted text-sm">{{ resumen.total_respuestas }} de {{ total_invitados }} pagos aprobados</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Promedio · Bicicleta</div>
+    <div class="kpi-value" style="color:#10B981;">{{ resumen.promedio_bicicleta }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Promedio · Proceso</div>
+    <div class="kpi-value" style="color:#10B981;">{{ resumen.promedio_proceso }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Promedio · General</div>
+    <div class="kpi-value" style="color:#10B981;">{{ resumen.promedio_general }}</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Comentarios <span class="text-muted text-sm">({{ resumen.comentarios | length }})</span></span>
+  </div>
+  {% if resumen.comentarios %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr><th>Fecha</th><th>Calificación general</th><th>Observación</th></tr>
+      </thead>
+      <tbody>
+        {% for c in resumen.comentarios %}
+        <tr>
+          <td class="text-muted text-sm">{{ (c.fecha or "—")[:10] }}</td>
+          <td style="font-weight:600;color:var(--text);">{{ c.calificacion_general }} / 5</td>
+          <td>{{ c.observaciones }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:48px 24px;color:var(--text-muted);">
+    <div style="font-size:0.9rem;">Todavía no hay comentarios registrados.</div>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

@@ -8,7 +8,7 @@ from datetime import date, datetime, time, timezone
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
-from app.db import bicicletas_repo, estaciones_repo, notificaciones_repo, promociones_repo, tarifas_repo, clickhouse as ch
+from app.db import bicicletas_repo, encuestas_repo, estaciones_repo, notificaciones_repo, promociones_repo, tarifas_repo, clickhouse as ch
 from app.db.pocketbase import get_admin_client, registrar_auditoria
 from app.middleware.permisos import requiere_permiso
 from app.reportes.excel import ColumnaReporte, generar_excel_reporte
@@ -1523,6 +1523,24 @@ def tarifas_eliminar(request: Request, tid: str):
         _log(request, "Eliminar tarifa", f"Tarifa eliminada: {etiqueta}")
         return _flash(request, "/gerente/tarifas", "success", "Tarifa eliminada.")
     return _flash(request, "/gerente/tarifas", "error", motivo)
+
+
+@router.get("/encuestas", response_class=HTMLResponse)
+def encuestas(request: Request):
+    """Punto 2.11 (Plan V3, propuesta aprobada): pantalla real de Gerente
+    sobre encuestas_satisfaccion -- promedios por pregunta + tasa de
+    respuesta real (respuestas / pagos aprobados, mismo chokepoint real
+    que dispara la invitacion en _notificar_pago_aprobado())."""
+    resumen = encuestas_repo.resumen()
+    total_invitados = encuestas_repo.total_pagos_aprobados()
+    tasa_respuesta = (
+        round(resumen["total_respuestas"] / total_invitados * 100, 1)
+        if total_invitados else 0.0
+    )
+    return templates.TemplateResponse(request, "gerente/encuestas.html", _ctx(request,
+        title="Encuestas de satisfacción",
+        resumen=resumen, total_invitados=total_invitados, tasa_respuesta=tasa_respuesta,
+    ))
 
 
 @router.get("/informe", response_class=HTMLResponse)

@@ -16,6 +16,13 @@
   <a href="/ciclista/dashboard" class="btn btn-primary">Volver al inicio</a>
 </div>
 
+{% if encuesta_pendiente and viaje and viaje.id %}
+<div class="flash info no-print" style="max-width:680px;margin:0 auto 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+  <span>¿Cómo estuvo tu viaje? Cuéntanos en menos de 1 minuto.</span>
+  <a href="/ciclista/encuesta/{{ viaje.id }}" class="btn btn-primary" style="padding:6px 14px;font-size:0.85rem;">Responder encuesta</a>
+</div>
+{% endif %}
+
 <div style="max-width:680px;margin:0 auto;">
   {% include "componentes/factura.html" %}
 </div>

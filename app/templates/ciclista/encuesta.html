@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Encuesta de satisfacción{% endblock %}
+{% block page_title %}Encuesta de satisfacción{% endblock %}
+
+{% block content %}
+
+<div class="card" style="max-width:640px;margin:0 auto;">
+  <div class="card-header">
+    <span class="card-title">¿Cómo estuvo tu viaje con {{ viaje.bicicleta_codigo or "esta bicicleta" }}?</span>
+  </div>
+  <form method="post" action="/ciclista/encuesta/{{ viaje.id }}" style="padding:20px;display:flex;flex-direction:column;gap:18px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+    <div style="font-size:0.85rem;color:var(--text-muted);">
+      Es opcional y toma menos de 1 minuto -- nos ayuda a mejorar el servicio real.
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      {% for clave, etiqueta in preguntas %}
+      <div style="padding:12px 14px;border:1px solid var(--border);border-radius:10px;">
+        <div style="font-weight:600;color:var(--text);font-size:0.88rem;margin-bottom:10px;">{{ etiqueta }}</div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;">
+          {% for n in range(1, 6) %}
+          <label style="display:flex;align-items:center;gap:6px;font-size:0.85rem;cursor:pointer;">
+            <input type="radio" name="{{ clave }}" value="{{ n }}" required> {{ n }}
+          </label>
+          {% endfor %}
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:0.72rem;color:var(--text-muted);margin-top:6px;">
+          <span>1 · Muy malo</span>
+          <span>5 · Excelente</span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Observaciones (opcional)</label>
+      <textarea class="form-input" name="observaciones" rows="3" placeholder="¿Algo que quieras contarnos sobre tu viaje?"></textarea>
+    </div>
+
+    <button type="submit" class="btn btn-primary" style="align-self:flex-start;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+      Enviar encuesta
+    </button>
+  </form>
+</div>
+
+{% endblock %}
