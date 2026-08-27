@@ -8453,3 +8453,33 @@ el `<svg>` del botón.
 engranaje anterior.
 
 **Estado: RESUELTO.**
+
+---
+
+## 108. Plan V3, Prioridad 1 -- 1.13: género y fecha de nacimiento en el registro
+
+**Campos nuevos** en PocketBase `users` (`etl/24_agregar_genero_fecha_nacimiento.py`, mismo patrón
+idempotente que `etl/21/22/23`, corrido real dos veces -- primera agrega los campos, segunda confirma
+"ya existen, sin cambios"): `genero` (texto libre, validado en el servidor contra 4 opciones fijas --
+femenino/masculino/otro/prefiero_no_decir -- mismo criterio que `cedula`/`telefono`, sin un `select`
+de esquema) y `fecha_nacimiento` (fecha). **Sin backfill**: no hay forma real de reconstruir la fecha
+de nacimiento de las cuentas ya existentes, quedan vacías -- mismo criterio que el resto de campos
+nuevos de este documento.
+
+`auth.py:registro_post()` exige ambos campos, valida `genero` contra la lista fija, y rechaza una
+`fecha_nacimiento` futura (defensa real del servidor, no solo el `max` del `<input type="date">` del
+cliente). `registro.html` agrega el `<select>` y el `<input type="date">` entre teléfono y contraseña.
+
+**Prueba real de punta a punta** (servidor real, registro real completo vía `/auth/registro`, sin
+mocks):
+
+| Caso | Resultado real |
+|---|---|
+| Registro con `fecha_nacimiento = 2030-01-01` | Rechazado ("no puede ser una fecha futura"), sin crear la cuenta |
+| Registro real válido (`genero=otro`, `fecha_nacimiento=1995-05-20`) | Cuenta creada, redirige a `/auth/verificar` (mismo flujo de siempre) |
+| Cuenta real verificada directo en PocketBase | `genero="otro"`, `fecha_nacimiento="1995-05-20"` -- exacto |
+
+**Limpieza:** la cuenta de prueba (`prueba.114.114@urbanbike.com`) se borró directo en PocketBase al
+terminar (no hay endpoint de auto-borrado de cuenta en la app).
+
+**Estado: RESUELTO.**

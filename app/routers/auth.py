@@ -196,6 +196,8 @@ async def terminos_post(
 _CEDULA_PATTERN = re.compile(r"^[0-9]{10}$")
 _TELEFONO_PATTERN = re.compile(r"^[0-9]{10}$")
 _CODIGO_VIGENCIA_MIN = 15
+# Punto 1.13 del Plan V3 -- mismas 4 opciones que el <select> de registro.html.
+_GENEROS_VALIDOS = ("femenino", "masculino", "otro", "prefiero_no_decir")
 
 
 def _generar_codigo() -> str:
@@ -244,6 +246,8 @@ async def registro_post(
     email:         str = Form(...),
     cedula:        str = Form(...),
     telefono:      str = Form(...),
+    genero:        str = Form(...),
+    fecha_nacimiento: str = Form(...),
     password:      str = Form(...),
     password_conf: str = Form(...),
     terminos_aceptados: str = Form(""),
@@ -252,6 +256,7 @@ async def registro_post(
         return templates.TemplateResponse(request, "auth/registro.html", {
             "error": msg, "nombre": nombre, "apellido": apellido,
             "email": email, "cedula": cedula, "telefono": telefono,
+            "genero": genero, "fecha_nacimiento": fecha_nacimiento,
         }, status_code=status_code)
 
     nombre   = nombre.strip()
@@ -266,6 +271,17 @@ async def registro_post(
         return error("La cédula debe tener exactamente 10 dígitos numéricos.")
     if not _TELEFONO_PATTERN.match(telefono):
         return error("El teléfono debe tener exactamente 10 dígitos numéricos.")
+    if genero not in _GENEROS_VALIDOS:
+        return error("Selecciona un género válido.")
+    # Punto 1.13 del Plan V3: nadie puede haber nacido en el futuro --
+    # defensa real, no solo el `max` del <input type="date"> del cliente
+    # (un POST directo puede saltarselo sin problema).
+    try:
+        fecha_nacimiento_dt = datetime.strptime(fecha_nacimiento, "%Y-%m-%d").date()
+    except ValueError:
+        return error("Fecha de nacimiento inválida.")
+    if fecha_nacimiento_dt > datetime.now(timezone.utc).date():
+        return error("La fecha de nacimiento no puede ser una fecha futura.")
     if password != password_conf:
         return error("Las contraseñas no coinciden.")
     if len(password) < 8:
@@ -298,6 +314,8 @@ async def registro_post(
             "name":            nombre_completo,
             "cedula":          cedula,
             "telefono":        telefono,
+            "genero":          genero,
+            "fecha_nacimiento": fecha_nacimiento_dt.strftime("%Y-%m-%d"),
             "rol":             rol_id,
             "activo":          True,
             "verified":        False,
