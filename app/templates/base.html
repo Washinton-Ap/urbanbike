@@ -428,7 +428,7 @@
       <div class="topbar-left">
         {% set _back_url = self.back_url() | trim %}
         {% if _back_url %}
-        <a class="topbar-back" href="{{ _back_url }}" aria-label="Volver">
+        <a class="topbar-back" id="topbar-back" href="{{ _back_url }}" aria-label="Volver">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
           <span class="topbar-back-label">Volver</span>
         </a>
@@ -562,6 +562,27 @@
       if (window.innerWidth <= 768) close();
     });
   });
+})();
+
+// "Volver" real (punto 1.1 del Plan V3): back_url es un destino fijo por
+// plantilla (definido en el servidor, siempre el mismo sin importar de
+// donde vino el usuario). Cuando esta pestaña sí tiene una página anterior
+// real dentro de UrbanBike (llegó navegando, no por un enlace directo/
+// pestaña nueva), se prefiere el historial real del navegador -- lleva
+// exactamente a donde el usuario estaba (una notificación, una tarjeta de
+// "pendientes", un listado con filtros/página específica), no siempre al
+// mismo destino genérico. Si no hay historial real, el href estático ya
+// calculado en el servidor sigue funcionando como respaldo.
+(function () {
+  const back = document.getElementById('topbar-back');
+  if (!back) return;
+  const referrerEsUrbanBike = document.referrer && document.referrer.indexOf(window.location.origin) === 0;
+  if (window.history.length > 1 && referrerEsUrbanBike) {
+    back.addEventListener('click', function (e) {
+      e.preventDefault();
+      window.history.back();
+    });
+  }
 })();
 </script>
 </body>

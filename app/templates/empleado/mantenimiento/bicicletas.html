@@ -31,6 +31,7 @@
           <th>Tipo</th>
           <th>Estación</th>
           <th>Notas</th>
+          <th>Orden de mantenimiento</th>
         </tr>
       </thead>
       <tbody>
@@ -46,6 +47,9 @@
           </td>
           <td style="color:var(--text-muted);font-size:0.85rem;">{{ b.estacion or '—' }}</td>
           <td style="color:var(--text-muted);font-size:0.82rem;">{{ b.notas or '—' }}</td>
+          <td>
+            <a href="{{ b.orden_enlace }}" class="btn btn-ghost" style="font-size:0.78rem;padding:5px 12px;white-space:nowrap;">{{ b.orden_texto }}</a>
+          </td>
         </tr>
         {% endfor %}
       </tbody>

@@ -1360,8 +1360,13 @@ def respaldo_sql_completo(request: Request):
 
 
 # ── SOPORTE (chat interno, punto 12 Opción B -- ver docs/HOJA_DE_RUTA.md
-#    sección 68). Espejo exacto de /empleado/vigilancia/soporte, mismo repo
-#    -- Admin ve y responde todas las conversaciones igual que Vigilancia. ──
+#    sección 68). Vista de SUPERVISIÓN sobre /empleado/vigilancia/soporte,
+#    mismo repo -- Admin ve todas las conversaciones (incluidas las que
+#    Vigilancia borró) y puede moderar (ocultar) cualquier mensaje, pero
+#    NUNCA puede ser remitente (punto 32 del Plan V3, hallazgo real de
+#    seguridad de la sección 91: antes existía un POST /enviar real y
+#    funcional para Admin, contradiciendo su rol de solo-supervisión).
+#    No hay ninguna ruta admin_soporte_enviar a propósito. ──
 
 def _mensaje_json(m: dict) -> dict:
     """Misma forma que ciclista.py/empleado.py:_mensaje_json()."""
@@ -1376,14 +1381,6 @@ def _mensaje_json(m: dict) -> dict:
         "adjunto_url": file_url("mensajes_soporte", m.get("id", ""), m.get("adjunto", "")),
         "adjunto_nombre": m.get("adjunto", ""),
     }
-
-
-async def _leer_adjunto_soporte(archivo: UploadFile | None) -> tuple[str, bytes, str] | None:
-    if archivo is None or not archivo.filename:
-        return None
-    mensajes_soporte_repo.validar_adjunto(archivo.content_type, archivo.size)
-    contenido = await archivo.read()
-    return (archivo.filename, contenido, archivo.content_type)
 
 
 @router.get("/soporte", response_class=HTMLResponse)
@@ -1418,38 +1415,22 @@ def admin_soporte_detalle(request: Request, conversacion_id: str):
         agente_nombre=conv.get("agente_nombre", ""),
         motivo_label=mensajes_soporte_repo.MOTIVO_LABEL.get(conv.get("motivo", ""), "—"),
         poll_url=f"/admin/soporte/{conversacion_id}/mensajes",
-        enviar_url=f"/admin/soporte/{conversacion_id}/enviar",
         eliminar_url_base=f"/admin/soporte/{conversacion_id}/eliminar-mensaje",
         eliminar_conversacion_url=f"/admin/soporte/{conversacion_id}/eliminar",
         puede_borrar_conversacion=True,
+        puede_moderar=True,
         base_url="/admin/soporte",
     ))
 
 
-@router.post("/soporte/{conversacion_id}/enviar")
-async def admin_soporte_enviar(
-    request: Request, conversacion_id: str,
-    texto: str = Form(""), adjunto: UploadFile | None = File(None),
-):
-    user = getattr(request.state, "user", {})
-    try:
-        archivo = await _leer_adjunto_soporte(adjunto)
-        mensajes_soporte_repo.enviar(
-            conversacion_id=conversacion_id, autor_id=user.get("id", ""),
-            autor_rol=user.get("rol_slug", ""), autor_nombre=user.get("name") or user.get("email", ""),
-            texto=texto, archivo=archivo,
-        )
-    except ValueError as e:
-        return _flash(request, f"/admin/soporte/{conversacion_id}", "error", str(e))
-    except Exception:
-        return _flash(request, f"/admin/soporte/{conversacion_id}", "error", "No se pudo enviar la respuesta. Intenta de nuevo.")
-    return RedirectResponse(f"/admin/soporte/{conversacion_id}", status_code=302)
-
-
 @router.post("/soporte/{conversacion_id}/eliminar-mensaje/{mensaje_id}")
 def admin_soporte_eliminar_mensaje(request: Request, conversacion_id: str, mensaje_id: str):
+    """Admin modera: puede ocultar cualquier mensaje de la conversación
+    (punto 32 del Plan V3), nunca enviar uno propio -- ver
+    mensajes_soporte_repo.eliminar_mensaje(puede_moderar=True)."""
     user = getattr(request.state, "user", {})
-    ok, motivo_error = mensajes_soporte_repo.eliminar_mensaje(mensaje_id, actor_id=user.get("id", ""))
+    ok, motivo_error = mensajes_soporte_repo.eliminar_mensaje(
+        mensaje_id, actor_id=user.get("id", ""), puede_moderar=True)
     if not ok:
         return _flash(request, f"/admin/soporte/{conversacion_id}", "error", motivo_error)
     return RedirectResponse(f"/admin/soporte/{conversacion_id}", status_code=302)

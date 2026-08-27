@@ -15,10 +15,16 @@
      agente_nombre, motivo_label -- metadatos reales de la conversación.
      poll_url       -- URL del endpoint JSON que refresca el hilo.
      enviar_url     -- action del formulario para mandar un mensaje nuevo.
-     eliminar_url_base -- prefijo real para borrar UN mensaje propio
+                       Vacío/omitido = sin formulario de envío (Admin, vista
+                       de solo supervisión -- punto 32 del Plan V3, nunca
+                       puede ser remitente).
+     eliminar_url_base -- prefijo real para borrar/ocultar un mensaje
                        (se le agrega "/{id}").
      eliminar_conversacion_url, puede_borrar_conversacion -- borrado de
                        TODA la conversación, solo Vigilancia/Admin.
+     puede_moderar  -- bool: Vigilancia/Admin pueden ocultar CUALQUIER
+                       mensaje de la conversación, no solo los propios
+                       (moderación real, punto 32 del Plan V3).
    ───────────────────────────────────────────────────────────────────────── #}
 <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
   <div style="display:flex;gap:6px;flex-wrap:wrap;">
@@ -43,6 +49,7 @@
      data-soy-ciclista="{{ '1' if soy_ciclista else '0' }}"
      data-propio-id="{{ propio_id }}"
      data-eliminar-url-base="{{ eliminar_url_base }}"
+     data-puede-moderar="{{ '1' if puede_moderar else '0' }}"
      data-ultimo-id="{{ mensajes[-1].id if mensajes else '' }}">
   {% for m in mensajes %}
   {% include "componentes/mensaje_soporte.html" %}
@@ -51,6 +58,7 @@
   {% endfor %}
 </div>
 
+{% if enviar_url %}
 <form method="post" action="{{ enviar_url }}" class="chat-form" enctype="multipart/form-data">
   <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
   <div class="chat-form-columna">
@@ -68,3 +76,6 @@
     <div id="chat-adjunto-preview"></div>
   </div>
 </form>
+{% else %}
+<p class="text-muted text-sm" style="margin-top:12px;">Vista de solo supervisión -- no puedes enviar mensajes en esta conversación.</p>
+{% endif %}

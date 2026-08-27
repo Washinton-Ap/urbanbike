@@ -52,23 +52,28 @@
     return cont;
   }
 
-  function crearFormEliminar(mensajeId, eliminarUrlBase) {
+  function crearFormEliminar(mensajeId, eliminarUrlBase, esModeracion) {
     var f = document.createElement('form');
     f.method = 'post';
     f.action = eliminarUrlBase + '/' + mensajeId;
     f.className = 'chat-msg-eliminar-form';
-    f.setAttribute('data-ub-confirm', '¿Borrar este mensaje? Dejará de verse en la conversación.');
+    f.setAttribute('data-ub-confirm', esModeracion
+      ? '¿Ocultar este mensaje de otra persona? Dejará de verse en la conversación (moderación).'
+      : '¿Borrar este mensaje? Dejará de verse en la conversación.');
     f.setAttribute('data-ub-peligro', '');
     var tok = document.createElement('input');
     tok.type = 'hidden'; tok.name = 'csrf_token'; tok.value = csrfToken;
     var btn = document.createElement('button');
-    btn.type = 'submit'; btn.className = 'chat-msg-eliminar'; btn.title = 'Borrar mensaje';
-    btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>';
+    btn.type = 'submit'; btn.className = 'chat-msg-eliminar';
+    btn.title = esModeracion ? 'Ocultar mensaje (moderación)' : 'Borrar mensaje';
+    btn.innerHTML = esModeracion
+      ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>'
+      : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>';
     f.appendChild(tok); f.appendChild(btn);
     return f;
   }
 
-  function crearMensaje(m, soyCiclista, propioId, eliminarUrlBase) {
+  function crearMensaje(m, soyCiclista, propioId, eliminarUrlBase, puedeModerar) {
     var esPropio = (m.autor_rol === 'ciclista') === soyCiclista;
     var div = document.createElement('div');
     div.className = 'chat-msg ' + (esPropio ? 'chat-msg-propio' : 'chat-msg-otro');
@@ -95,8 +100,8 @@
       if (m.adjunto_url) burbuja.appendChild(crearAdjunto(m));
       div.appendChild(burbuja);
 
-      if (m.autor_id && m.autor_id === propioId) {
-        div.appendChild(crearFormEliminar(m.id, eliminarUrlBase));
+      if (m.autor_id && (m.autor_id === propioId || puedeModerar)) {
+        div.appendChild(crearFormEliminar(m.id, eliminarUrlBase, m.autor_id !== propioId));
       }
     }
 
@@ -114,6 +119,7 @@
     var soyCiclista = hilo.dataset.soyCiclista === '1';
     var propioId = hilo.dataset.propioId || '';
     var eliminarUrlBase = hilo.dataset.eliminarUrlBase || '';
+    var puedeModerar = hilo.dataset.puedeModerar === '1';
     var ultimoId = hilo.dataset.ultimoId || '';
 
     var estaAlFondo = function () {
@@ -129,7 +135,7 @@
         return;
       }
       items.forEach(function (m) {
-        hilo.appendChild(crearMensaje(m, soyCiclista, propioId, eliminarUrlBase));
+        hilo.appendChild(crearMensaje(m, soyCiclista, propioId, eliminarUrlBase, puedeModerar));
       });
       ultimoId = items[items.length - 1].id;
       if (pegado) hilo.scrollTop = hilo.scrollHeight;

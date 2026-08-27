@@ -715,6 +715,18 @@ img[data-lightbox] { cursor: zoom-in; }
 }
 .btn-ghost:hover { background: var(--bg); color: var(--text); }
 
+/* Boton de cambio de modalidad (Plan V3, punto 1.2): tiene que distinguirse
+   a simple vista del resto de botones de la pantalla de viaje activo (todos
+   .btn-ghost/.btn-primary) porque cambia el precio que se cobra -- mismo
+   tono ambar que ya usa .badge-yellow para "atencion/pendiente" en el resto
+   del sistema, no un color inventado nuevo. */
+.btn-modalidad {
+  background: #F59E0B;
+  color: #FFFFFF;
+  border: 1px solid #F59E0B;
+}
+.btn-modalidad:hover { background: #D97706; border-color: #D97706; }
+
 .btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* ── Indicador de carga (app/static/js/loading.js) ───────────────────── */

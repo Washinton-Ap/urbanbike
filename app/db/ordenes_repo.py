@@ -140,6 +140,30 @@ def obtener(id_orden: str) -> dict | None:
     return filas[0] if filas else None
 
 
+def obtener_mas_reciente_por_bicicleta(codigo_bicicleta: str) -> dict | None:
+    """La orden real más reciente (cualquier estado) de esa bicicleta por
+    código -- usada por empleado/mantenimiento/bicicletas.html (punto 28
+    del Plan V3, Prioridad 0.6) para enlazar cada fila a su orden real en
+    vez de dejarla como tabla de solo lectura sin ninguna acción."""
+    filas = ch.query(
+        _SELECT_BASE + " WHERE b.codigo = %(codigo)s ORDER BY o.fecha_apertura DESC LIMIT 1",
+        {"codigo": codigo_bicicleta},
+    )
+    return filas[0] if filas else None
+
+
+def bicicleta_id_por_codigo(codigo: str) -> str | None:
+    """id real de ClickHouse (urbanbike_operativa.bicicletas) para un
+    código -- para preseleccionar la bicicleta al crear una orden nueva
+    desde una pantalla que solo conoce el código (ver el mismo punto de
+    arriba)."""
+    fila = ch.query(
+        "SELECT id FROM urbanbike_operativa.bicicletas FINAL WHERE codigo = %(codigo)s LIMIT 1",
+        {"codigo": codigo},
+    )
+    return str(fila[0]["id"]) if fila else None
+
+
 def listar_cerradas_pendientes_certificar() -> list[dict]:
     """Ordenes que Mantenimiento ya cerro (estado_reparacion='cerrada')
     pero cuya bicicleta sigue en 'mantenimiento' -- la cola real que

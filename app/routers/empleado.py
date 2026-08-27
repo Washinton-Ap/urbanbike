@@ -1193,10 +1193,11 @@ def mnt_ordenes_pdf(
 
 
 @router.get("/mantenimiento/ordenes/nueva", response_class=HTMLResponse, dependencies=[Depends(requiere_permiso("ordenes_mantenimiento:crear"))])
-async def mnt_ordenes_nueva(request: Request):
+async def mnt_ordenes_nueva(request: Request, bicicleta_id: str = Query("")):
     flash = request.session.pop("flash", None)
     return templates.TemplateResponse(request, "empleado/mantenimiento/ordenes_form.html", _ctx(request,
         title="Nueva orden de mantenimiento", flash=flash, modo="crear", orden=None,
+        preseleccion_bicicleta_id=bicicleta_id,
         bicicletas=bicicletas_repo.listar(page=1, per_page=500)[0],
         tecnicos=ordenes_repo.listar_tecnicos(),
         origenes=ordenes_repo.ORIGENES_VALIDOS, origen_label=ORIGEN_ORDEN_LABEL,
@@ -1301,12 +1302,37 @@ async def mnt_ordenes_eliminar(request: Request, oid: str):
 
 @router.get("/mantenimiento/bicicletas", response_class=HTMLResponse)
 async def mnt_bicicletas(request: Request):
+    """Punto 28 del Plan V3 (Prioridad 0.6): antes era una tabla de solo
+    lectura sin ninguna acción -- ahora cada fila enlaza a la orden real
+    de esa bicicleta (la más reciente, cualquier estado). Si esa orden
+    todavía sigue abierta (no 'cerrada'), enlaza a verla/editarla; si no
+    hay ninguna orden real, o la última ya se cerró (la bicicleta sigue
+    en mantenimiento por un problema nuevo, no rastreado todavía),
+    enlaza a crear una nueva con la bicicleta ya preseleccionada."""
     flash = request.session.pop("flash", None)
     bicicletas: list[dict] = []
     try:
         bicicletas = _pb().list_records("bicicletas", filter='estado = "mantenimiento"', sort="codigo", per_page=500).get("items", [])
     except Exception:
         pass
+    for b in bicicletas:
+        codigo = b.get("codigo", "")
+        orden = None
+        try:
+            orden = ordenes_repo.obtener_mas_reciente_por_bicicleta(codigo) if codigo else None
+        except Exception:
+            pass
+        if orden and orden.get("estado_reparacion") != "cerrada":
+            b["orden_enlace"] = f"/empleado/mantenimiento/ordenes/{orden['id']}"
+            b["orden_texto"] = f"Ver orden {orden['codigo']}"
+        else:
+            id_ch = None
+            try:
+                id_ch = ordenes_repo.bicicleta_id_por_codigo(codigo) if codigo else None
+            except Exception:
+                pass
+            b["orden_enlace"] = f"/empleado/mantenimiento/ordenes/nueva?bicicleta_id={id_ch}" if id_ch else "/empleado/mantenimiento/ordenes/nueva"
+            b["orden_texto"] = "Crear orden"
     return templates.TemplateResponse(request, "empleado/mantenimiento/bicicletas.html", _ctx(request,
         title="Bicicletas en Mantenimiento", flash=flash, bicicletas=bicicletas,
     ))
@@ -1626,6 +1652,15 @@ async def vig_devoluciones(request: Request):
     ))
 
 
+# Ventana de gracia para que Vigilancia confirme la devolucion antes de
+# que empiece a correr el recargo por demora. Cambiado de 5h a 1h el
+# 26-ago-2026 (decision de Washington) -- ver docs/HOJA_DE_RUTA.md,
+# seccion 91. Debe coincidir siempre con MINUTOS_GRACIA_DEMORA en
+# app/static/js/costo-en-vivo.js, que solo refleja este calculo, nunca
+# lo decide.
+MINUTOS_GRACIA_DEMORA = 60
+
+
 @router.post("/vigilancia/devolver/{viaje_id}")
 async def vig_devolver(
     request: Request,
@@ -1710,8 +1745,9 @@ async def vig_devolver(
             inicio_dt = datetime.fromisoformat(inicio_segmento_final.replace("Z", "+00:00"))
 
             if modalidad_final == "hora":
-                # Gracia de 5h desde que el ciclista reporto la devolucion
-                # (fecha_fin del viaje), NO desde el inicio del segmento.
+                # Gracia (MINUTOS_GRACIA_DEMORA) desde que el ciclista reporto
+                # la devolucion (fecha_fin del viaje), NO desde el inicio del
+                # segmento.
                 fecha_fin_reportada = viaje.get("fecha_fin", "")
                 fin_dt = (datetime.fromisoformat(fecha_fin_reportada.replace("Z", "+00:00"))
                           if fecha_fin_reportada else ahora)
@@ -1721,8 +1757,9 @@ async def vig_devolver(
                 # decision de negocio reconfirmada con Washington 17-ago-2026:
                 # la espera hasta que Vigilancia confirme NO es tiempo de uso
                 # real, es tiempo de espera -- solo el recargo por demora
-                # (tras 5h de gracia) cobra por esa espera, nunca el
-                # subtotal. Restaura el diseno original de la seccion 70 de
+                # (tras MINUTOS_GRACIA_DEMORA de gracia) cobra por esa
+                # espera, nunca el subtotal. Restaura el diseno original de
+                # la seccion 70 de
                 # docs/HOJA_DE_RUTA.md, que la Tarea 7 del plan
                 # "modalidad-tarifa-real" habia revertido sin reconfirmar.
                 # Si el viaje no fue reportado antes (Vigilancia cierra un
@@ -1733,16 +1770,16 @@ async def vig_devolver(
                 minutos_ultimo_segmento = max(1, int((fin_dt - inicio_dt).total_seconds() / 60))
                 subtotal_ultimo_segmento = round(minutos_ultimo_segmento / 60 * precio_modalidad_final_con_promo, 2)
 
-                retraso_min = max(0.0, (ahora - fin_dt).total_seconds() / 60 - 300) if fecha_fin_reportada else 0.0
+                retraso_min = max(0.0, (ahora - fin_dt).total_seconds() / 60 - MINUTOS_GRACIA_DEMORA) if fecha_fin_reportada else 0.0
                 precio_hora_display = precio_modalidad_final  # SIN promo -- multiplicador del recargo
             else:
                 subtotal_ultimo_segmento = precio_modalidad_final_con_promo
-                # Gracia de 5h desde que TERMINA la ventana comprada
-                # (dia=24h, semana=7d), no desde el reporte -- con
+                # Gracia (MINUTOS_GRACIA_DEMORA) desde que TERMINA la ventana
+                # comprada (dia=24h, semana=7d), no desde el reporte -- con
                 # tarifa plana, "demora" es exceder lo pagado (spec).
                 horas_ventana = 24 if modalidad_final == "dia" else 24 * 7
                 fin_ventana = inicio_dt + timedelta(hours=horas_ventana)
-                retraso_min = max(0.0, (ahora - fin_ventana).total_seconds() / 60 - 300)
+                retraso_min = max(0.0, (ahora - fin_ventana).total_seconds() / 60 - MINUTOS_GRACIA_DEMORA)
                 precio_hora_resultado = tarifas_repo.precio_modalidad(id_categoria, tipo_membresia, "hora")
                 precio_hora_display = precio_hora_resultado[0] if precio_hora_resultado else 0.0
 
@@ -1839,7 +1876,7 @@ async def vig_devolver(
                     pb, viaje.get("ciclista_id", ""), tipo="penalizacion",
                     titulo="Recargo por demora aplicado",
                     mensaje=f"Se aplicó un recargo de ${recargo_demora:.2f} por demora en la devolución "
-                            "(más de 5h desde que reportaste el fin del viaje).",
+                            "(más de 1h desde que reportaste el fin del viaje).",
                     enlace="/ciclista/pagos",
                 )
 
@@ -2970,6 +3007,7 @@ async def vig_soporte_detalle(request: Request, conversacion_id: str):
         eliminar_url_base=f"/empleado/vigilancia/soporte/{conversacion_id}/eliminar-mensaje",
         eliminar_conversacion_url=f"/empleado/vigilancia/soporte/{conversacion_id}/eliminar",
         puede_borrar_conversacion=True,
+        puede_moderar=True,
         base_url="/empleado/vigilancia/soporte",
     ))
 
@@ -2996,8 +3034,12 @@ async def vig_soporte_enviar(
 
 @router.post("/vigilancia/soporte/{conversacion_id}/eliminar-mensaje/{mensaje_id}")
 async def vig_soporte_eliminar_mensaje(request: Request, conversacion_id: str, mensaje_id: str):
+    """Vigilancia modera: puede ocultar cualquier mensaje de la
+    conversación (punto 32 del Plan V3), no solo los suyos -- ver
+    mensajes_soporte_repo.eliminar_mensaje(puede_moderar=True)."""
     user = getattr(request.state, "user", {})
-    ok, motivo_error = mensajes_soporte_repo.eliminar_mensaje(mensaje_id, actor_id=user.get("id", ""))
+    ok, motivo_error = mensajes_soporte_repo.eliminar_mensaje(
+        mensaje_id, actor_id=user.get("id", ""), puede_moderar=True)
     if not ok:
         return _flash(request, f"/empleado/vigilancia/soporte/{conversacion_id}", "error", motivo_error)
     return RedirectResponse(f"/empleado/vigilancia/soporte/{conversacion_id}", status_code=302)

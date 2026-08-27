@@ -7653,3 +7653,329 @@ no se generó ningún dato de prueba nuevo):**
 **Estado del plan: RESUELTO.** Las 4 tareas de código completas y comiteadas, refactor de Task 1
 verificado byte-idéntico antes/después, bypass de propiedad confirmado bloqueado, exports existentes
 sin regresión.
+
+---
+
+## 91. Cambio de decisión -- la ventana de gracia pasa de 5h a 1h (26-ago-2026)
+
+**Reemplaza la sección 70** (no la borra): el diseño de la ventana de gracia -- congelar el
+subtotal en `fecha_fin` (el reporte del ciclista), cobrar el recargo por demora aparte, reflejarlo
+como línea propia en la factura -- sigue siendo exactamente el mismo. Lo único que cambió es el
+número: Washington confirmó que el umbral pasa de **5 horas a 1 hora** desde que el ciclista reporta
+la devolución (o desde que termina la ventana comprada, en `dia`/`semana`) hasta que Vigilancia
+valida. No es una tarifa punitiva distinta -- pasada la hora se sigue cobrando con la tarifa normal
+que el ciclista ya tenía seleccionada, tal como ya funcionaba con 5h.
+
+**Causa real encontrada al ubicar el número:** no había una única constante nombrada como asumía el
+pedido -- el valor `300` (minutos) estaba **hardcodeado sin nombre y duplicado dos veces** en
+`empleado.py:vig_devolver()` (una vez para modalidad `hora`, otra para `dia`/`semana`), más una
+tercera copia con nombre (`MINUTOS_GRACIA_DEMORA`) en `costo-en-vivo.js` para la vista en vivo del
+punto 70. Se aprovechó el cambio para introducir una constante real (`MINUTOS_GRACIA_DEMORA = 60`,
+`app/routers/empleado.py`, justo antes de `vig_devolver()`) y usarla en ambos lugares del backend,
+en vez de dejar el `300 -> 60` repetido sin nombre por segunda vez.
+
+**Archivos tocados (solo el número y los textos/comentarios que lo mencionaban -- ninguna lógica
+nueva):**
+- `app/routers/empleado.py` -- constante nueva `MINUTOS_GRACIA_DEMORA = 60`, usada en las dos ramas
+  (`hora` y `dia`/`semana`) de `vig_devolver()`.
+- `app/static/js/costo-en-vivo.js` -- `MINUTOS_GRACIA_DEMORA = 60` (antes `300`), vista en vivo de
+  ciclista y Vigilancia.
+- `app/routers/ciclista.py` -- comentario del docstring de `finalizar()`.
+- `app/templates/ciclista/viaje_activo.html` -- **texto visible al ciclista** en el modal de
+  confirmación de devolución: *"Tienes 1 hora sin cargo adicional..."* (antes "5 horas"), más 2
+  comentarios.
+- `app/templates/empleado/vigilancia/devoluciones.html` -- 1 comentario.
+
+**No tocado a propósito:** el umbral de 120 minutos que en `devoluciones.html` cambia la etiqueta
+del botón a "Registrar devolución forzada" es una regla de UI distinta (marca visualmente los
+viajes muy demorados para Vigilancia), no la ventana de gracia del recargo -- no había pedido de
+Washington para tocarlo y no se asumió que fuera lo mismo.
+
+**Prueba real de punta a punta** (26-ago-2026, contra la app real corriendo en `127.0.0.1:8002` con
+`--reload`, PocketBase y ClickHouse reales, cuentas reales `wacho@urbanbike.com` (ciclista) y
+`empleado.vig@urbanbike.com` (Vigilancia), login HTTP real con CSRF real -- mismo patrón que la
+sección 70, sin mocks):
+
+1. **Dentro de la 1h de gracia**: reservar `UB-001` (modalidad `hora`) → reportar devolución →
+   Vigilancia valida a los pocos segundos. Pago real creado: `subtotal=$0.03`, `recargo_demora=0`,
+   `monto_total=$0.03`. Correcto: sin demora, sin recargo.
+2. **Fuera de la 1h de gracia**: reservar `UB-004` → reportar devolución → como esperar 1h real no
+   es viable, se adelantaron `fecha_inicio`/`fecha_fin`/`inicio_segmento_actual` del viaje 90
+   minutos hacia atrás vía PocketBase directo (mismo criterio ya usado en la sección 70) →
+   Vigilancia valida. Pago real creado: `subtotal=$0.03`, `recargo_demora=$1.75` (30 min de retraso
+   real sobre los 60 de gracia, × $3.5/h = $1.75 exacto), `monto_total=$1.78`. Confirma que el
+   umbral nuevo (60 min, no 300) es el que de verdad se está aplicando -- con el código viejo este
+   mismo escenario habría dado `recargo_demora=0` (90 min de retraso no supera 300 de gracia).
+3. **Limpieza completa al terminar**: los 2 pagos, 2 viajes y notificaciones (`viaje_iniciado`,
+   `pago_pendiente`, `devolucion_validada`) generados por la prueba se borraron; `UB-001` y `UB-004`
+   restaurados a `disponible` en su estación original; `terminos_aceptados_en` de `wacho@` (vacío
+   antes de la prueba, por el punto de aceptación de términos en curso, ajeno a este cambio)
+   restaurado a su valor original. Estado final verificado idéntico al de antes de la prueba (2
+   viajes históricos previos intactos, ninguno tocado).
+
+No se re-renderizó la vista HTML del comprobante (como sí hizo la sección 70): la plantilla y el
+código que arma la factura no cambiaron en este punto, solo el número de entrada -- los campos
+reales de `pagos` (`subtotal`/`recargo_demora`/`monto_total`) ya prueban que el cálculo nuevo es
+correcto, y esa misma plantilla ya quedó verificada leyendo esos campos en la sección 70.
+
+**Estado: RESUELTO.** Constante consolidada (ya no duplicada sin nombre), textos de interfaz
+actualizados, prueba real de los dos escenarios (dentro/fuera de gracia) confirmada con el umbral
+nuevo.
+
+---
+
+## 92. Plan V3, Prioridad 0.1 -- restricción de dirección en cambio de modalidad (26-ago-2026)
+
+Implementa el punto 9 del compañero, ya auditado en la sección 91 (audit-only en su momento):
+no se puede bajar de modalidad (`semana`→`dia`, `dia`→`hora`) con el viaje en curso. Decisión ya
+confirmada con Washington: la restricción aplica **únicamente una vez que el viaje ya está en
+curso**, nunca antes de empezarlo -- por eso se implementó dentro de `cambiar_modalidad()`
+(`app/routers/ciclista.py`), que ya solo es alcanzable con `viaje.estado == "activo"`. No se tocó
+`reservar()` ni la selección inicial de modalidad, tal como se acordó.
+
+**Implementación**: dos constantes nuevas justo antes de la función, `_ORDEN_MODALIDAD`
+(`hora`=0, `dia`=1, `semana`=2) y `_ETIQUETA_MODALIDAD` (mismas etiquetas ya usadas en
+`viaje_activo.html`). Si `_ORDEN_MODALIDAD[modalidad_nueva] < _ORDEN_MODALIDAD[modalidad_actual]`,
+se rechaza con un mensaje explícito (qué modalidad tenía, a cuál intentó bajar, y que solo puede
+mantenerla o subir) sin tocar el viaje ni generar ningún cobro de segmento. Subir (o quedarse
+igual) sigue funcionando exactamente como antes.
+
+**Prueba real de punta a punta** (servidor real `127.0.0.1:8002`, cuenta real `wacho@urbanbike.com`,
+login HTTP con CSRF real, sin mocks):
+
+| Caso | Resultado |
+|---|---|
+| Viaje iniciado en `dia`, intento de bajar a `hora` | Rechazado, toast "No puedes bajar de modalidad por día a por hora con el viaje en curso...", `modalidad_actual` en BD sigue en `dia` |
+| Mismo viaje, subir de `dia` a `semana` | Aceptado, toast "Modalidad cambiada a semana. El tramo anterior ya quedó cobrado.", `modalidad_actual` pasa a `semana` |
+| Mismo viaje ya en `semana`, intento de bajar a `dia` | Rechazado igual que el primer caso, `modalidad_actual` sigue en `semana` (confirma que el bloqueo no es solo del estado inicial, sigue aplicando tras un cambio real) |
+
+Datos de prueba (1 viaje, sus pagos/notificaciones) borrados al terminar; bicicleta `UB-001`
+restaurada a `disponible`.
+
+**Estado: RESUELTO.**
+
+---
+
+## 93. Plan V3, Prioridad 0.3 -- chat de soporte: Admin bloqueado como remitente + moderación real (26-ago-2026)
+
+Corrige el hallazgo real de seguridad de la sección 91: `POST /admin/soporte/{id}/enviar` era una
+ruta real y funcional, contradiciendo el punto 32 (Admin debe ser solo supervisión). Y agrega el
+punto 32 que faltaba del todo: moderación real de mensajes ajenos inapropiados.
+
+**(a) Admin ya no puede enviar** -- se eliminó por completo la ruta `admin_soporte_enviar` y el
+helper `_leer_adjunto_soporte` de `app/routers/admin.py` (nada la reemplaza: no debe existir
+ninguna forma de que Admin sea remitente). `admin_soporte_detalle()` ya no pasa `enviar_url` al
+template. `componentes/hilo_soporte.html` ahora envuelve el `<form>` de envío en
+`{% if enviar_url %}`, con un aviso "Vista de solo supervisión" en el `{% else %}` -- doble capa
+(UI oculta el formulario Y la ruta ya no existe, un POST directo da 404).
+
+**(b) Moderación real** -- `mensajes_soporte_repo.eliminar_mensaje()` ganó un parámetro
+`puede_moderar: bool = False`. Con `puede_moderar=True` (Vigilancia y Admin, no el ciclista) se
+puede ocultar CUALQUIER mensaje de la conversación, no solo los propios -- mismo mecanismo de
+soft-delete de siempre (`eliminado`/`eliminado_por`/`eliminado_en`), sin dato nuevo. El botón de
+borrar en `componentes/mensaje_soporte.html` (y su espejo en `chat-soporte.js`, que pinta lo mismo
+en el sondeo de 4s) ahora se muestra también sobre mensajes ajenos cuando `puede_moderar` es
+verdadero, con ícono/confirmación distintos ("Ocultar mensaje (moderación)" vs "Borrar mensaje").
+`puede_moderar=True` se pasa desde `vig_soporte_detalle()` (empleado.py) y `admin_soporte_detalle()`
+(admin.py); `ciclista.py` no lo pasa, así que sigue exactamente igual que antes (solo sus propios
+mensajes).
+
+**Comportamiento heredado, no un hallazgo nuevo**: un mensaje moderado desaparece por completo de
+la vista normal (ciclista/Vigilancia, `listar_hilo(incluir_eliminados=False)`) -- solo la vista de
+supervisión de Admin (`incluir_eliminados=True`) lo sigue viendo con el placeholder "Mensaje
+eliminado". Es el mismo criterio de visibilidad que ya tenía el soft-delete propio; la moderación
+solo extiende QUIÉN puede activarlo, no cambia qué ve cada rol después.
+
+**Prueba real de punta a punta** (servidor real `127.0.0.1:8002`, PocketBase real, cuentas reales
+`wacho@` (ciclista), `empleado.vig@` (Vigilancia) y `admin@` (Admin), login HTTP con CSRF real,
+conversación real creada por el flujo normal de "Iniciar chat", sin mocks):
+
+1. Admin abre una conversación real: el HTML **no contiene** el formulario de envío (`.chat-form`
+   ausente). Un `POST` directo a `/admin/soporte/{id}/enviar` (bypaseando la UI) responde **404**.
+2. Vigilancia oculta el mensaje real que mandó el ciclista al iniciar el chat: el registro en
+   PocketBase queda `eliminado=True`, `eliminado_por=<id real de Vigilancia>`.
+3. El ciclista ya no ve ese mensaje en su propio hilo (conversación vacía); Admin sí lo sigue
+   viendo, marcado "Mensaje eliminado".
+4. Regresión confirmada: el ciclista sigue sin poder borrar/ocultar un mensaje real de Vigilancia
+   (intento real vía POST, el mensaje queda intacto `eliminado=False`).
+
+Conversación de prueba (2 mensajes reales, 2 notificaciones) borrada por completo al terminar.
+
+**Estado: RESUELTO.**
+
+---
+
+## 95. Plan V3, Prioridad 0.5 -- acceso directo a la Guía de uso desde el inicio de cada rol (26-ago-2026)
+
+Antes solo se llegaba a `/guia` por el menú lateral (sección "Cuenta" de `base.html`), como
+confirmó la auditoría de la sección 91. Se agregó un enlace directo y visible en la pantalla de
+inicio de los 6 roles, sin quitar el del menú.
+
+**Componente nuevo** `componentes/guia_uso_boton.html`: un solo `<a href="/guia">` estilo
+`.btn.btn-ghost` alineado a la derecha, con el mismo ícono de ayuda (círculo + "?") que ya usa el
+enlace del sidebar -- consistencia visual, no un elemento nuevo inventado. Incluido como primera
+línea de `{% block content %}` en los 6 dashboards de inicio (uno por rol): `dashboard.html`
+(Admin), `ciclista/dashboard.html`, `gerente/dashboard.html`,
+`empleado/operacion/dashboard.html`, `empleado/mantenimiento/dashboard.html`,
+`empleado/vigilancia/dashboard.html` -- nunca en pantallas internas, solo en el punto de entrada
+real de cada rol tras iniciar sesión.
+
+**Prueba real** (servidor real `127.0.0.1:8002`, las 6 cuentas reales de rol, login HTTP con CSRF
+real, sin mocks): login como cada uno de los 6 roles → `GET /dashboard` (que redirige a la
+pantalla de inicio real de ese rol) → confirmado el enlace `href="/guia"` con el texto "Guía de
+uso" presente en las 6 respuestas, y `GET /guia` respondiendo 200 en los 6 casos (sin regresión).
+
+**Estado: RESUELTO.**
+
+---
+
+## Cierre de la Prioridad 0 del Plan V3 (26-ago-2026)
+
+Los 6 puntos de la Prioridad 0 (`docs/Plan_Mejoras_UrbanBike_V3.md`) quedan resueltos:
+- **0.1** (restricción de modalidad) -- sección 92.
+- **0.2** (límite de 30 min) -- resuelto por el cambio de ventana de la sección 91: Washington
+  confirmó que no era una regla nueva, sin trabajo adicional.
+- **0.3** (chat, restricciones de rol) -- sección 93.
+- **0.4** (filtros automáticos) -- intentado en la sección 94 (filtro en vivo en `/admin/auditoria`),
+  pero revertido tras prueba real en navegador (ver sección 94 actualizada y la sección 99): el
+  filtro de servidor (botón "Filtrar" explícito) sigue funcionando igual que siempre, sin el
+  auto-envío en vivo.
+- **0.5** (guía de uso) -- esta sección.
+- **0.6** (pantalla "Bicicletas" del Mecánico) -- sección 96.
+
+---
+
+## 96. Plan V3, Prioridad 0.6 -- "Bicicletas" del Mecánico conectada al flujo real de Órdenes (26-ago-2026)
+
+Decisión de Washington tras la auditoría de la sección 91: no se borra la pantalla (era real, con
+datos reales, no un hallazgo de "esto no sirve para nada" de los que ya se han visto antes en el
+proyecto) -- se conecta al flujo real de trabajo en vez de dejarla de solo lectura.
+
+**Regla de negocio**: cada fila de `empleado/mantenimiento/bicicletas.html` (bicicletas con
+`estado="mantenimiento"` en PocketBase) ahora enlaza a la orden real más reciente de esa bicicleta
+por código:
+- Si esa orden más reciente **sigue abierta** (`estado_reparacion != 'cerrada'`) -> enlaza a
+  verla/editarla (`/empleado/mantenimiento/ordenes/{id}`), texto "Ver orden {código}".
+- Si **no hay ninguna orden real**, o la más reciente **ya está cerrada** (la bicicleta sigue en
+  mantenimiento por un problema nuevo, todavía sin rastrear) -> enlaza a crear una nueva
+  (`/empleado/mantenimiento/ordenes/nueva?bicicleta_id=...`), con esa bicicleta ya preseleccionada
+  en el formulario, texto "Crear orden".
+
+**Repositorio** (`app/db/ordenes_repo.py`): dos funciones nuevas --
+`obtener_mas_reciente_por_bicicleta(codigo)` (la orden real más reciente de esa bicicleta,
+cualquier estado) y `bicicleta_id_por_codigo(codigo)` (id real de ClickHouse para preseleccionar,
+ya que la pantalla del Mecánico solo conoce el código vía PocketBase).
+
+**Ruta** `mnt_ordenes_nueva()` (`app/routers/empleado.py`) ahora acepta `?bicicleta_id=` y lo pasa
+al template como `preseleccion_bicicleta_id`. `ordenes_form.html` preselecciona esa bicicleta en el
+`<select>` -- **bug real encontrado y corregido durante la prueba**: la comparación inicial
+`preseleccion_bicicleta_id == b.id` nunca coincidía porque `b.id` llega de ClickHouse como
+`uuid.UUID` (no como `str`) y `preseleccion_bicicleta_id` es un `str` del query param -- Python no
+los considera iguales aunque el valor sea el mismo. Corregido comparando contra `b.id | string`.
+
+**Prueba real de punta a punta** (servidor real `127.0.0.1:8002`, ClickHouse real, cuenta real
+`empleado.mant@urbanbike.com`, sin mocks, sobre datos reales ya existentes -- no se creó ninguna
+orden de prueba):
+- `UB-009` tiene una orden real abierta (`OM-0333`, estado `diagnostico`) -> la fila enlaza "Ver
+  orden OM-0333"; siguiendo el enlace se llega a esa orden real.
+- `UB-003` solo tiene órdenes reales ya `cerrada` (`OM-0315`, `OM-0314`) -> la fila enlaza "Crear
+  orden"; siguiendo el enlace, el formulario de nueva orden trae **UB-003 ya preseleccionada** en
+  el `<select>` de bicicleta (recién confirmado tras el fix del bug de tipos).
+- Confirmado con ClickHouse que la prueba no dejó ninguna orden nueva creada (0 registros con
+  `fecha_apertura` en la última hora).
+
+**Estado: RESUELTO.**
+
+---
+
+## 97. Fix suelto -- 4 textos "5h" que la sección 91 no barrió (26-ago-2026)
+
+Al auditar la pantalla de "Cambiar modalidad" para el punto 1.2 del Plan V3 (ver sección 98) se
+encontraron 4 lugares más con el número viejo de la gracia, que el `grep` de la sección 91 no
+capturó porque usaban la forma corta "5h" sin la palabra "horas" ni el patrón exacto "5h de
+gracia" que se buscó entonces:
+- `app/routers/ciclista.py` -- la **línea de la factura real** (`LineaFactura`) decía
+  *"Recargo por demora en la devolución (>5h)"* -- el texto que el ciclista ve en su comprobante
+  de pago real.
+- `app/routers/empleado.py` -- el **mensaje real de la notificación** de penalización decía
+  *"(más de 5h desde que reportaste el fin del viaje)"*.
+- `app/templates/empleado/vigilancia/devoluciones.html` -- banner fijo de la cola de pendientes de
+  validación.
+- `app/templates/ciclista/viaje_activo.html` -- descripción estática de la tarjeta "Devolver
+  bicicleta" y el banner JS de "ya pasó la gracia" (el otro banner, el que sí calcula minutos
+  restantes con `MINUTOS_GRACIA_DEMORA`, ya estaba correcto -- solo el texto fijo del caso "ya se
+  pasó" tenía el número viejo hardcodeado).
+
+Los 4 corregidos a "1h". **Prueba real de punta a punta** (mismo patrón que la sección 91: viaje
+real backdateado 90 min, validado por Vigilancia, `recargo_demora=$1.75` real): la notificación
+real de penalización quedó con el texto *"...(más de 1h desde que reportaste el fin del viaje)"*,
+y la **factura real pagada con tarjeta de pruebas** (comprobante real, no simulado) muestra
+*"Recargo por demora en la devolución (>1h)"* -- confirmado leyendo el HTML real de
+`/ciclista/comprobante/{id}`, sin rastro de "(>5h)". Datos de prueba borrados al terminar.
+
+**Estado: RESUELTO.**
+
+---
+
+## 98. Plan V3, Prioridad 1 -- Bloque 1: navegación y cambio de modalidad (26-ago-2026)
+
+### 1.1 -- "Volver" a la página anterior real
+
+**Causa real**: `back_url` (`base.html`) es un bloque Jinja fijo por plantilla, resuelto en el
+servidor sin ningún conocimiento del historial real de navegación -- 22 plantillas lo
+sobreescriben con un destino estático (casi siempre el listado "natural" de esa pantalla). Si el
+ciclista llegó por otro camino (una notificación, una tarjeta de "pendientes", un listado con
+filtros/página específica), "Volver" lo mandaba siempre al mismo lugar genérico, perdiendo de
+dónde vino de verdad.
+
+**Fix**: sin tocar las 22 plantillas ni el mecanismo de `back_url` (sigue siendo el respaldo
+real). En `base.html`, el enlace `#topbar-back` ahora usa `window.history.back()` como
+comportamiento primario cuando la pestaña sí tiene una página anterior real de UrbanBike
+(`window.history.length > 1` y `document.referrer` del mismo origen) -- lleva exactamente a donde
+el usuario estaba. Si no hay historial real (enlace directo, pestaña nueva), se usa el `href`
+estático de siempre, así que el botón nunca se rompe.
+
+**Prueba real**: confirmado en el HTML real de `/ciclista/historial` (servidor `:8002`, cuenta
+`wacho@`) que el anchor `id="topbar-back"` y el bloque de JS (`referrerEsUrbanBike`) están
+presentes con el `href` de respaldo correcto (`/ciclista/dashboard`). **No verificado con
+navegador real** -- no hay automatización de navegador disponible en esta sesión, y el
+comportamiento (`history.back()` disparándose y aterrizando en la página anterior real) solo se
+puede observar con `window.history`/`document.referrer` reales de una pestaña, que un cliente HTTP
+sin navegador no tiene. Queda como el mismo tipo de hueco que 0.4 (filtro en vivo).
+
+### 1.2 -- Color distintivo del botón "Cambiar modalidad"
+
+**Antes**: `.btn-ghost`, la misma clase que usan la mayoría de botones secundarios de la pantalla
+(Cancelar, exportar, etc.) -- indistinguible a simple vista.
+
+**Fix**: clase nueva `.btn-modalidad` (`app/static/css/main.css`), tono ámbar (`#F59E0B`, el mismo
+que ya usa `.badge-yellow` para "atención" en el resto del sistema, no un color inventado) con
+texto blanco. Aplicada solo al botón "Cambiar modalidad" de `ciclista/viaje_activo.html`.
+
+**Prueba real**: HTML real de una pantalla de viaje activo real confirma `class="btn
+btn-modalidad"` en el botón (ya no `btn-ghost`); el CSS real servido por la app confirma la regla
+`.btn-modalidad { background: #F59E0B; ... }`.
+
+### 1.3 -- Costo total del cambio como aviso explícito antes de confirmar
+
+**Antes**: el modal de confirmación (ya existente, de la sección 82) mostraba el precio *por
+unidad* de la modalidad actual y la nueva, pero decía textualmente *"vas a pagar un monto
+distinto"* sin dar nunca el número real -- el aviso no era realmente explícito sobre el costo.
+
+**Fix**: nuevo cálculo en el mismo `<script>` que ya arma el modal (`viaje_activo.html`): el costo
+real del tramo que se va a cerrar -- mismo criterio exacto que usa `costoDetallado()`
+(`costo-en-vivo.js`) para el segmento abierto: `hora` se mide por tiempo real transcurrido desde
+`inicio_segmento_actual`; `dia`/`semana` son tarifa plana ya cobrada completa. Se muestra como
+*"Vas a pagar $X.XX ahora mismo"* en un bloque destacado dentro del modal, antes del botón
+"Confirmar cambio".
+
+**Prueba real**: HTML real confirma que `PRECIOS_MODALIDAD` y `VIAJE` (con `fecha_inicio` /
+`modalidad_actual` reales) llegan al cliente con datos reales, no `null`. Además, la fórmula exacta
+que quedó en el template se ejecutó de verdad con Node.js usando esos mismos datos reales
+(`PRECIOS_MODALIDAD.hora = $1.75`, viaje real con ~14.7s transcurridos) y produjo `$0.01` -- un
+resultado numéricamente correcto. **No se verificó dentro de un navegador real** (mismo motivo que
+1.1) -- se ejecutó la lógica real con datos reales, pero no el DOM/modal real renderizándose ante
+un clic humano.
+
+**Estado: RESUELTO (1.1 y 1.3 con evidencia de servidor/lógica real, sin confirmación visual en
+navegador -- ver nota de cada uno).**

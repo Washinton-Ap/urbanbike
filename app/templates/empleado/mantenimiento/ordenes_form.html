@@ -109,7 +109,7 @@
       <div class="form-group"><label class="form-label">Bicicleta *</label>
         <select class="form-input" name="id_bicicleta" required {% if modo != 'crear' %}disabled{% endif %}>
           {% for b in bicicletas %}
-          <option value="{{ b.id }}" {% if orden and orden.id_bicicleta == b.id %}selected{% endif %}>{{ b.codigo }} — {{ b.marca }} {{ b.modelo }}</option>
+          <option value="{{ b.id }}" {% if (orden and orden.id_bicicleta == b.id) or (preseleccion_bicicleta_id and preseleccion_bicicleta_id == (b.id | string)) %}selected{% endif %}>{{ b.codigo }} — {{ b.marca }} {{ b.modelo }}</option>
           {% endfor %}
         </select>
         {% if modo != 'crear' %}<input type="hidden" name="id_bicicleta" value="{{ orden.id_bicicleta }}">{% endif %}

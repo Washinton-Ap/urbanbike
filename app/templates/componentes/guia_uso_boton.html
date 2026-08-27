@@ -1,0 +1,15 @@
+{#
+  Enlace directo a la Guía de uso desde la pantalla de inicio de cada rol
+  (Plan_Mejoras_UrbanBike_V3.md, Prioridad 0.5 / punto 19 del compañero --
+  ver docs/HOJA_DE_RUTA.md sección 95). Antes solo se llegaba por el menú
+  lateral (sección "Cuenta" de base.html) -- este include no lo reemplaza,
+  solo agrega un atajo visible sin abrir el menú. Incluido al inicio de
+  {% block content %} en los 6 dashboards de inicio (uno por rol), nunca en
+  pantallas internas.
+#}
+<div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+  <a href="/guia" class="btn btn-ghost" style="font-size:0.8rem;padding:6px 14px;display:inline-flex;align-items:center;gap:6px;">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    Guía de uso
+  </a>
+</div>

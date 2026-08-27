@@ -238,17 +238,24 @@ def marcar_leidos(conversacion_id: str, *, para_rol: str) -> int:
     return len(pendientes)
 
 
-def eliminar_mensaje(mensaje_id: str, *, actor_id: str) -> tuple[bool, str]:
-    """Soft-delete de UN mensaje propio: nunca DELETE real (puede ser
-    evidencia de un reclamo o de una promesa hecha por el staff, mismo
-    criterio que la bitácora/ordenes_repo.eliminar()). Solo el autor real
-    de ese mensaje puede borrarlo -- ni el ciclista puede borrar lo que
-    mandó el staff, ni al revés."""
+def eliminar_mensaje(mensaje_id: str, *, actor_id: str, puede_moderar: bool = False) -> tuple[bool, str]:
+    """Soft-delete de UN mensaje: nunca DELETE real (puede ser evidencia de
+    un reclamo o de una promesa hecha por el staff, mismo criterio que la
+    bitácora/ordenes_repo.eliminar()).
+
+    Por defecto (`puede_moderar=False`) solo el autor real de ese mensaje
+    puede borrarlo -- ni el ciclista puede borrar lo que mandó el staff, ni
+    al revés. `puede_moderar=True` (Vigilancia/Admin, ver punto 32 del Plan
+    V3 -- moderación real de mensajes ajenos inapropiados, antes solo
+    existía el borrado de la conversación completa) permite ocultar
+    CUALQUIER mensaje de la conversación, no solo los propios -- mismo
+    mecanismo de soft-delete, sin distinción en el dato guardado más allá
+    de `eliminado_por` (que ya deja constancia real de quién lo hizo)."""
     try:
         m = _pb().get_record("mensajes_soporte", mensaje_id)
     except Exception:
         return False, "Mensaje no encontrado."
-    if m.get("autor_id") != actor_id:
+    if not puede_moderar and m.get("autor_id") != actor_id:
         return False, "Solo puedes borrar tus propios mensajes."
     if m.get("eliminado"):
         return True, ""

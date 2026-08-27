@@ -96,7 +96,7 @@
       <option value="dia" {{ "selected" if viaje.modalidad_actual == "dia" }}>Por día</option>
       <option value="semana" {{ "selected" if viaje.modalidad_actual == "semana" }}>Por semana</option>
     </select>
-    <button type="submit" class="btn btn-ghost">Cambiar modalidad</button>
+    <button type="submit" class="btn btn-modalidad">Cambiar modalidad</button>
   </form>
 </div>
 <div class="card">
@@ -117,7 +117,7 @@
     </div>
     <input type="hidden" name="estacion_fin_nombre" id="input-estacion-fin-nombre">
     <div style="font-size:0.8rem;color:var(--text-muted);margin-top:6px;">
-      Esto reporta que dejaste la bicicleta -- el costo se congela con la hora de este reporte. Tienes 5h sin cargo adicional para que Vigilancia confirme la entrega física; pasado ese tiempo se aplica un recargo por demora aparte.
+      Esto reporta que dejaste la bicicleta -- el costo se congela con la hora de este reporte. Tienes 1h sin cargo adicional para que Vigilancia confirme la entrega física; pasado ese tiempo se aplica un recargo por demora aparte.
     </div>
     <button type="submit" class="btn btn-primary" style="margin-top:8px;">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
@@ -132,7 +132,7 @@
     <div class="modal-header"><span class="card-title">Confirmar devolución</span>
       <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-confirmar-devolucion').close()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <p style="color:var(--text);margin-bottom:8px;">Vas a reportar que dejaste <strong>{{ viaje.bicicleta_codigo }}</strong> en <strong id="modal-devolucion-estacion"></strong>.</p>
-    <p style="color:var(--text-muted);margin-bottom:20px;">El costo se congela con la hora de este reporte. Tienes <strong>5 horas sin cargo adicional</strong> para que Vigilancia confirme la entrega física -- pasado ese tiempo se aplica un <strong>recargo por demora</strong> aparte.</p>
+    <p style="color:var(--text-muted);margin-bottom:20px;">El costo se congela con la hora de este reporte. Tienes <strong>1 hora sin cargo adicional</strong> para que Vigilancia confirme la entrega física -- pasado ese tiempo se aplica un <strong>recargo por demora</strong> aparte.</p>
     <div class="flex gap-2" style="justify-content:flex-end;">
       <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-confirmar-devolucion').close()">Cancelar</button>
       <button type="button" class="btn btn-primary" id="btn-confirmar-devolucion">Confirmar devolución</button>
@@ -145,7 +145,10 @@
     <div class="modal-header"><span class="card-title">Confirmar cambio de modalidad</span>
       <button class="btn btn-ghost" style="padding:4px 10px;" onclick="document.getElementById('modal-confirmar-modalidad').close()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
     <p style="color:var(--text);margin-bottom:8px;">El precio va a cambiar: dejarás de pagar <strong id="modal-modalidad-precio-actual"></strong> y desde ahora se te cobrará <strong id="modal-modalidad-precio-nuevo"></strong>.</p>
-    <p style="color:var(--text-muted);margin-bottom:20px;">El tramo que ya recorriste en la modalidad actual se cobra aparte, con su propia tarifa -- vas a pagar un <strong>monto distinto</strong> al que verías si mantuvieras la modalidad original.</p>
+    <p style="background:var(--primary-light);border-radius:var(--radius);padding:12px 14px;margin-bottom:20px;color:var(--text);">
+      El tramo que ya recorriste en la modalidad actual se cobra aparte, con su propia tarifa.
+      <strong>Vas a pagar <span id="modal-modalidad-costo-tramo" style="font-family:'Sora',sans-serif;">$0.00</span> ahora mismo</strong> por ese tramo, antes de que empiece a cobrarse la nueva modalidad.
+    </p>
     <div class="flex gap-2" style="justify-content:flex-end;">
       <button type="button" class="btn btn-ghost" onclick="document.getElementById('modal-confirmar-modalidad').close()">Cancelar</button>
       <button type="button" class="btn btn-primary" id="btn-confirmar-modalidad">Confirmar cambio</button>
@@ -195,7 +198,7 @@ if (selectFin) {
 
 // Ventana de advertencia contextual (punto 1.7): antes de reportar la
 // devolución, el ciclista confirma en un modal explícito con la
-// advertencia de las 5h de gracia -- el 'submit' del navegador solo
+// advertencia de la 1h de gracia -- el 'submit' del navegador solo
 // dispara despues de que la validacion nativa de 'required' del select
 // ya paso, asi que no hace falta revalidar aca.
 const formDevolver = document.getElementById('form-devolver');
@@ -231,6 +234,7 @@ if (formModalidad && modalModalidad) {
   const selectModalidadNueva = document.getElementById('select-modalidad-nueva');
   const elPrecioActual = document.getElementById('modal-modalidad-precio-actual');
   const elPrecioNuevo  = document.getElementById('modal-modalidad-precio-nuevo');
+  const elCostoTramo   = document.getElementById('modal-modalidad-costo-tramo');
   formModalidad.addEventListener('submit', function (e) {
     if (formModalidad.dataset.confirmado === '1') return;
     const modalidadActual = VIAJE.modalidad_actual || 'hora';
@@ -243,6 +247,21 @@ if (formModalidad && modalModalidad) {
       ? `$${precioActual.toFixed(2)} ${ETIQUETA_MODALIDAD[modalidadActual]}` : ETIQUETA_MODALIDAD[modalidadActual];
     elPrecioNuevo.textContent = (precioNuevo != null)
       ? `$${precioNuevo.toFixed(2)} ${ETIQUETA_MODALIDAD[modalidadNueva]}` : ETIQUETA_MODALIDAD[modalidadNueva];
+
+    // Costo real del tramo que se va a cerrar (punto 1.3 del Plan V3) --
+    // mismo calculo exacto que el segmento abierto de costoDetallado()
+    // (costo-en-vivo.js): 'hora' se mide por tiempo real transcurrido
+    // desde que abrio el segmento, 'dia'/'semana' son tarifa plana ya
+    // cobrada completa al abrir. precioActual ya viene con promocion
+    // aplicada (mismo valor que usa el KPI "Costo del viaje" de arriba).
+    let costoTramo = precioActual || 0;
+    if (modalidadActual === 'hora' && precioActual != null) {
+      const inicioSegmento = new Date(VIAJE.inicio_segmento_actual || VIAJE.fecha_inicio);
+      const horas = Math.max(0, (new Date() - inicioSegmento) / 3600000);
+      costoTramo = horas * precioActual;
+    }
+    elCostoTramo.textContent = `$${costoTramo.toFixed(2)}`;
+
     modalModalidad.showModal();
   });
   document.getElementById('btn-confirmar-modalidad').addEventListener('click', function () {
@@ -259,7 +278,7 @@ if (formModalidad && modalModalidad) {
 // fijo) + el segmento abierto actual -- para 'hora' este último se
 // CONGELA en VIAJE.fecha_fin (el momento en que el ciclista reportó la
 // devolución) mientras se espera la validación de Vigilancia; solo el
-// recargo por demora (pasadas las 5h de gracia) sigue corriendo contra
+// recargo por demora (pasada la 1h de gracia) sigue corriendo contra
 // el reloj real. Restaurado por la Tarea A1 de este mismo plan, revirtiendo
 // lo que la Tarea 7/9 de "modalidad-tarifa-real" había cambiado sin
 // reconfirmar con Washington. Para 'dia'/'semana' el subtotal es tarifa
@@ -295,7 +314,7 @@ function actualizarTiempo() {
       const m = Math.floor(c.minutosParaRecargo % 60);
       elBanner.textContent = `Reportaste la devolución. Tienes ${h}h ${m}min sin cargo adicional para que Vigilancia confirme la entrega física.`;
     } else {
-      elBanner.textContent = 'Reportaste la devolución hace más de 5h -- se está aplicando un recargo por demora mientras Vigilancia confirma la entrega física.';
+      elBanner.textContent = 'Reportaste la devolución hace más de 1h -- se está aplicando un recargo por demora mientras Vigilancia confirma la entrega física.';
     }
   }
 }

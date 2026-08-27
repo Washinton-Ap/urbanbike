@@ -9,12 +9,13 @@ function segundosTranscurridos(fechaInicioISO) {
   return Math.max(0, Math.floor((Date.now() - inicio) / 1000));
 }
 
-// 5h de gracia sin cobro extra tras reportar la devolución -- debe
-// coincidir siempre con el mismo número hardcodeado en
-// empleado.py:vig_devolver() (retraso_min = ... - 300), que es el que
-// de verdad calcula el cobro. Este archivo solo refleja ese cálculo,
-// nunca lo decide.
-const MINUTOS_GRACIA_DEMORA = 300;
+// 1h de gracia sin cobro extra tras reportar la devolución (cambiado de
+// 5h a 1h el 26-ago-2026, decisión de Washington -- ver
+// docs/HOJA_DE_RUTA.md, sección 91). Debe coincidir siempre con
+// MINUTOS_GRACIA_DEMORA en empleado.py:vig_devolver(), que es el que de
+// verdad calcula el cobro. Este archivo solo refleja ese cálculo, nunca
+// lo decide.
+const MINUTOS_GRACIA_DEMORA = 60;
 
 /* Costo real de un viaje CON segmentos de modalidad (Tarea 9, plan
    "modalidad-tarifa-real"), con el mismo desglose que usa
@@ -32,7 +33,7 @@ const MINUTOS_GRACIA_DEMORA = 300;
    'activo' (fechaFinISO todavía vacío), el segmento 'hora' sigue el
    reloj real contra 'ahora', igual que siempre; 'dia'/'semana' son
    tarifa plana, ya se cobran completas al abrir el segmento.
-   El recargo por demora es un cargo aparte, 0 durante las 5h de
+   El recargo por demora es un cargo aparte, 0 durante la 1h de
    gracia desde su punto de referencia (que también depende de la
    modalidad, ver abajo), después crece aparte -- y SIEMPRE se calcula
    con el precio de la modalidad 'hora' (precioHora), nunca con el

@@ -1222,7 +1222,7 @@ async def finalizar(
     base ya queda fijo con la hora real de este reporte (fecha_fin) --
     decisión de negocio reconfirmada con Washington 17-ago-2026: la
     espera hasta que Vigilancia confirme NO es tiempo de uso real. Solo
-    el recargo por demora (tras 5h de gracia desde este reporte) sigue
+    el recargo por demora (tras 1h de gracia desde este reporte) sigue
     corriendo hasta que Vigilancia confirme -- mismo cálculo en vivo
     que ya usaba el cronómetro de viaje-activo, ahora también visible
     para Vigilancia en devoluciones.html."""
@@ -1280,6 +1280,17 @@ async def finalizar(
         return RedirectResponse(f"/ciclista/viaje-activo/{viaje_id}", status_code=302)
 
 
+# Orden real de las modalidades, de la mas corta a la mas larga -- usado
+# solo para bloquear el retroceso (punto 9 del compañero, Plan V3 P0.1).
+# Decision confirmada con Washington: la restriccion de "nunca bajar de
+# modalidad" aplica UNICAMENTE una vez que el viaje ya esta en curso, no
+# antes de empezarlo -- por eso vive aca, dentro de cambiar_modalidad()
+# (que ya solo es alcanzable con viaje.estado == "activo"), y no se tocó
+# reservar() ni la seleccion inicial de modalidad.
+_ORDEN_MODALIDAD = {"hora": 0, "dia": 1, "semana": 2}
+_ETIQUETA_MODALIDAD = {"hora": "por hora", "dia": "por día", "semana": "por semana"}
+
+
 @router.post("/cambiar-modalidad")
 async def cambiar_modalidad(
     request: Request,
@@ -1299,11 +1310,18 @@ async def cambiar_modalidad(
                 "Solo puedes cambiar la modalidad mientras el viaje sigue activo."}
             return RedirectResponse(f"/ciclista/viaje-activo/{viaje_id}", status_code=302)
 
+        modalidad_actual = viaje.get("modalidad_actual") or "hora"
+        if _ORDEN_MODALIDAD[modalidad_nueva] < _ORDEN_MODALIDAD[modalidad_actual]:
+            request.session["flash"] = {"type": "error", "msg":
+                f"No puedes bajar de modalidad {_ETIQUETA_MODALIDAD[modalidad_actual]} a "
+                f"{_ETIQUETA_MODALIDAD[modalidad_nueva]} con el viaje en curso -- solo puedes "
+                "mantenerla o subir a una modalidad más larga."}
+            return RedirectResponse(f"/ciclista/viaje-activo/{viaje_id}", status_code=302)
+
         bici = pb.get_record("bicicletas", viaje.get("bicicleta_id", ""))
         bicicleta_codigo = bici.get("codigo", viaje.get("bicicleta_codigo", ""))
         tipo_membresia = membresias_repo.tipo_membresia_real(user.get("email", ""))
 
-        modalidad_actual = viaje.get("modalidad_actual") or "hora"
         inicio_actual = viaje.get("inicio_segmento_actual") or viaje.get("fecha_inicio")
         ahora = _ahora()
 
@@ -1638,7 +1656,7 @@ def _construir_factura_pago(registro: dict, viaje: dict, user: dict) -> DatosFac
             # "Tarifa base" confiable usando el monto de pagos.subtotal.
             lineas = [LineaFactura("Tarifa base (alquiler de bicicleta)", 1, subtotal_base, subtotal_base)]
     if recargo_demora > 0:
-        lineas.append(LineaFactura("Recargo por demora en la devolución (>5h)", 1, recargo_demora, recargo_demora))
+        lineas.append(LineaFactura("Recargo por demora en la devolución (>1h)", 1, recargo_demora, recargo_demora))
     if cargo_danos > 0:
         lineas.append(LineaFactura("Cargo por daños a la bicicleta", 1, cargo_danos, cargo_danos))
     if descuento_monto > 0:
