@@ -106,7 +106,7 @@
       <select class="form-input" name="bicicleta_id" id="select-bicicleta" required>
         <option value="" disabled selected>Selecciona una bicicleta...</option>
         {% for b in bicicletas_disponibles %}
-        <option value="{{ b.id }}">{{ b.codigo }} — {{ b.marca }} {{ b.modelo }} ({{ b.estacion_nombre or "sin estación" }})</option>
+        <option value="{{ b.id }}" data-estacion-id="{{ b.id_estacion }}">{{ b.codigo }} — {{ b.marca }} {{ b.modelo }} ({{ b.estacion_nombre or "sin estación" }})</option>
         {% endfor %}
       </select>
     </div>
@@ -128,10 +128,12 @@
 
     <div class="form-group">
       <label class="form-label">Estación de inicio *</label>
-      <select class="form-input" name="estacion_inicio_id" required>
-        <option value="" disabled selected>Selecciona una estación...</option>
+      <select class="form-input" id="select-estacion" disabled>
+        <option value="" selected>Elige primero una bicicleta...</option>
         {% for e in estaciones %}<option value="{{ e.id }}">{{ e.nombre }}</option>{% endfor %}
       </select>
+      <input type="hidden" name="estacion_inicio_id" id="estacion-inicio-id">
+      <div style="font-size:0.78rem;color:var(--text-muted);margin-top:6px;">Se autocompleta con la estación real de la bicicleta elegida -- no editable.</div>
     </div>
     <div class="form-group">
       <label class="form-label">Nombre del ciclista</label>
@@ -167,6 +169,25 @@ function actualizarCotizacion() {
   cotBox.style.display = 'block';
 }
 selectBici.addEventListener('change', actualizarCotizacion);
+
+// Punto 1.10 (Plan V3): la estacion de inicio se autocompleta con la
+// estacion real de la bicicleta elegida (data-estacion-id, ya viene de
+// bicicletas_repo.listar() -- id_estacion) -- no se deja elegir a mano
+// para evitar un desajuste real entre "de donde sale de verdad" y "lo
+// que el empleado tipeo". El <select> visible queda deshabilitado (solo
+// para mostrar el nombre); el valor real que se envia va en el input
+// oculto, que si viaja en el POST.
+const selectEstacion = document.getElementById('select-estacion');
+const inputEstacionId = document.getElementById('estacion-inicio-id');
+selectBici.addEventListener('change', function () {
+  const opt = selectBici.options[selectBici.selectedIndex];
+  const estacionId = opt ? opt.dataset.estacionId : '';
+  inputEstacionId.value = estacionId || '';
+  selectEstacion.value = estacionId || '';
+  if (!estacionId) {
+    selectEstacion.selectedIndex = 0;
+  }
+});
 </script>
 {% endif %}
 

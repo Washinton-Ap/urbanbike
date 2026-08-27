@@ -8353,3 +8353,44 @@ usado también como parte del diagnóstico de la sección 109):
 | `pagos.monto_total` tras la confirmación | Sigue en `$0.03` exacto -- el monto a cobrar nunca se pudo editar |
 
 **Estado: RESUELTO.**
+
+---
+
+## 105. Plan V3, Prioridad 1 -- 1.10: alquiler manual autocompleta la estación real de la bicicleta
+
+**Antes:** `empleado/operacion/alquiler_form.html` (alquiler manual, cliente presencial) tenía dos
+`<select>` independientes -- "Bicicleta" y "Estación de inicio" -- sin ninguna relación entre ellos.
+Nada impedía que Operación eligiera una bicicleta real de una estación y, por error, seleccionara
+otra estación distinta en el segundo campo -- el `alquileres_repo.crear_presencial()` real confía
+ciegamente en el `estacion_inicio_id` que llega del formulario.
+
+**Cambio:** el `<select>` de bicicleta ahora trae `data-estacion-id` (ya viene de
+`bicicletas_repo.listar()` -- `id_estacion`, sin dato nuevo). Al elegir una bicicleta, JS
+autocompleta y **deshabilita** el `<select>` de estación (deja de ser editable a mano) y sincroniza
+un `<input type="hidden">` real que sí viaja en el `POST`. Defensa real del servidor
+(`op_alquileres_crear`): si `estacion_inicio_id` llega vacío (JS deshabilitado, o una bicicleta sin
+estación real asignada), se rechaza en vez de crear un alquiler con una estación inventada.
+
+**Prueba real de punta a punta** (Playwright real, Chromium, cuenta real `empleado@urbanbike.com`,
+bicicleta real `UB-001` en `Malecon 2000`):
+
+| Caso | Resultado real |
+|---|---|
+| Elegir `UB-001` en el `<select>` | El input oculto y el `<select>` (ya deshabilitado) toman `2a6418f8-...` (id real de "Malecon 2000") -- coincide exacto con `data-estacion-id` |
+| `POST /alquileres/crear` sin `estacion_inicio_id` (bypass simulando JS caído) | Rechazado con mensaje explícito, sin crear nada |
+| Alquiler real creado con el flujo completo (clic real en el navegador) | `alquileres.id_estacion_inicio` real en ClickHouse = `2a6418f8-...` -- coincide exacto con la estación real de la bicicleta, confirmado consultando la tabla directo |
+
+**Hallazgo retroactivo (no corregido, fuera de alcance -- dato histórico):** al buscar el alquiler
+recién creado se encontraron 2 alquileres manuales reales **anteriores** para esta misma bicicleta
+con `id_estacion_inicio` apuntando a "Parque La Carolina" -- la estación real de la bicicleta es
+"Malecon 2000". Es exactamente el bug que este punto corrige, ya presente en datos históricos de
+antes de este fix. No se tocan (no hay pedido de Washington de corregir históricos), pero queda
+documentado como evidencia real de que el problema no era hipotético.
+
+**Limpieza:** el alquiler de prueba se canceló con el endpoint real (`/cancelar`), que restauró la
+bicicleta `UB-001` a `disponible` (confirmado en ClickHouse). Queda un usuario "cliente presencial"
+real en `urbanbike_operativa.usuarios` (`"Prueba E2E 1.10 Playwright"`) sin borrar -- no existe
+ningún endpoint de borrado de usuarios de esa tabla en la app; mismo criterio que otros casos ya
+documentados en este archivo donde no hay camino real de limpieza.
+
+**Estado: RESUELTO.**

@@ -471,10 +471,18 @@ async def op_alquileres_nuevo(request: Request):
 async def op_alquileres_crear(
     request: Request,
     bicicleta_id:       str = Form(...),
-    estacion_inicio_id: str = Form(...),
+    estacion_inicio_id: str = Form(""),
     ciclista_nombre:    str = Form(""),
 ):
     user = getattr(request.state, "user", {})
+    # Punto 1.10 del Plan V3: estacion_inicio_id ya no lo elige el
+    # empleado a mano -- lo autocompleta el JS con la estacion real de la
+    # bicicleta elegida. Si llega vacío (bicicleta sin estación real
+    # asignada en ClickHouse, o JS deshabilitado), se corta acá en vez de
+    # crear un alquiler con una estación inventada o vacía.
+    if not estacion_inicio_id:
+        return _flash(request, "/empleado/operacion/alquileres/nuevo", "error",
+                      "No se pudo determinar la estación real de la bicicleta elegida.")
     try:
         nuevo_id = alquileres_repo.crear_presencial(
             id_bicicleta=bicicleta_id, id_estacion_inicio=estacion_inicio_id,
