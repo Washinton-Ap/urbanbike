@@ -195,6 +195,19 @@ function actualizarAplicaA() {
   });
 }
 actualizarAplicaA();
+
+{% if modo == "crear" %}
+// Punto 1.11 (Plan V3): una promoción nueva no puede empezar en el
+// pasado -- el servidor ya lo rechaza (_validar_promo_form,
+// exigir_inicio_futuro=True solo en creación), esto es solo el mismo
+// límite reflejado en el selector de fecha del navegador. No se aplica
+// en modo "editar": una promoción real que ya empezó debe poder seguir
+// editándose sin que esta regla la bloquee.
+(function () {
+  const hoy = new Date().toISOString().slice(0, 10);
+  document.getElementById('promo-fecha-inicio').min = hoy;
+})();
+{% endif %}
 </script>
 {% endif %}
 

@@ -1868,8 +1868,16 @@ def promociones_nueva(request: Request):
     ))
 
 
-def _validar_promo_form(codigo: str, nombre: str, valor: float, fecha_inicio_s: str, fecha_fin_s: str) -> str:
-    """Devuelve un mensaje de error, o '' si el formulario es valido."""
+def _validar_promo_form(codigo: str, nombre: str, valor: float, fecha_inicio_s: str, fecha_fin_s: str,
+                         exigir_inicio_futuro: bool = False) -> str:
+    """Devuelve un mensaje de error, o '' si el formulario es valido.
+
+    `exigir_inicio_futuro` (punto 1.11 del Plan V3, solo en creacion): una
+    promocion NUEVA no puede empezar en el pasado. No se aplica al editar
+    una promocion ya existente -- una promocion real que ya esta corriendo
+    (fecha_inicio en el pasado) debe poder seguir editandose (ajustar el
+    valor, usos_maximos, etc.) sin que esta regla la bloquee por una fecha
+    que nunca fue el motivo de la edicion."""
     if not codigo.strip() or not nombre.strip():
         return "Código y nombre son obligatorios."
     if valor <= 0:
@@ -1879,6 +1887,8 @@ def _validar_promo_form(codigo: str, nombre: str, valor: float, fecha_inicio_s: 
         ff = datetime.strptime(fecha_fin_s, "%Y-%m-%d").date()
     except ValueError:
         return "Fechas inválidas."
+    if exigir_inicio_futuro and fi < date.today():
+        return "La fecha de inicio de una promoción nueva no puede ser anterior a hoy."
     if ff < fi:
         return "La fecha de fin no puede ser anterior a la fecha de inicio."
     return ""
@@ -1894,7 +1904,7 @@ def promociones_crear(
     fecha_inicio: str = Form(...), fecha_fin: str = Form(...),
     usos_maximos: int = Form(0), solo_member: bool = Form(False),
 ):
-    error = _validar_promo_form(codigo, nombre, valor, fecha_inicio, fecha_fin)
+    error = _validar_promo_form(codigo, nombre, valor, fecha_inicio, fecha_fin, exigir_inicio_futuro=True)
     if error:
         return _flash(request, "/gerente/promociones/nueva", "error", error)
     try:

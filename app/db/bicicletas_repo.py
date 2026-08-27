@@ -277,6 +277,12 @@ def guardar_foto_principal(id_bicicleta: str, url: str) -> None:
 
 def crear(*, id_modelo: str, estado: str, id_estacion: str, numero_serie: str,
           fecha_adquisicion: date, observacion: str, es_electrica: bool) -> str:
+    # Punto 1.11 del Plan V3: no tiene sentido una bicicleta "adquirida" en
+    # una fecha que todavia no llego. Centralizado aca (unico punto real
+    # de creacion, ver docstring del modulo) en vez de repetirlo en los 3
+    # routers (admin/gerente/empleado-operacion) que llaman a esta funcion.
+    if fecha_adquisicion > date.today():
+        raise ValueError("La fecha de adquisición no puede ser una fecha futura.")
     import uuid
     nuevo_id = str(uuid.uuid4())
     codigo = _siguiente_codigo()
@@ -317,6 +323,10 @@ def _registrar_evento_estado(id_bicicleta: str, *, estado_origen: str, estado_de
 def actualizar(id_bicicleta: str, *, codigo: str, id_modelo: str, estado: str,
                id_estacion: str, numero_serie: str, fecha_adquisicion: date,
                observacion: str, es_electrica: bool) -> None:
+    # Punto 1.11 del Plan V3: mismo motivo que en crear() -- sin excepcion
+    # al editar, una fecha de adquisicion futura nunca es correcta.
+    if fecha_adquisicion > date.today():
+        raise ValueError("La fecha de adquisición no puede ser una fecha futura.")
     # ALTER ... UPDATE (mutacion in-place), no INSERT de una "nueva version":
     # esta tabla tenia ORDER BY (estado, id) hasta que se corrigio hoy a
     # ORDER BY id (ver docs/HOJA_DE_RUTA.md seccion 9) -- un INSERT con

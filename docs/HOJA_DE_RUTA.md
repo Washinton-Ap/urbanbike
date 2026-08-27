@@ -8394,3 +8394,43 @@ ningún endpoint de borrado de usuarios de esa tabla en la app; mismo criterio q
 documentados en este archivo donde no hay camino real de limpieza.
 
 **Estado: RESUELTO.**
+
+---
+
+## 106. Plan V3, Prioridad 1 -- 1.11: validación de fechas (promociones nuevas + fecha de adquisición de bicicletas)
+
+Alcance real después de revisar "caso por caso" los campos de fecha del sistema (`grep` de todos los
+`strptime(..., "%Y-%m-%d")` en los routers): la mayoría son filtros de reportes (`fecha_desde`/
+`fecha_hasta` de pagos, alquileres, respaldo) que **no** necesitan un límite de "no en el pasado" --
+un filtro de reporte histórico tiene que poder mirar hacia atrás. Se identificaron dos casos reales
+donde sí faltaba una validación de sentido común:
+
+### Promociones -- fecha de inicio no anterior a hoy (solo al crear)
+
+`_validar_promo_form()` ganó un parámetro `exigir_inicio_futuro` (solo `True` en
+`promociones_crear()`, nunca en `promociones_editar()`). **Decisión deliberada:** una promoción real
+que ya está corriendo (`fecha_inicio` en el pasado) tiene que poder seguir editándose -- ajustar el
+valor, `usos_maximos`, etc. -- sin que esta regla, pensada solo para evitar crear promociones "que ya
+empezaron ayer", bloquee ediciones legítimas de promociones ya activas.
+
+### Bicicletas -- fecha de adquisición no puede ser futura (crear y editar)
+
+Centralizado una sola vez en `bicicletas_repo.crear()`/`actualizar()` (los 2 únicos puntos reales de
+escritura, compartidos por los 3 routers que administran bicicletas -- admin, gerente,
+empleado-operación -- así no hace falta repetir el chequeo 6 veces). A diferencia de promociones,
+aquí SÍ aplica también al editar: no hay ningún caso real donde una fecha de adquisición futura tenga
+sentido, ni siquiera para una bicicleta ya existente.
+
+**Prueba real de punta a punta** (servidor real, cuenta real `gerente@urbanbike.com`, sin mocks):
+
+| Caso | Resultado real |
+|---|---|
+| Crear promoción con `fecha_inicio = 2020-01-01` | Rechazado, sin crear nada (confirmado 0 filas en ClickHouse) |
+| Crear promoción con `fecha_inicio` futura válida | Aceptado, verificado en ClickHouse |
+| Editar una promoción real existente con `fecha_inicio` en el pasado (`PRUEBA-WP`, 2026-08-06), cambiando solo otros campos | Aceptado -- confirma que la regla de creación no bloquea ediciones legítimas |
+| Crear bicicleta con `fecha_adquisicion = 2030-01-01` | Rechazado ("no puede ser una fecha futura"), sin crear nada (confirmado 0 filas) |
+
+**Limpieza:** la promoción de prueba se borró con el endpoint real (`/eliminar`), confirmado 0 filas
+en ClickHouse después.
+
+**Estado: RESUELTO.**
