@@ -1942,6 +1942,17 @@ def _historial_data(ciclista_id: str, q: str = "", estado: str = "") -> dict:
                     ON f.id_alquiler = a.id
                 WHERE a.estado = 'facturado' AND a.id IN %(ids)s
             """, {"ids": ids_alquiler})
+            # Bug real encontrado (ver docs/HOJA_DE_RUTA.md): un LEFT JOIN sin
+            # match en ClickHouse no devuelve NULL/None para una columna UUID
+            # no-Nullable -- devuelve el UUID por defecto (todo ceros), que en
+            # Python/Jinja es un objeto truthy. Sin este chequeo, el enlace
+            # "Descargar factura" aparecía incluso para alquileres reales
+            # facturados que nunca llegaron a tener una fila real en
+            # `facturas` (5 de 24 en los datos reales de hoy), llevando a
+            # /ciclista/factura/00000000-.../pdf -> "Factura no encontrada".
+            for f in filas:
+                if str(f.get("id_factura")) == facturas_repo.SENTINELA:
+                    f["id_factura"] = None
             recibos_por_alquiler = {str(f["id"]): f for f in filas}
             for v in viajes:
                 id_alq = mapa_ids.get(v["id"])

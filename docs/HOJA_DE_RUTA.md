@@ -8656,3 +8656,64 @@ de omitirlo.
 
 **Estado: RESUELTO.** Fix real aplicado y verificado con evidencia real de punta a punta -- tiempo
 de respuesta y entrega de correo, no solo uno de los dos.
+
+---
+
+## 111. Ronda de revisión visual -- "Factura no encontrada" en Mis Viajes
+
+Hallazgo real de Washington probando la app en el navegador: en `/ciclista/historial`, el enlace
+"Descargar factura" de algunos viajes reales llevaba a "Factura no encontrada." en vez de un PDF
+real. Pedido explícito: auditar contra qué viaje/estado ocurre exactamente antes de asumir la causa,
+y confirmar si afecta a más de un viaje.
+
+### Auditoría real (antes de tocar código)
+
+`_historial_data()` (`app/routers/ciclista.py`) arma el recibo de cada viaje migrado
+(`ch.mapa_alquiler_por_viaje_pocketbase()`, los alquileres reales de la migración histórica,
+`etl/07_migrar_viajes_pagos.py`) con:
+
+```sql
+LEFT JOIN urbanbike_operativa.facturas f FINAL ON f.id_alquiler = a.id
+```
+
+Consulta directa contra ClickHouse real: de los **24 alquileres reales** que llegaron a estado
+`facturado`, **5 no tienen ninguna fila real en `facturas`** (el backfill de facturas de la
+migración no los cubrió). **No es un caso aislado ni son viajes cancelados** -- los 5 son viajes
+reales `completado`, con `total` real cobrado (`$0.23` a `$13.80`), que simplemente nunca llegaron
+a tener su fila de `facturas` generada.
+
+**Causa real encontrada (no asumida a priori):** un `LEFT JOIN` sin coincidencia en ClickHouse, para
+una columna `UUID` no-`Nullable`, no devuelve `NULL`/`None` -- devuelve el UUID por defecto
+(`00000000-0000-0000-0000-000000000000`), confirmado directo con una consulta real:
+`type(fila["id_factura"])` es `uuid.UUID`, y `bool(UUID(...))` es **siempre `True`** en Python
+(los objetos `UUID` no definen `__bool__`/`__len__`). El template hace
+`{% if recibo.id_factura %}` esperando que un `id_factura` ausente sea falsy -- pero el sentinela
+de ceros SÍ es un objeto real, así que el enlace se generaba igual, apuntando a
+`/ciclista/factura/00000000-.../pdf`, que legítimamente no existe.
+
+### Fix real
+
+En `_historial_data()`, después de la consulta, se normaliza explícitamente: si
+`id_factura == facturas_repo.SENTINELA` (la misma constante ya definida en `facturas_repo.py`,
+reutilizada en vez de repetir el literal), se pone en `None` antes de guardarlo en
+`recibos_por_viaje` -- el `{% if %}` del template ya funciona correctamente sin tocar la plantilla.
+
+### Prueba real de punta a punta
+
+Cuenta real `ciclista@urbanbike.com` (dueña real de los 5 alquileres afectados, confirmado por
+`ciclista_id` en cada viaje):
+
+| Verificación | Resultado real |
+|---|---|
+| Bloques "Comprobante ..." en el historial real | 21 (todos los alquileres reales `facturado`) |
+| Enlaces "Descargar factura" reales tras el fix | **16** -- los 5 sin fila real en `facturas` ya no muestran el enlace |
+| `00000000-...` como enlace generado | Ausente (confirmado con `grep` sobre el HTML real) |
+| Un enlace real cualquiera de los 16 | `GET /ciclista/factura/{id}/pdf` -> 200, `application/pdf` real |
+
+**Sin revisor independiente para este fix** (juicio propio, no un vacío de proceso): el cambio es
+una normalización de un solo valor en un solo punto de escritura, ya verificada con datos reales
+antes/después (21 -> 16 enlaces, exactamente los 5 casos reales encontrados en la auditoría) --
+mismo criterio de "cambio acotado y ya probado con evidencia real" que otros puntos chicos de este
+documento no pasan por una segunda revisión.
+
+**Estado: RESUELTO.**
